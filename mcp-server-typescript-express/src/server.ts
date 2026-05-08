@@ -1,17 +1,19 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { keycardMcp } from "@keycardai/mcp";
+import { mcpAuthMetadataRouter } from "@keycardai/mcp/server/auth/router";
+import { requireBearerAuth } from "@keycardai/mcp/server/auth/middleware/bearerAuth";
 import { registerHelloTool } from "./tools/hello.js";
 
 const PORT = Number(process.env.PORT ?? 8000);
-const ZONE_URL = process.env.KEYCARD_URL;
 
-if (!ZONE_URL) {
+if (!process.env.KEYCARD_URL) {
   throw new Error("KEYCARD_URL is required");
 }
 
-const RESOURCE_ID = process.env.KEYCARD_RESOURCE_ID ?? "mcp-server-typescript-express";
+const KEYCARD_URL: string = process.env.KEYCARD_URL;
+const RESOURCE_ID =
+  process.env.KEYCARD_RESOURCE_ID ?? "mcp-server-typescript-express";
 
 async function main() {
   const app = express();
@@ -25,20 +27,27 @@ async function main() {
   registerHelloTool(server);
 
   app.use(
-    "/mcp",
-    keycardMcp({
-      zoneUrl: ZONE_URL,
-      resourceId: RESOURCE_ID,
+    mcpAuthMetadataRouter({
+      oauthMetadata: { issuer: KEYCARD_URL },
+      scopesSupported: ["mcp:tools"],
+      resourceName: RESOURCE_ID,
     }),
   );
 
-  app.post("/mcp", async (req, res) => {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-    });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  });
+  app.post(
+    "/mcp",
+    requireBearerAuth({
+      issuers: KEYCARD_URL,
+      requiredScopes: ["mcp:tools"],
+    }),
+    async (req, res) => {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    },
+  );
 
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true, name: RESOURCE_ID });
@@ -46,7 +55,7 @@ async function main() {
 
   app.listen(PORT, () => {
     console.log(`${RESOURCE_ID} listening on http://localhost:${PORT}`);
-    console.log(`Keycard zone: ${ZONE_URL}`);
+    console.log(`Keycard: ${KEYCARD_URL}`);
   });
 }
 
