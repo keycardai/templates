@@ -71,10 +71,10 @@ done
 urn_client_id="urn:${name}:client_id"
 urn_client_secret="urn:${name}:client_secret"
 
-existing_resources=$(keycard agent api "/zones/${zone}/resources" --org "$org" 2>/dev/null || echo "[]")
+existing_resources=$(keycard agent api "/zones/${zone}/resources" --org "$org" 2>/dev/null || echo '{"items":[]}')
 
 for urn in "$urn_client_id" "$urn_client_secret"; do
-  if echo "$existing_resources" | jq -e --arg u "$urn" '.[] | select(.identifier == $u)' &>/dev/null; then
+  if echo "$existing_resources" | jq -e --arg u "$urn" '.items[] | select(.identifier == $u)' &>/dev/null; then
     echo "Error: vault resource '${urn}' already exists." >&2
     echo "Delete it first (or pick a different --name) to rotate credentials." >&2
     exit 1
@@ -113,27 +113,55 @@ fi
 echo "Credentials issued (not printed)."
 
 # ---------------------------------------------------------------------------
-# Step 2: Create vault resources — secrets flow via jq pipe, never echoed
+# Step 2: Create vault resources, then attach secrets via /secrets.
+#
+# The /resources POST creates the entity (no secret material).
+# The /secrets POST attaches the actual value, scoped by entity_id.
+# Note: piping JSON via stdin requires omitting -d (the keycard CLI does NOT
+# treat `-d @-` as "read stdin" the way curl does — it sends the literal
+# string "@-" and the API responds 500).
 # ---------------------------------------------------------------------------
 echo "Creating vault resource ${urn_client_id}..."
 
-echo "$creds_json" | jq --arg n "$name" --arg pid "$vault_provider" '{
-  name: ($n + "-client-id"),
+resource_id_client_id=$(jq -n --arg n "$name" --arg pid "$vault_provider" '{
+  name: ("urn:" + $n + ":client_id"),
   identifier: ("urn:" + $n + ":client_id"),
-  description: ("Brokered client_id for the " + $n + " proxy application"),
-  credential_provider_id: $pid,
-  secret: .identifier
-}' | keycard agent api -X POST "/zones/${zone}/resources" --org "$org" -d @- >/dev/null
+  credential_provider_id: $pid
+}' | keycard agent api -X POST "/zones/${zone}/resources" --org "$org" | jq -r '.id')
+
+[[ -n "$resource_id_client_id" && "$resource_id_client_id" != "null" ]] || {
+  echo "Error: failed to create vault resource ${urn_client_id}." >&2
+  exit 1
+}
+
+echo "Attaching secret to ${urn_client_id}..."
+
+echo "$creds_json" | jq --arg eid "$resource_id_client_id" --arg n "$name" '{
+  name: ($n + "-client-id"),
+  entity_id: $eid,
+  data: { type: "token", token: .identifier }
+}' | keycard agent api -X POST "/zones/${zone}/secrets" --org "$org" >/dev/null
 
 echo "Creating vault resource ${urn_client_secret}..."
 
-echo "$creds_json" | jq --arg n "$name" --arg pid "$vault_provider" '{
-  name: ($n + "-client-secret"),
+resource_id_client_secret=$(jq -n --arg n "$name" --arg pid "$vault_provider" '{
+  name: ("urn:" + $n + ":client_secret"),
   identifier: ("urn:" + $n + ":client_secret"),
-  description: ("Brokered client_secret for the " + $n + " proxy application"),
-  credential_provider_id: $pid,
-  secret: .password
-}' | keycard agent api -X POST "/zones/${zone}/resources" --org "$org" -d @- >/dev/null
+  credential_provider_id: $pid
+}' | keycard agent api -X POST "/zones/${zone}/resources" --org "$org" | jq -r '.id')
+
+[[ -n "$resource_id_client_secret" && "$resource_id_client_secret" != "null" ]] || {
+  echo "Error: failed to create vault resource ${urn_client_secret}." >&2
+  exit 1
+}
+
+echo "Attaching secret to ${urn_client_secret}..."
+
+echo "$creds_json" | jq --arg eid "$resource_id_client_secret" --arg n "$name" '{
+  name: ($n + "-client-secret"),
+  entity_id: $eid,
+  data: { type: "token", token: .password }
+}' | keycard agent api -X POST "/zones/${zone}/secrets" --org "$org" >/dev/null
 
 # ---------------------------------------------------------------------------
 # Cleanup
