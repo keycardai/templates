@@ -1,4 +1,5 @@
-import express from "express";
+import { randomUUID } from "node:crypto";
+import express, { type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { mcpAuthMetadataRouter } from "@keycardai/mcp/server/auth/router";
@@ -15,16 +16,18 @@ const KEYCARD_URL: string = process.env.KEYCARD_URL;
 const RESOURCE_ID =
   process.env.KEYCARD_RESOURCE_ID ?? "mcp-server-typescript-express";
 
-async function main() {
-  const app = express();
-  app.use(express.json());
-
+function createMcpServer(): McpServer {
   const server = new McpServer({
     name: RESOURCE_ID,
     version: "0.1.0",
   });
-
   registerHelloTool(server);
+  return server;
+}
+
+async function main() {
+  const app = express();
+  app.use(express.json());
 
   app.use(
     mcpAuthMetadataRouter({
@@ -34,29 +37,123 @@ async function main() {
     }),
   );
 
-  app.post(
-    "/mcp",
-    requireBearerAuth({
-      issuers: KEYCARD_URL,
-      requiredScopes: ["mcp:tools"],
-    }),
-    async (req, res) => {
+  const bearerAuth = requireBearerAuth({
+    issuers: KEYCARD_URL,
+    requiredScopes: ["mcp:tools"],
+  });
+
+  // One transport per MCP session. The MCP SDK forbids reconnecting a
+  // single server to multiple transports, so each session also gets
+  // its own McpServer instance.
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+
+  app.post("/mcp", bearerAuth, async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+      if (sessionId) {
+        const transport = transports.get(sessionId);
+        if (!transport) {
+          res.status(400).json({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "Bad Request: unknown mcp-session-id",
+            },
+            id: req.body?.id ?? null,
+          });
+          return;
+        }
+        await transport.handleRequest(req, res, req.body);
+        return;
+      }
+
+      // No session id → treat as an initialize request and start a new session.
+      const server = createMcpServer();
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id: string) => {
+          transports.set(id, transport);
+        },
       });
+
+      server.server.onclose = () => {
+        const sid = transport.sessionId;
+        if (sid) transports.delete(sid);
+      };
+
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
-    },
-  );
+    } catch (err) {
+      console.error("Error handling MCP POST:", err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: req.body?.id ?? null,
+        });
+      }
+    }
+  });
+
+  app.get("/mcp", bearerAuth, async (req: Request, res: Response) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    const transport = sessionId ? transports.get(sessionId) : undefined;
+    if (!transport) {
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Bad Request: unknown or missing mcp-session-id",
+        },
+        id: null,
+      });
+      return;
+    }
+    await transport.handleRequest(req, res);
+  });
+
+  app.delete("/mcp", bearerAuth, async (req: Request, res: Response) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    const transport = sessionId ? transports.get(sessionId) : undefined;
+    if (!transport) {
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Bad Request: unknown or missing mcp-session-id",
+        },
+        id: null,
+      });
+      return;
+    }
+    await transport.handleRequest(req, res);
+  });
 
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true, name: RESOURCE_ID });
   });
 
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     console.log(`${RESOURCE_ID} listening on http://localhost:${PORT}`);
     console.log(`Keycard: ${KEYCARD_URL}`);
   });
+
+  const shutdown = async () => {
+    console.log("Shutting down...");
+    for (const [sid, transport] of transports) {
+      try {
+        await transport.close();
+      } catch (err) {
+        console.error(`Error closing session ${sid}:`, err);
+      }
+    }
+    transports.clear();
+    httpServer.close(() => process.exit(0));
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {
