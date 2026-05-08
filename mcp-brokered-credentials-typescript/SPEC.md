@@ -58,7 +58,6 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
   "name": "linear",
   "identifier": "https://mcp.linear.app/mcp",
   "description": "Linear MCP server (upstream)",
-  "scopes": ["read", "write"],
   "application_id": "<linear-application-id>",
   "credential_provider_id": "<linear-provider-id>"
 }'
