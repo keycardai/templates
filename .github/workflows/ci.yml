@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: "${{ matrix.template }}/package-lock.json"
+          cache-dependency-path: "${{ matrix.template }}/package*.json"
 
       - name: Install
         working-directory: ${{ matrix.template }}
@@ -60,7 +60,6 @@ jobs:
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
 
-          # Exchange service account credentials for an access token
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
             -d "grant_type=client_credentials" \
             -d "client_id=${CI_KEYCARD_CLIENT_ID}" \
@@ -75,7 +74,6 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
 
-          # Create an ephemeral zone for this test run
           ZONE=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/zones" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
@@ -93,11 +91,15 @@ jobs:
         env:
           PORT: "8000"
           KEYCARD_URL: ${{ steps.zone.outputs.KEYCARD_URL }}
+          # Brokered-credentials templates guard against missing KEYCARD_CLIENT_ID/SECRET
+          # at startup. In CI we inject the service account credentials so the server
+          # starts and serves .well-known correctly; actual token exchange is not tested here.
+          KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
         run: |
           node dist/server.js &
           SERVER_PID=$!
 
-          # Wait for server to be ready
           for i in $(seq 1 10); do
             if curl -sf http://localhost:8000/healthz > /dev/null 2>&1; then
               echo "Server ready"
@@ -107,10 +109,8 @@ jobs:
             sleep 2
           done
 
-          # Verify health
           curl -sf http://localhost:8000/healthz | jq .
 
-          # Verify .well-known endpoints
           echo "Checking .well-known/oauth-protected-resource..."
           curl -sf http://localhost:8000/.well-known/oauth-protected-resource | jq .
 
