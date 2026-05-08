@@ -1,0 +1,14 @@
+schema_version = "1"
+
+[project]
+name = "mcp-server-typescript-express"
+kind = "mcp-server"
+
+[zone]
+url = "${KEYCARD_URL}"
+
+[server]
+command = "npm run start"
+port = 8000
+
+[credentials]
