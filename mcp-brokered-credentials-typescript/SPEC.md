@@ -262,17 +262,22 @@ The build step does not need brokered credentials, only the runtime does. Verify
 npm install && npm run build
 ```
 
-Then a brokered smoke test:
+Then a non-interactive smoke test that the two vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run -- node -e ...` here — `keycard run` requires an interactive TTY and refuses to nest inside the agent's own `keycard run` session, costing the agent minutes of debugging for no signal beyond what the API check below already gives. The actual brokered hydration is verified the first time the user runs `keycard run -- npm start` in step 5.
 
 ```bash
-keycard run -- node -e 'console.log("client_id len:", (process.env.KEYCARD_CLIENT_ID ?? "").length, "client_secret set:", Boolean(process.env.KEYCARD_CLIENT_SECRET))'
+for urn in "urn:<name>:client_id" "urn:<name>:client_secret"; do
+  keycard agent api "/zones/<zone-id>/resources?identifier=${urn}" --org "<org-id>" \
+    | jq -e --arg u "$urn" '.items[] | select(.identifier == $u) | .credential_provider_id' >/dev/null \
+    || { echo "MISSING: $urn"; exit 1; }
+done
+echo "OK: both vault resources resolve"
 ```
 
-Both values MUST be non-empty. If either is empty, the most likely causes are:
+Both lookups MUST succeed and return a non-null `credential_provider_id`. If either fails, the most likely causes are:
 
+- the matching vault resource does not exist, has the wrong identifier, or `provision-credentials.sh` failed before attaching the secret via `POST /zones/<zone-id>/secrets`
 - a `[[credentials.default]]` entry pointing at the wrong URN — re-check the `<name>` substitution in the appended blocks
-- the matching vault resource does not exist, has the wrong identifier, or stores its secret under a field the vault provider does not surface as the token
-- `keycard.toml` has unresolved `<org-id>` / `<zone-id>` placeholders, or is missing `[org]` / `[zone]` blocks entirely — `keycard run` failed to authenticate
+- `keycard.toml` has unresolved `<org-id>` / `<zone-id>` placeholders, or is missing `[org]` / `[zone]` blocks entirely — `keycard run` will fail to authenticate when the user runs the proxy
 
 Do NOT start the proxy server inside the agent session — Claude Code does not hot-reload MCP config, and the proxy must be running in a long-lived terminal anyway. The user starts it themselves in step 5.
 
