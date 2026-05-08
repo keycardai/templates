@@ -87,9 +87,9 @@ done
 echo "Issuing application credentials for ${name}..."
 
 creds_json=$(keycard agent api -X POST \
-  "/zones/${zone}/applications/${app_id}/credentials" \
+  "/zones/${zone}/application-credentials" \
   --org "$org" \
-  -d "{\"name\":\"${name}-app-credentials\"}" 2>&1) || {
+  -d "{\"application_id\":\"${app_id}\",\"type\":\"password\"}" 2>&1) || {
     echo "Error: failed to issue application credentials." >&2
     echo "" >&2
     echo "Could not auto-issue application credentials. Create them at" >&2
@@ -98,10 +98,11 @@ creds_json=$(keycard agent api -X POST \
     exit 1
   }
 
-# Validate that both fields are present and non-empty.
-if ! echo "$creds_json" | jq -e '.client_id // empty' &>/dev/null ||
-   ! echo "$creds_json" | jq -e '.client_secret // empty' &>/dev/null; then
-  echo "Error: credential response missing client_id or client_secret." >&2
+# Password-type response uses { identifier: <client_id>, password: <client_secret> }.
+# `password` is only returned on creation; if it's missing, the request didn't actually mint a secret.
+if ! echo "$creds_json" | jq -e '.identifier // empty' &>/dev/null ||
+   ! echo "$creds_json" | jq -e '.password // empty' &>/dev/null; then
+  echo "Error: credential response missing identifier or password." >&2
   echo "" >&2
   echo "Could not auto-issue application credentials. Create them at" >&2
   echo "https://console.keycard.ai -> Applications -> ${name} -> Credentials," >&2
@@ -121,7 +122,7 @@ echo "$creds_json" | jq --arg n "$name" --arg pid "$vault_provider" '{
   identifier: ("urn:" + $n + ":client_id"),
   description: ("Brokered client_id for the " + $n + " proxy application"),
   credential_provider_id: $pid,
-  secret: .client_id
+  secret: .identifier
 }' | keycard agent api -X POST "/zones/${zone}/resources" --org "$org" -d @- >/dev/null
 
 echo "Creating vault resource ${urn_client_secret}..."
@@ -131,7 +132,7 @@ echo "$creds_json" | jq --arg n "$name" --arg pid "$vault_provider" '{
   identifier: ("urn:" + $n + ":client_secret"),
   description: ("Brokered client_secret for the " + $n + " proxy application"),
   credential_provider_id: $pid,
-  secret: .client_secret
+  secret: .password
 }' | keycard agent api -X POST "/zones/${zone}/resources" --org "$org" -d @- >/dev/null
 
 # ---------------------------------------------------------------------------

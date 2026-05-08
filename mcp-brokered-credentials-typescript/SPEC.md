@@ -41,9 +41,11 @@ keycard agent api -X POST /zones/<zone-id>/applications --org <org-id> -d '{
   "name": "linear",
   "identifier": "https://mcp.linear.app/mcp",
   "description": "Linear MCP application",
-  "consent": "explicit"
+  "consent": "required"
 }'
 ```
+
+The `consent` enum is `required` | `implicit`. `"explicit"` is rejected with a validation error.
 
 Carry the result forward as `<linear-application-id>`.
 
@@ -91,7 +93,7 @@ keycard agent api -X POST /zones/<zone-id>/applications --org <org-id> -d '{
 
 Carry the result forward as `<proxy-application-id>`.
 
-### 1f. Proxy resource (with Linear as a dependency)
+### 1f. Proxy resource
 
 ```bash
 keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
@@ -100,17 +102,36 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
   "description": "MCP proxy scaffolded by keycard-template-app",
   "scopes": ["mcp:tools"],
   "application_id": "<proxy-application-id>",
-  "credential_provider_id": "<sts-provider-id>",
-  "dependencies": ["<linear-resource-id>"]
+  "credential_provider_id": "<sts-provider-id>"
 }'
 ```
 
-The `dependencies` array is what tells Keycard that calls to this resource may need to broker credentials for the Linear resource — the user-consent flow will surface Linear during the OAuth login. If the running Keycard build does not accept `dependencies` at create time, do a follow-up `PATCH /resources/<id>` to add it. If neither path works, abort:
+Carry the result forward as `<proxy-resource-id>`.
+
+### 1f-bis. Wire Linear as a dependency of the proxy application
+
+Dependencies live on the **application**, not the resource. The management API accepts only `PUT /applications/<app-id>/dependencies/<resource-id>` with an empty JSON body — `dependencies: [...]` on a resource POST/PATCH is silently dropped, and there is no `POST .../dependencies` collection route.
+
+```bash
+keycard agent api -X PUT \
+  "/zones/<zone-id>/applications/<proxy-application-id>/dependencies/<linear-resource-id>" \
+  --org <org-id> -d '{}'
+```
+
+Verify the wiring landed:
+
+```bash
+keycard agent api \
+  "/zones/<zone-id>/applications/<proxy-application-id>/dependencies" \
+  --org <org-id>
+```
+
+The Linear resource MUST appear in the returned `items`. If it does not, abort:
 
 ```
-Could not wire Linear as a dependency of the proxy resource. Open
-https://console.keycard.ai → Resources → <name> → Dependencies and
-connect "linear" manually, then retry.
+Could not wire Linear as a dependency of the proxy application. Open
+https://console.keycard.ai → Applications → <name> → Dependencies and
+connect the Linear resource manually, then retry.
 ```
 
 ### 1g. Proxy application credentials + vault resources
@@ -137,12 +158,41 @@ bash scripts/provision-credentials.sh \
 ```
 
 The script:
-1. Issues credentials via `POST /zones/<zone-id>/applications/<proxy-application-id>/credentials`.
-2. Validates the response contains `client_id` and `client_secret` (without printing them).
-3. Pipes each value through `jq` directly into a `POST /zones/<zone-id>/resources` call to create vault resources at `urn:<name>:client_id` and `urn:<name>:client_secret`.
+1. Issues credentials via `POST /zones/<zone-id>/application-credentials` with body `{"application_id":"<proxy-application-id>","type":"password"}`. The `password` credential type is what mints an OAuth `client_id` (`identifier`) + `client_secret` (`password`) pair. This route is on the zone, NOT nested under `/applications/<id>/`.
+2. Validates the response contains `identifier` and `password` (without printing them).
+3. Pipes each value through `jq` directly into a `POST /zones/<zone-id>/resources` call to create vault resources at `urn:<name>:client_id` (from `identifier`) and `urn:<name>:client_secret` (from `password`).
 4. Wipes the in-memory credential variable and exits.
 
-On failure, the script prints a remediation message pointing at the Keycard console. The agent MUST NOT attempt to recover by running the underlying API calls directly — that would expose the credential payload in the tool-call transcript.
+On failure, the script prints a remediation message pointing at the Keycard console. The agent MUST NOT attempt to recover by running the underlying `POST .../credentials` call itself — that would expose the credential payload in the tool-call transcript. The correct fallback is:
+
+1. Tell the user to issue credentials in https://console.keycard.ai → Applications → `<name>` → Credentials.
+2. Wait for them to confirm. The agent must NOT ask the user to paste the `client_id` / `client_secret` into chat.
+3. Have the user export them in their own shell and run a tiny inline pipe so the secrets never enter the agent transcript:
+
+   ```bash
+   export PROXY_CLIENT_ID='...'      # user pastes in their terminal
+   export PROXY_CLIENT_SECRET='...'  # user pastes in their terminal
+
+   jq -n --arg n "<name>" --arg pid "<vault-provider-id>" --arg s "$PROXY_CLIENT_ID" '{
+     name: ($n + "-client-id"),
+     identifier: ("urn:" + $n + ":client_id"),
+     description: ("Brokered client_id for the " + $n + " proxy application"),
+     credential_provider_id: $pid,
+     secret: $s
+   }' | keycard agent api -X POST "/zones/<zone-id>/resources" --org "<org-id>" -d @-
+
+   jq -n --arg n "<name>" --arg pid "<vault-provider-id>" --arg s "$PROXY_CLIENT_SECRET" '{
+     name: ($n + "-client-secret"),
+     identifier: ("urn:" + $n + ":client_secret"),
+     description: ("Brokered client_secret for the " + $n + " proxy application"),
+     credential_provider_id: $pid,
+     secret: $s
+   }' | keycard agent api -X POST "/zones/<zone-id>/resources" --org "<org-id>" -d @-
+
+   unset PROXY_CLIENT_ID PROXY_CLIENT_SECRET
+   ```
+
+4. Resume at §3.
 
 If the vault resources already exist, the script exits non-zero. To rotate, delete the existing vault resources first and re-run.
 
@@ -170,7 +220,7 @@ KEYCARD_URL=https://<id>.keycard.cloud
 PORT=8000
 ```
 
-`.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — those are brokered by `keycard run` from the vault resources created in step 1h. Putting them here defeats the entire point of the template.
+`.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — those are brokered by `keycard run` from the vault resources created in step 1g. Putting them here defeats the entire point of the template.
 
 ### keycard.toml
 
