@@ -10,7 +10,17 @@ Throughout, treat `<name>` as the kebab-case project name (default: `mcp-brokere
 
 The agent MUST ensure every primitive below exists in the active Keycard environment. Most calls are idempotent; on `409` ("already exists"), GET the list endpoint and reuse the existing record's ID.
 
+Background reading on the domain model the steps below build:
+
+- [Platform Concepts](https://docs.keycard.ai/platform/) — top-level overview
+- [Zones](https://docs.keycard.ai/platform/concepts/zones/) — security domain that owns the STS, providers, applications, and resources used here
+- [Providers](https://docs.keycard.ai/platform/concepts/providers/) — issue authentication and access credentials (used in 1a, 1d)
+- [Applications](https://docs.keycard.ai/platform/concepts/applications/) — software actors that access resources (used in 1b, 1e)
+- [Resources](https://docs.keycard.ai/platform/concepts/resources/) — protected APIs / MCP servers / databases (used in 1c, 1f)
+
 ### 1a. Linear credential provider
+
+See [Providers](https://docs.keycard.ai/platform/concepts/providers/) for the concept; specifically the *access credential provider* role — these issue access tokens for resources hosted by third parties so credentials can be brokered between domains.
 
 The Linear MCP server is the upstream resource. It needs a Keycard provider that can mint OAuth tokens accepted by `https://mcp.linear.app/mcp`. Linear MCP supports OAuth 2.1 with dynamic client registration, so Keycard's generic OAuth provider is appropriate.
 
@@ -36,6 +46,8 @@ Carry the result forward as `<linear-provider-id>`.
 
 ### 1b. Linear application
 
+See [Applications](https://docs.keycard.ai/platform/concepts/applications/). The Linear application represents the upstream Linear MCP service as a Keycard application — it's what the user grants consent to during the dependency-driven OAuth flow.
+
 ```bash
 keycard agent api -X POST /zones/<zone-id>/applications --org <org-id> -d '{
   "name": "linear",
@@ -50,6 +62,8 @@ The `consent` enum is `required` | `implicit`. `"explicit"` is rejected with a v
 Carry the result forward as `<linear-application-id>`.
 
 ### 1c. Linear resource
+
+See [Resources](https://docs.keycard.ai/platform/concepts/resources/). A resource is a protected API/MCP server/database that an application accesses; the proxy will request brokered tokens against this resource's identifier.
 
 The resource identifier MUST be `https://mcp.linear.app/mcp` exactly — that is the URL the proxy hits, and Keycard's STS rejects token requests whose `resource` does not match the registered identifier.
 
@@ -67,6 +81,8 @@ Carry the result forward as `<linear-resource-id>`.
 
 ### 1d. STS provider for the proxy
 
+See [Zones → Security Token Service](https://docs.keycard.ai/platform/concepts/zones/#security-token-service). Every zone has a built-in STS that mints access tokens for resources within the zone; the proxy resource (1f) uses it as its credential provider.
+
 Discover the `keycard-sts` provider — same step as the base template:
 
 ```bash
@@ -79,7 +95,7 @@ Carry the result forward as `<sts-provider-id>`.
 
 ### 1e. Proxy application
 
-This is the application that THIS server identifies as when it talks to Keycard's STS. Its client_id / client_secret are the credentials the proxy uses to authenticate the token-exchange call.
+See [Applications](https://docs.keycard.ai/platform/concepts/applications/). This is the application that THIS server identifies as when it talks to Keycard's STS. Its client_id / client_secret are the credentials the proxy uses to authenticate the token-exchange call.
 
 ```bash
 keycard agent api -X POST /zones/<zone-id>/applications --org <org-id> -d '{
@@ -93,6 +109,8 @@ keycard agent api -X POST /zones/<zone-id>/applications --org <org-id> -d '{
 Carry the result forward as `<proxy-application-id>`.
 
 ### 1f. Proxy resource
+
+See [Resources](https://docs.keycard.ai/platform/concepts/resources/). The proxy registers itself as a resource at `http://localhost:<port>/mcp` so Keycard's STS will mint mcp-scoped tokens that authenticate users to the proxy.
 
 ```bash
 keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
@@ -108,6 +126,8 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 Carry the result forward as `<proxy-resource-id>`.
 
 ### 1f-bis. Wire Linear as a dependency of the proxy application
+
+See [Applications → Dependencies](https://docs.keycard.ai/platform/concepts/applications/#dependencies). Dependencies declare service-to-service relationships and drive the [transitive consent](https://docs.keycard.ai/platform/concepts/applications/#transitive-consent) flow — when the user authenticates to the proxy, Keycard surfaces Linear consent in the same screen because Linear is wired as a dependency here.
 
 Dependencies live on the **application**, not the resource. The management API accepts only `PUT /applications/<app-id>/dependencies/<resource-id>` with an empty JSON body — `dependencies: [...]` on a resource POST/PATCH is silently dropped, and there is no `POST .../dependencies` collection route.
 
