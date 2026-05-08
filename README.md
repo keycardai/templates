@@ -26,6 +26,7 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 | Template | Kind | Language | Framework |
 |---|---|---|---|
 | [`mcp-server-typescript-express`](./mcp-server-typescript-express) | mcp-server | TypeScript | Express 5 |
+| [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | mcp-server (proxy) | TypeScript | Express 5 |
 
 ## Contributing
 
