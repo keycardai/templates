@@ -1,0 +1,89 @@
+name: Template CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      template:
+        description: "Template to verify (leave blank for all)"
+        required: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      templates: ${{ steps.find.outputs.templates }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          if [ -n "${{ inputs.template }}" ]; then
+            echo "templates=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' \
+              -exec test -f '{}/package.json' \; -print \
+              | sed 's|^\./||' | sort | jq -R . | jq -sc .)
+            echo "templates=$dirs" >> "$GITHUB_OUTPUT"
+          fi
+
+  verify-typescript:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.discover.outputs.templates) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "${{ matrix.template }}/package-lock.json"
+
+      - name: Install
+        working-directory: ${{ matrix.template }}
+        run: npm install
+
+      - name: Build
+        working-directory: ${{ matrix.template }}
+        run: npm run build
+
+      - name: Start server and verify
+        working-directory: ${{ matrix.template }}
+        env:
+          PORT: "8000"
+          # KEYCARD_URL is required at runtime. Use a placeholder that
+          # passes the env guard so the server starts; .well-known checks
+          # are skipped when KEYCARD_URL is the placeholder value.
+          KEYCARD_URL: ${{ secrets.CI_KEYCARD_ZONE_URL || 'https://ci-placeholder.keycard.cloud' }}
+        run: |
+          node dist/server.js &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> "$GITHUB_ENV"
+
+          # Wait for server to be ready
+          for i in $(seq 1 10); do
+            if curl -sf http://localhost:8000/healthz > /dev/null 2>&1; then
+              echo "Server ready"
+              break
+            fi
+            echo "Waiting... ($i/10)"
+            sleep 2
+          done
+
+          # Verify health
+          curl -sf http://localhost:8000/healthz | jq .
+
+          # Verify .well-known endpoints (only when a real zone URL is configured)
+          if [ "$KEYCARD_URL" != "https://ci-placeholder.keycard.cloud" ]; then
+            echo "Checking .well-known endpoints..."
+            curl -sf http://localhost:8000/.well-known/oauth-protected-resource | jq .
+            curl -sf http://localhost:8000/.well-known/oauth-authorization-server | jq .
+          else
+            echo "Skipping .well-known checks (no CI_KEYCARD_ZONE_URL secret configured)"
+          fi
+
+          kill $SERVER_PID
