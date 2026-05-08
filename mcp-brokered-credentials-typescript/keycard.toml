@@ -1,36 +1,5 @@
-schema_version = "1"
+[org]
+id = "<org-id>"
 
-[project]
-name = "mcp-brokered-credentials-typescript"
-kind = "mcp-server"
-
-# [zone].url MUST be the literal zone URL (e.g. https://<zone-id>.keycard.cloud).
-# Do NOT use "${KEYCARD_URL}" — TOML does not expand env vars, and `keycard
-# run` will fail OIDC discovery with `unsupported protocol scheme ""`.
-# The scaffold step copies this value from the user's existing keycard.toml.
 [zone]
-url = ""
-
-[server]
-command = "npm run start"
-port = 8000
-
-# Brokered application credentials.
-#
-# Both entries reference zone-vault resources that the scaffold step created
-# from this server's Keycard application client_id / client_secret. `keycard
-# run` reads this file to broker them into KEYCARD_CLIENT_ID and
-# KEYCARD_CLIENT_SECRET so the proxy can authenticate to Keycard's STS for
-# RFC 8693 token exchange — without secrets ever touching the filesystem.
-#
-# The URNs are templated by the scaffold step:
-#   urn:<project-name>:client_id
-#   urn:<project-name>:client_secret
-
-[[credentials.default]]
-env_var = "KEYCARD_CLIENT_ID"
-resource = "urn:mcp-brokered-credentials-typescript:client_id"
-
-[[credentials.default]]
-env_var = "KEYCARD_CLIENT_SECRET"
-resource = "urn:mcp-brokered-credentials-typescript:client_secret"
+id = "<zone-id>"

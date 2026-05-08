@@ -47,7 +47,7 @@ npm run build
 keycard run -- npm start
 ```
 
-`keycard run` reads the project's `keycard.toml` to authenticate against your zone, and uses the `[[credentials.default]]` entries to broker `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` from the zone vault into the process. The shipped `keycard.toml` has a placeholder `[zone].url`; the scaffold step copies the literal zone URL from your existing `keycard.toml` into it. Do NOT replace it with `${KEYCARD_URL}` — TOML does not expand env vars.
+`keycard run` reads the project's `keycard.toml` to authenticate against your zone and to broker `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` from the zone vault into the process. The shipped file is minimal — `[org].id`, `[zone].id`, plus two `[[credentials.default]]` blocks the scaffold step appends after creating the vault resources. The MCP server itself reads runtime config (`KEYCARD_URL`, `PORT`) from `.env`.
 
 The proxy listens on `http://localhost:8000/mcp`. Without `keycard run`, the process exits at startup with a message pointing at the missing env vars — that is by design.
 

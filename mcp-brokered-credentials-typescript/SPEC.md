@@ -226,18 +226,33 @@ PORT=<port>
 
 ### keycard.toml
 
-The template ships its own `keycard.toml` at the project root. `keycard run` reads it from the project working directory at startup to authenticate against the zone and to broker the `[[credentials.default]]` entries into the process environment. The shipped file has placeholder values that the agent MUST bootstrap from the user's existing zone-bound `keycard.toml` (the one already present in the parent / cwd before scaffolding):
+The template ships a minimal `keycard.toml` at the project root with only `[org]` and `[zone]` placeholder blocks:
 
-1. Locate the user's existing `keycard.toml` (typical: parent directory of where the project was scaffolded, or wherever the user previously ran `keycard init`). If none exists, abort and tell the user to run `keycard init` first — without it, `keycard run` cannot authenticate.
-2. Read `[zone].url` from that file. It MUST be a fully-qualified URL like `https://<zone-id>.keycard.cloud`.
-3. Write that literal URL into the project's `keycard.toml` `[zone].url`. Do NOT write `${KEYCARD_URL}` or any other `${...}` expression — TOML does not expand env vars, and an unexpanded value produces `failed to discover OIDC configuration: unsupported protocol scheme ""` at runtime.
-4. Set `[project].name` to `<name>`.
-5. Rewrite both `[[credentials.default]].resource` URNs to `urn:<name>:client_id` and `urn:<name>:client_secret` so they match the vault resources created in step 1g.
-6. If the user's existing `keycard.toml` has an `[organization]` section, copy it over verbatim.
+```toml
+[org]
+id = "<org-id>"
 
-Use the `keycard-upsert-config` skill for these edits. The resulting project-local `keycard.toml` is independent of the user's existing one — `keycard run` for this project always uses the project-local file.
+[zone]
+id = "<zone-id>"
+```
 
-The MCP server itself does NOT read `keycard.toml`. It reads `KEYCARD_URL` from `.env`. Do not put `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` in `keycard.toml` either — they must be brokered from the vault.
+The agent MUST replace both placeholder IDs with the values from the user's existing zone-bound `keycard.toml` (the one already present in the parent / cwd before scaffolding). If no such file exists, abort and tell the user to run `keycard init` first — without it, `keycard run` cannot authenticate.
+
+Then the agent MUST append two `[[credentials.default]]` entries that match the vault resources created in step 1g:
+
+```toml
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_ID"
+resource = "urn:<name>:client_id"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_SECRET"
+resource = "urn:<name>:client_secret"
+```
+
+Substitute `<name>` for the kebab-case project name so the URNs line up exactly with what `provision-credentials.sh` created.
+
+Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `keycard.toml` — no `[project]`, no `[server]`, no `schema_version`, no `[zone].url`. The MCP server reads its runtime config (`KEYCARD_URL`, `PORT`) from `.env`, not from `keycard.toml`. `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` are never written to either file — they are brokered from the vault by `keycard run`.
 
 ## 3. Agent verification
 
@@ -255,16 +270,17 @@ keycard run -- node -e 'console.log("client_id len:", (process.env.KEYCARD_CLIEN
 
 Both values MUST be non-empty. If either is empty, the most likely causes are:
 
-- a `[[credentials.default]]` entry pointing at the wrong URN — re-check the `<name>` substitution in the appended block in the user's `keycard.toml`
+- a `[[credentials.default]]` entry pointing at the wrong URN — re-check the `<name>` substitution in the appended blocks
 - the matching vault resource does not exist, has the wrong identifier, or stores its secret under a field the vault provider does not surface as the token
-- `keycard.toml` is missing or has no `[zone]` section — `keycard run` failed to authenticate, surfacing as `unsupported protocol scheme ""` from the OIDC discovery step
+- `keycard.toml` has unresolved `<org-id>` / `<zone-id>` placeholders, or is missing `[org]` / `[zone]` blocks entirely — `keycard run` failed to authenticate
 
 Do NOT start the proxy server inside the agent session — Claude Code does not hot-reload MCP config, and the proxy must be running in a long-lived terminal anyway. The user starts it themselves in step 5.
 
 ## 4. What the agent MUST NOT do
 
 - Do not write `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` to `.env`, `keycard.toml`, source code, or any file. Their entire role in this template is to demonstrate broker-only secret delivery.
-- Do not put `${KEYCARD_URL}` (or any `${...}` interpolation) inside `keycard.toml` — TOML does not expand env vars and the resulting empty string breaks `keycard run`'s OIDC discovery. Use the literal zone URL copied from the user's existing `keycard.toml`.
+- Do not add `[project]`, `[server]`, `schema_version`, or any `[zone].url` field to `keycard.toml`. The shipped file is intentionally minimal — only `[org].id`, `[zone].id`, and the two `[[credentials.default]]` blocks belong there. Other server-side config goes in `.env`.
+- Do not put `${KEYCARD_URL}` (or any `${...}` interpolation) anywhere in `keycard.toml` — TOML does not expand env vars.
 - Do not modify the user's pre-existing `keycard.toml` outside the project directory. The project-local one is bootstrapped from it but lives independently.
 - Do not run the underlying `keycard agent api .../credentials` call yourself — always invoke `scripts/provision-credentials.sh`. The credential payload must not appear in any tool-call transcript.
 - Do not commit `.env`, `KEYCARD_URL`, or anything containing the Keycard ID.
