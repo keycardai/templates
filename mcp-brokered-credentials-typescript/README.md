@@ -41,11 +41,13 @@ This template only runs through `keycard run`, which hydrates `KEYCARD_CLIENT_ID
 ```bash
 cp -R mcp-brokered-credentials-typescript my-mcp-proxy
 cd my-mcp-proxy
+cp .env.example .env   # then edit KEYCARD_URL
 npm install
-export KEYCARD_URL=https://your-zone.keycard.cloud
 npm run build
 keycard run -- npm start
 ```
+
+`keycard run` reads `keycard.toml` from the **working directory** (or a parent) to authenticate against your zone, and uses the appended `[[credentials.default]]` entries to broker `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` from the zone vault into the process. This template does NOT ship its own `keycard.toml` — it relies on the one already in your project root. Run `keycard init` first if you don't have one.
 
 The proxy listens on `http://localhost:8000/mcp`. Without `keycard run`, the process exits at startup with a message pointing at the missing env vars — that is by design.
 
