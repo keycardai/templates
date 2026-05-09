@@ -273,7 +273,40 @@ Substitute `<name>` for the kebab-case project name so the URNs line up exactly 
 
 Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `keycard.toml` — no `[project]`, no `[server]`, no `schema_version`, no `[zone].url`. The MCP server reads its runtime config (`KEYCARD_URL`, `PORT`) from `.env`, not from `keycard.toml`. `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` are never written to either file — they are brokered from the vault by `keycard run`.
 
-## 3. Agent verification
+## 3. Runtime credential discovery
+
+The proxy no longer hard-codes `ClientSecret` as the only credential provider. At startup, `src/credentials.ts` calls `discoverApplicationCredential()` which probes the environment and returns the first matching `ApplicationCredential`:
+
+| Priority | Env signal | Provider | Typical environment |
+|---|---|---|---|
+| 1 | `KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET` both set | `ClientSecret` | Local via `keycard run` |
+| 2 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE` set | Depends on value (see below) | Explicit override on any platform |
+| 3 | Any of `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE` | `EKSWorkloadIdentity` | EKS pods with mounted identity tokens |
+| 4 | `FLY_APP_NAME` set | `FlyWorkloadIdentity` | Fly.io machines |
+| 5 | _(none matched)_ | **throws** with actionable guidance | — |
+
+### Explicit override via `KEYCARD_APPLICATION_CREDENTIAL_TYPE`
+
+Set this env var to force a specific provider, bypassing auto-detection. Accepted values:
+
+- `eks_workload_identity` — construct `EKSWorkloadIdentity` (honors `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE` for custom token path).
+- `fly_workload_identity` — construct `FlyWorkloadIdentity` with `audience` set to `KEYCARD_URL`.
+- `web_identity` — construct `WebIdentity` (generates and persists an RSA key pair for `private_key_jwt` authentication).
+
+Any other value throws.
+
+### FlyWorkloadIdentity
+
+`FlyWorkloadIdentity` implements the `ApplicationCredential` interface for Fly.io machines. On each token-exchange call it:
+
+1. Reads the machine API token from `FLY_API_TOKEN` env var or `/.fly/api` file.
+2. Fetches a short-lived OIDC JWT from `POST http://_api.internal:4280/v1/tokens/oidc` with `{ "aud": "<KEYCARD_URL>" }`.
+3. Caches the token until 60 seconds before its `exp` claim.
+4. Returns the OIDC token as a `client_assertion` (type `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`), identical in shape to `EKSWorkloadIdentity`.
+
+The deploy procedure (see `deploy-fly.md` §4–§5) registers the Fly OIDC provider and an application-credential binding (subject `<fly-org>:<project-name>:*`) so that Keycard's STS accepts the machine-issued OIDC token as valid proof of identity for the proxy application.
+
+## 4. Agent verification
 
 The build step does not need brokered credentials, only the runtime does. Verify the build first, then verify `keycard run` can hydrate the env.
 
@@ -281,7 +314,7 @@ The build step does not need brokered credentials, only the runtime does. Verify
 npm install && npm run build
 ```
 
-Then a non-interactive smoke test that the two vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run -- node -e ...` here — `keycard run` requires an interactive TTY and refuses to nest inside the agent's own `keycard run` session, costing the agent minutes of debugging for no signal beyond what the API check below already gives. The actual brokered hydration is verified the first time the user runs `keycard run -- npm start` in step 5.
+Then a non-interactive smoke test that the two vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run -- node -e ...` here — `keycard run` requires an interactive TTY and refuses to nest inside the agent's own `keycard run` session, costing the agent minutes of debugging for no signal beyond what the API check below already gives. The actual brokered hydration is verified the first time the user runs `keycard run -- npm start` in step 6.
 
 ```bash
 for urn in "urn:<name>:client_id" "urn:<name>:client_secret"; do
@@ -300,7 +333,7 @@ Both lookups MUST succeed and return a non-null `credential_provider_id`. If eit
 
 Do NOT start the proxy server inside the agent session — Claude Code does not hot-reload MCP config, and the proxy must be running in a long-lived terminal anyway. The user starts it themselves in step 5.
 
-## 4. What the agent MUST NOT do
+## 5. What the agent MUST NOT do
 
 - Do not write `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` to `.env`, `keycard.toml`, source code, or any file. Their entire role in this template is to demonstrate broker-only secret delivery.
 - Do not add `[project]`, `[server]`, `schema_version`, or any `[zone].url` field to `keycard.toml`. The shipped file is intentionally minimal — only `[org].id`, `[zone].id`, and the two `[[credentials.default]]` blocks belong there. Other server-side config goes in `.env`.
@@ -313,7 +346,7 @@ Do NOT start the proxy server inside the agent session — Claude Code does not 
 - Do not start the proxy server in the agent session.
 - Do not write Cedar or per-tool policy — v1 auth is OAuth scope-based (`mcp:tools`); per-tool authorization is out of scope.
 
-## 5. Instructions for the user
+## 6. Instructions for the user
 
 After provisioning and verification, register the proxy in Claude's local MCP config so the user can call it after restarting Claude:
 
@@ -376,3 +409,71 @@ Next steps (run these yourself — the agent cannot do them from this session):
        results and the appropriate arguments — the proxy will call Linear
        on your behalf using a brokered Linear token.
 ```
+
+---
+
+## Appendix A. SDK follow-up — credential discovery upstream
+
+The `src/credentials.ts` file in this template is a stopgap. The discovery logic and `FlyWorkloadIdentity` class should move into the Keycard SDKs so every template and user app gets them automatically. This section tracks the required SDK changes.
+
+### TypeScript (`@keycardai/oauth` + `@keycardai/mcp`)
+
+**New file `packages/oauth/src/server/flyWorkloadIdentity.ts`**
+
+Port the template-local `FlyWorkloadIdentity` class. Public API:
+
+```typescript
+export interface FlyWorkloadIdentityOptions {
+  audience: string;
+  metadataUrl?: string;   // default: http://_api.internal:4280/v1/tokens/oidc
+  machineTokenEnv?: string; // default: FLY_API_TOKEN
+}
+export class FlyWorkloadIdentity implements ApplicationCredential { ... }
+```
+
+Mirrors `EKSWorkloadIdentity` in shape: `getAuth()` returns `null`, `prepareTokenExchangeRequest()` returns a `client_assertion` with type `jwt-bearer`.
+
+**New file `packages/oauth/src/server/discover.ts`**
+
+```typescript
+export interface DiscoverOptions {
+  serverName?: string;
+  zoneUrl?: string;
+}
+export function discoverApplicationCredential(
+  options?: DiscoverOptions
+): ApplicationCredential;
+```
+
+Same priority as this template's `src/credentials.ts` and the Python SDK's `AuthProvider._discover_application_credential`.
+
+**Re-exports**
+
+- `packages/oauth/src/server/index.ts` — export `FlyWorkloadIdentity`, `FlyWorkloadIdentityOptions`, `discoverApplicationCredential`, `DiscoverOptions`.
+- `packages/mcp/src/server/auth/credentials.ts` — re-export all of the above.
+
+**AuthProvider opt-in**
+
+Extend `AuthProvider` so that when `applicationCredential` is omitted it falls back to `discoverApplicationCredential()`, matching the Python SDK. This lets the template collapse to `new AuthProvider({ zoneUrl: KEYCARD_URL })`.
+
+**Tests**
+
+- Env-permutation table (local / EKS / Fly / explicit override / none-found).
+- Stub Fly metadata server returning a signed JWT; verify token caching and refresh.
+
+### Python (`keycardai-oauth` + `keycardai-mcp`)
+
+**New class `FlyWorkloadIdentity`** in `packages/oauth/src/keycardai/oauth/server/credentials.py`, next to `EKSWorkloadIdentity`. Same constructor surface as the TS version.
+
+**Extend `AuthProvider._discover_application_credential`** in `packages/mcp/src/keycardai/mcp/server/auth/provider.py`:
+
+- Recognize `KEYCARD_APPLICATION_CREDENTIAL_TYPE=fly_workload_identity`.
+- After the existing EKS auto-detect branch, add a `FLY_APP_NAME` auto-detect branch.
+
+### Migration path
+
+Once the TS SDK ships `discoverApplicationCredential` + `FlyWorkloadIdentity`:
+
+1. This template's `src/credentials.ts` shrinks to re-exports.
+2. `src/server.ts` can collapse to `new AuthProvider({ zoneUrl: KEYCARD_URL })` if the AuthProvider opt-in ships.
+3. Bump `@keycardai/mcp` in `package.json` to the version containing the new exports.

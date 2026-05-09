@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { mcpAuthMetadataRouter } from "@keycardai/mcp/server/auth/router";
 import { requireBearerAuth } from "@keycardai/mcp/server/auth/middleware/bearerAuth";
 import { AuthProvider } from "@keycardai/mcp/server/auth/provider";
-import { ClientSecret } from "@keycardai/mcp/server/auth/credentials";
+import { discoverApplicationCredential } from "./credentials.js";
 import { registerSearchTool } from "./tools/search.js";
 import { registerExecuteTool } from "./tools/execute.js";
 
@@ -14,31 +14,19 @@ const PORT = Number(process.env.PORT ?? 8000);
 if (!process.env.KEYCARD_URL) {
   throw new Error("KEYCARD_URL is required");
 }
-if (!process.env.KEYCARD_CLIENT_ID) {
-  throw new Error(
-    "KEYCARD_CLIENT_ID is required — run via `keycard run -- npm start` so it is brokered from the zone vault.",
-  );
-}
-if (!process.env.KEYCARD_CLIENT_SECRET) {
-  throw new Error(
-    "KEYCARD_CLIENT_SECRET is required — run via `keycard run -- npm start` so it is brokered from the zone vault.",
-  );
-}
 
 const KEYCARD_URL: string = process.env.KEYCARD_URL;
 const RESOURCE_ID =
   process.env.KEYCARD_RESOURCE_ID ?? "mcp-brokered-credentials-typescript";
 
-// AuthProvider exchanges the user's incoming bearer token for a Linear-
-// scoped token via Keycard's STS. The application credentials authenticate
-// THIS server to Keycard during the exchange — they are brokered into the
-// process by `keycard run` from zone-vault resources, never written to disk.
+const applicationCredential = discoverApplicationCredential({
+  serverName: RESOURCE_ID,
+  zoneUrl: KEYCARD_URL,
+});
+
 const authProvider = new AuthProvider({
   zoneUrl: KEYCARD_URL,
-  applicationCredential: new ClientSecret(
-    process.env.KEYCARD_CLIENT_ID,
-    process.env.KEYCARD_CLIENT_SECRET,
-  ),
+  applicationCredential,
 });
 
 function createMcpServer(): McpServer {
