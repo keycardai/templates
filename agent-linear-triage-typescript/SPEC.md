@@ -106,7 +106,7 @@ type "URL" pointing at <agent-base-url>/.well-known/jwks.json, then retry.
 
 ### 1c. Wire the proxy resource as a dependency
 
-Dependencies declare service-to-service relationships and drive the transitive consent flow — when the user authenticates to the agent's application, Keycard surfaces proxy + Linear consent because they are wired as dependencies.
+Dependencies control which resources an application can access — a way to enforce access policy without writing policies directly. When the user authenticates to the agent's application, Keycard also surfaces proxy + Linear consent because they are wired as dependencies.
 
 ```bash
 keycard agent api -X PUT \
