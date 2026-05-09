@@ -8,6 +8,10 @@ The agent (e.g. the `keycard-template-app` skill) MUST perform every step in thi
 
 Throughout, treat `<name>` as the kebab-case project name (default: `mcp-brokered-credentials-typescript`) and `<port>` as the local HTTP port (default: `8000`).
 
+## 0. How the agent uses this document
+
+**This SPEC is input for the agent, not output for the user.** The `keycard-template-app` skill is the sole renderer of user-facing narration. Read this document, extract the structured data below (primitives, edits, port, build command, smoke tests, handoff commands), and reason from it — but never quote or print any of it verbatim. If a sentence here is jargon-heavy, terse, or implementation-focused, the skill paraphrases it before showing anything to the user. The user should never be able to tell which sentence came from this SPEC.
+
 ## 0a. What this template is
 
 A proxy MCP server that sits between Claude and Linear's official MCP server. It exposes two tools — `search` (regex-search Linear's tool catalog) and `execute` (call any Linear tool by name) — and handles all the credential brokering automatically. When Claude calls one of these tools, the proxy exchanges the user's Keycard bearer token for a Linear-scoped OAuth token via RFC 8693 token exchange, then forwards the call to `https://mcp.linear.app/mcp` with that brokered token. No Linear API key is ever stored in config, `.env`, or source code — credentials are minted on the fly and scoped to the individual call.
@@ -374,8 +378,9 @@ Do NOT start the proxy server inside the agent session — Claude Code does not 
 - Do not pick a `keycard-sts` provider for the **vault** resources in 1g — STS providers do not store secret material.
 - Do not start the proxy server in the agent session.
 - Do not write Cedar or per-tool policy — v1 auth is OAuth scope-based (`mcp:tools`); per-tool authorization is out of scope.
+- Do not print SPEC phrasing such as "transitive consent", "RFC 8693", "client_assertion", "private_key_jwt", "STS provider", or "bearer token scoped to mcp:tools" in any user-facing message — translate to outcomes per §0c.
 
-## 6. Instructions for the user
+## 6. Handoff data (for the skill to render)
 
 After provisioning and verification, register the proxy in Claude's local MCP config so the user can call it after restarting Claude:
 
@@ -396,52 +401,27 @@ If `claude` is not on PATH, tell the user to add this to `~/.claude.json`:
 }
 ```
 
-Then the agent MUST print this handoff block verbatim (with `<name>` / `<port>` substituted) and stop:
+The skill renders the handoff from the following data. The agent extracts these values and passes them to the skill; the SPEC does not prescribe the user-facing wording.
 
-```
-Next steps (run these yourself — the agent cannot do them from this session):
+| Key | Value | Run-where | Reason (plain outcomes) |
+|---|---|---|---|
+| `name` | `<name>` | — | Kebab-case project name used everywhere |
+| `port` | `<port>` | — | Local HTTP port the proxy listens on |
+| `build_command` | `npm install && npm run build` | this session | Compiles the project |
+| `start_command` | `cd <name> && keycard run -- npm start` | their terminal (separate, keep open) | The wrapper hands the proxy a short-lived credential it needs to start; the proxy refuses to boot without it |
+| `expected_ready_log` | `mcp-brokered-credentials-typescript listening on http://localhost:<port>` / `Upstream: https://mcp.linear.app/mcp (brokered)` | — | Signal to wait for before proceeding |
+| `claude_register_command` | `claude mcp add --transport http <name> http://localhost:<port>/mcp` | this session (agent may execute) | Adds the proxy to Claude's MCP config |
+| `restart_command` | `keycard run -- claude` | their terminal | Claude only discovers MCP servers at startup, so a restart is required |
+| `auth_command` | `/mcp` → pick `<name>` | new agent session | Completes the OAuth flow; the first time, the user will see a Linear consent screen because this proxy depends on Linear |
+| `try_it` | `search` with a regex like `issue`; `execute` with a tool name from the results | new agent session | Confirms the proxy can call Linear on the user's behalf using a brokered credential |
 
-1. Start the MCP proxy in a SEPARATE terminal and leave it running:
+### Carried IDs for the recap
 
-     cd <name>
-     keycard run -- npm start
-
-   `keycard run` brokers KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET from
-   the zone vault into the process environment. The proxy refuses to start
-   without them — you should see the line:
-
-     mcp-brokered-credentials-typescript listening on http://localhost:<port>
-     Upstream: https://mcp.linear.app/mcp (brokered)
-
-   Keep that terminal open.
-
-2. Exit this Claude Code session and start a new one with Keycard:
-
-     keycard run -- claude
-
-   Claude only discovers MCP servers at startup, so a restart is required.
-
-3. In the new Claude session, authenticate to the proxy:
-
-     /mcp
-
-   Pick "<name>" from the list and follow the OAuth flow. Keycard will
-   prompt for Linear consent (because Linear is wired as a dependency of
-   this resource) and then mint a bearer token scoped to mcp:tools.
-
-4. Try it:
-
-     - Ask Claude to call the proxy's `search` tool with a regex like
-       "issue" — you should get back the matching subset of Linear's tool
-       catalogue.
-     - Ask Claude to call `execute` with a tool name from the search
-       results and the appropriate arguments — the proxy will call Linear
-       on your behalf using a brokered Linear token.
-```
+After §1 and §4, the agent has these values in hand: `<zone-id>`, `<linear-provider-id>`, `<linear-application-id>`, `<linear-resource-id>`, `<sts-provider-id>`, `<proxy-application-id>`, `<proxy-resource-id>`, `<vault-provider-id>`, and the verified vault URNs (`urn:<name>:client_id`, `urn:<name>:client_secret`). The skill renders them in its own voice — the SPEC does not supply a recap template. Point the user at `https://console.keycard.ai` for looking up any of the registered IDs.
 
 ## 7. What to say to the user (per-step narration)
 
-The `keycard-template-app` skill prescribes the narration style; the lines below supply the template-specific *content*. The agent SHOULD paraphrase these — do not read them verbatim — but preserve the key information in each.
+The `keycard-template-app` skill prescribes the narration style; the lines below supply the template-specific *content*. The agent MUST paraphrase these into the skill's voice — never read them verbatim and never pass through protocol jargon such as "transitive consent", "RFC 8693", "STS provider", "bearer token scoped to mcp:tools", "client_assertion", or "private_key_jwt" in user-facing copy. Use the concept introductions in §0c for first-mention framing; after that, use plain outcome language.
 
 | Step | Tell the user before you start |
 |---|---|
@@ -449,50 +429,9 @@ The `keycard-template-app` skill prescribes the narration style; the lines below
 | Step 6 (fill in) | "Filling in `.env` with your zone's OIDC issuer URL and a free local port. I'll also write `keycard.toml` with your zone/org IDs and two credential entries — those tell `keycard run` to broker the proxy's `client_id` and `client_secret` from the zone vault at startup." |
 | Step 7 (register) | "This template needs more Keycard primitives than the basic server. I'm about to register: (1) an OAuth provider for Linear so Keycard can broker tokens to `mcp.linear.app`, (2) a Linear Application + Resource so Keycard knows what it's brokering, (3) your proxy's own Application + Resource backed by the zone's STS, (4) a dependency from the proxy to Linear so the user gets a single consent screen, and (5) application credentials stored in the zone vault. Each of these builds on the one before — I'll name what I get back after each step." |
 | Step 8 (smoke-test) | "Building the project and verifying the two vault resources (`urn:<name>:client_id` and `urn:<name>:client_secret`) resolve correctly in the API. I'm not starting the server here — it needs `keycard run` to broker the secrets into the process, which can't nest inside the agent session. The actual end-to-end test happens when you run it yourself in the next step." |
-| Step 9 (handoff) | "All the Keycard-side setup is done — your zone knows about both the proxy and Linear, and the vault has the proxy's credentials. The last bit has to happen in your terminal: start the proxy with `keycard run -- npm start`, restart Claude, and authenticate via `/mcp`. The first time, you'll see a Linear consent screen — that's the transitive consent kicking in." |
+| Step 9 (handoff) | "All the Keycard-side setup is done — your zone knows about both the proxy and Linear, and the vault has the proxy's credentials. The last bit has to happen in your terminal: start the proxy with `keycard run -- npm start`, restart Claude, and authenticate via `/mcp`. The first time you'll see a Linear consent screen because this proxy depends on Linear." |
 
-## 8. Handoff recap template
-
-After printing the §6 handoff block, the agent MUST also print a human-readable summary using the IDs and values carried forward during the run. Fill in the `<placeholders>`:
-
-```
-You're set up. I started from the `mcp-brokered-credentials-typescript`
-blueprint, dropped it into `./<name>`, and got it building cleanly with
-`npm install && npm run build`. On the Keycard side, your zone (`<zone-id>`)
-now has:
-
-  Linear side:
-  - OAuth provider `<linear-provider-id>` (identifier: `https://mcp.linear.app`)
-  - Application `<linear-application-id>` (identifier: `https://mcp.linear.app/mcp`)
-  - Resource `<linear-resource-id>` (identifier: `https://mcp.linear.app/mcp`)
-
-  Proxy side:
-  - Application `<proxy-application-id>` (identifier: `<name>`)
-  - Resource `<proxy-resource-id>` (identifier: `http://localhost:<port>/mcp`)
-  - Backed by STS provider `<sts-provider-id>`
-  - Linear wired as a dependency (transitive consent enabled)
-
-  Vault:
-  - `urn:<name>:client_id` and `urn:<name>:client_secret` stored via
-    vault provider `<vault-provider-id>`
-
-The build succeeded and both vault resources resolve in the API.
-
-What's left for you:
-
-  1. Start the proxy with `cd <name> && keycard run -- npm start`
-     (`keycard run` brokers the client_id/secret from the vault)
-  2. Restart Claude with `keycard run -- claude`
-  3. Run `/mcp`, pick `<name>`, and follow the OAuth flow
-     (you'll see a Linear consent screen the first time —
-     that's the dependency/transitive-consent wiring at work)
-  4. Try `search` and `execute` (see §9 below for prompts)
-
-If anything looks off, the registered IDs above are what to check in
-https://console.keycard.ai.
-```
-
-## 9. Things to try once it's running
+## 8. Things to try once it's running
 
 The agent SHOULD print these as concrete suggestions after the handoff recap, so the user knows what to do first:
 
@@ -501,14 +440,16 @@ The agent SHOULD print these as concrete suggestions after the handoff recap, so
 3. **Watch the consent flow.** The very first time you authenticate via `/mcp`, Keycard shows a consent screen that includes both the proxy *and* Linear (because Linear is wired as a dependency). On subsequent sessions, consent is remembered and the flow is instant.
 4. **Inspect the brokering.** Check the proxy's terminal output — you'll see the token-exchange request to Keycard's STS each time `search` or `execute` is called. The brokered Linear token is never logged (by design), but you can see the exchange happening.
 
-## 10. Where to extend
+## 9. Where to extend
 
 - **Swap the upstream.** The Linear MCP URL is defined in `src/upstream.ts` as `LINEAR_RESOURCE`. To proxy a different OAuth-MCP server (e.g. GitHub, Slack), change this constant and register the new upstream's provider/application/resource in Keycard following the same pattern as §1a–§1c.
 - **Change what gets proxied.** `src/tools/search.ts` filters the upstream tool catalog by regex; `src/tools/execute.ts` forwards a single tool call. You can add tools that call multiple upstream tools, aggregate results, or transform the response before returning it.
 - **Understand the token exchange.** `src/credentials.ts` handles credential discovery — it finds `KEYCARD_CLIENT_ID`/`KEYCARD_CLIENT_SECRET` (brokered by `keycard run`) and builds the `ApplicationCredential` used for RFC 8693 token exchange. `src/upstream.ts` then calls `authProvider.exchangeTokens(subjectToken, LINEAR_RESOURCE)` to get a Linear-scoped token per request. This is the core brokering pattern you'd reuse for any upstream.
 - **Add a direct tool (no upstream).** You can also add tools that don't fan out — just create a file in `src/tools/` following the `hello` pattern from the base template. The proxy and direct tools coexist fine.
 
-## 11. Common gotchas the agent should pre-empt
+## 10. Common gotchas the agent should pre-empt
+
+Smoke-test failure messages should be surfaced as verbatim tool/server output; any framing around them is the skill's voice, never quoted from this section.
 
 When one of these fails, the agent SHOULD surface the matching diagnostic verbatim rather than printing a generic error.
 

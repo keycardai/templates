@@ -4,6 +4,10 @@
 
 This template is a plain Node/Express MCP server. It runs as-is, but it has **no** authorization until Keycard is provisioned with the primitives below. An agent (e.g. the `keycard-template-app` skill) MUST perform the steps in this document before declaring the project ready.
 
+## 0. How the agent uses this document
+
+**This SPEC is input for the agent, not output for the user.** The `keycard-template-app` skill is the sole renderer of user-facing narration. Read this document, extract the structured data below (primitives, edits, port, build command, smoke tests, handoff commands), and reason from it — but never quote or print any of it verbatim. If a sentence here is jargon-heavy, terse, or implementation-focused, the skill paraphrases it before showing anything to the user. The user should never be able to tell which sentence came from this SPEC.
+
 ## 0a. What this template is
 
 A working MCP server built on Express and the official MCP TypeScript SDK, protected by Keycard's OAuth 2.1 flow. It ships one tool — `hello` — that takes a name and returns a greeting. The point isn't the tool itself; it's the full protocol plumbing around it: OAuth metadata endpoints (`.well-known/oauth-protected-resource`, `.well-known/oauth-authorization-server`), bearer-token middleware that validates Keycard-minted JWTs, and Streamable HTTP transport. Once scaffolded, you have a running example you can extend by dropping new tool files into `src/tools/`.
@@ -155,7 +159,7 @@ The agent MUST stop the smoke-test process before handing off. A stray process h
 - Do not write Cedar or per-tool policy — v1 auth is OAuth scope-based (`mcp:tools`); per-tool authorization is out of scope for this template.
 - Do not add credentials the user did not ask for.
 
-## 5. Instructions for the user
+## 5. Handoff data (for the skill to render)
 
 After provisioning and verification, the agent MUST register the server in Claude's local MCP config:
 
@@ -178,37 +182,25 @@ If `claude` is not on PATH, tell the user to add this to `~/.claude.json`:
 }
 ```
 
-Then the agent MUST print this handoff block verbatim (with `<name>` / `<port>` substituted) and stop:
+The skill renders the handoff from the following data. The agent extracts these values and passes them to the skill; the SPEC does not prescribe the user-facing wording.
 
-```
-Next steps (run these yourself — the agent cannot do them from this session):
+| Key | Value | Run-where | Reason (plain outcomes) |
+|---|---|---|---|
+| `name` | `<name>` | — | Kebab-case project name used everywhere |
+| `port` | `<port>` | — | Local HTTP port the server listens on |
+| `build_command` | `npm install && npm run build` | this session | Compiles the project |
+| `start_command` | `cd <name> && npm start` | their terminal (separate, keep open) | The server must be reachable at `http://localhost:<port>/mcp` for the remaining steps to work |
+| `claude_register_command` | `claude mcp add --transport http <name> http://localhost:<port>/mcp` | this session (agent may execute) | Adds the server to Claude's MCP config |
+| `restart_command` | `keycard run -- claude` | their terminal | Claude only discovers MCP servers at startup, so a restart is required |
+| `auth_command` | `/mcp` → pick `<name>` | new agent session | Completes the OAuth flow so Keycard issues a credential for the resource |
 
-1. Start the MCP server in a SEPARATE terminal and leave it running:
+### Carried IDs for the recap
 
-     cd <name>
-     npm start
-
-   Keep that terminal open. The server must be reachable on
-   http://localhost:<port>/mcp for the rest of these steps to work.
-
-2. Exit this Claude Code session and start a new one with Keycard:
-
-     keycard run -- claude
-
-   Claude only discovers MCP servers at startup, so a restart is required.
-
-3. In the new Claude session, authenticate to the MCP server:
-
-     /mcp
-
-   Pick "<name>" from the list and follow the OAuth flow. Keycard will mint
-   a bearer token scoped to mcp:tools and Claude will start calling the
-   `hello` tool through it.
-```
+After §1 and §3, the agent has these values in hand: `<zone-id>`, `<application-id>`, `<resource-id>`, `<provider-id>` (STS), and the verified endpoints (`/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`). The skill renders them in its own voice — the SPEC does not supply a recap template. Point the user at `https://console.keycard.ai` for looking up any of the registered IDs.
 
 ## 6. What to say to the user (per-step narration)
 
-The `keycard-template-app` skill prescribes the narration style; the lines below supply the template-specific *content*. The agent SHOULD paraphrase these — do not read them verbatim — but preserve the key information in each.
+The `keycard-template-app` skill prescribes the narration style; the lines below supply the template-specific *content*. The agent MUST paraphrase these into the skill's voice — never read them verbatim and never pass through protocol jargon such as "STS provider", "bearer token scoped to mcp:tools", "OIDC issuer", "RFC 8693", or "client_assertion" in user-facing copy. Use the concept introductions in §0c for first-mention framing; after that, use plain outcome language.
 
 | Step | Tell the user before you start |
 |---|---|
@@ -218,35 +210,7 @@ The `keycard-template-app` skill prescribes the narration style; the lines below
 | Step 8 (smoke-test) | "Booting the server for a few seconds to confirm the OAuth metadata endpoints respond with real JSON. If `.well-known/oauth-protected-resource` comes back happy, the OIDC wiring is correct. I'll shut it down again so the port stays free for you." |
 | Step 9 (handoff) | "All the Keycard-side setup is done. The last bit has to happen in your terminal — start the server, restart Claude so it discovers the new MCP entry, and authenticate via `/mcp`." |
 
-## 7. Handoff recap template
-
-After printing the §5 handoff block, the agent MUST also print a human-readable summary using the IDs and values carried forward during the run. Fill in the `<placeholders>`:
-
-```
-You're set up. I started from the `mcp-server-typescript-express` blueprint,
-dropped it into `./<name>`, and got it building cleanly with `npm install &&
-npm run build`. On the Keycard side, your zone (`<zone-id>`) now has:
-
-  - Application `<application-id>` (identifier: `<name>`)
-  - Resource `<resource-id>` (identifier: `http://localhost:<port>/mcp`)
-  - Backed by STS provider `<sts-provider-id>`
-
-The smoke-test confirmed both OAuth metadata endpoints
-(`/.well-known/oauth-protected-resource` and
-`/.well-known/oauth-authorization-server`) return valid JSON.
-
-What's left for you:
-
-  1. Start the server in a separate terminal (`cd <name> && npm start`)
-  2. Restart Claude with `keycard run -- claude`
-  3. Run `/mcp` in the new session, pick `<name>`, and complete the OAuth flow
-
-Once those are done you can call the `hello` tool — and any others you
-add — from Claude like any other MCP tool. If anything looks off, check the
-registered IDs above in https://console.keycard.ai.
-```
-
-## 8. Things to try once it's running
+## 7. Things to try once it's running
 
 The agent SHOULD print these as concrete suggestions after the handoff recap, so the user knows what to do first:
 
@@ -254,13 +218,15 @@ The agent SHOULD print these as concrete suggestions after the handoff recap, so
 2. **List the server's tools.** Ask Claude: *"What tools does the `<name>` server expose?"* Claude will call `tools/list` on the MCP transport and show you the `hello` tool's name, description, and input schema.
 3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource` in a browser — you'll see the JSON document the MCP SDK uses to discover your Keycard zone's authorization server, including the `resource` identifier and `scopes_supported`.
 
-## 9. Where to extend
+## 8. Where to extend
 
 - **Add a new tool.** Create a file in `src/tools/` following the pattern in `src/tools/hello.ts`: export a `register<ToolName>Tool(server: McpServer)` function that calls `server.tool(...)` with a name, description, Zod input schema, and handler. Then import and call it in `src/server.ts` inside `createMcpServer()` — that's the only wiring needed.
 - **Change the server itself.** `src/server.ts` is the Express app. The OAuth metadata router (`mcpAuthMetadataRouter`) and bearer-auth middleware (`requireBearerAuth`) are imported from `@keycardai/mcp` — you shouldn't need to touch those unless you're changing scopes or adding a second resource.
 - **Add downstream credentials.** If a new tool needs to call a third-party API (e.g. GitHub, Slack), use the `keycard-discover-entities` skill to find the right Keycard entity URI and `keycard-upsert-config` to add a `[[credentials.default]]` entry in `keycard.toml`. The credential will be brokered into the process by `keycard run`.
 
-## 10. Common gotchas the agent should pre-empt
+## 9. Common gotchas the agent should pre-empt
+
+Smoke-test failure messages should be surfaced as verbatim tool/server output; any framing around them is the skill's voice, never quoted from this section.
 
 When one of these fails, the agent SHOULD surface the matching diagnostic verbatim rather than printing a generic error.
 
