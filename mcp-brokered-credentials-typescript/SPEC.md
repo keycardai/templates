@@ -1,8 +1,10 @@
 # SPEC — mcp-brokered-credentials-typescript
 
-> An MCP proxy that calls Linear's MCP server on your behalf — Keycard brokers a Linear-scoped OAuth token at call time via RFC 8693, so no Linear API key ever touches your config.
+> MCP proxy to Linear with Keycard-brokered credentials — no static API keys, just OAuth token exchange at call time.
 
-This template is an MCP **proxy** server: it exposes two tools (`search`, `execute`) that fan out to the official Linear MCP server at `https://mcp.linear.app/mcp`. The proxy authenticates to Linear using a token brokered by Keycard via RFC 8693 token exchange — the user's bearer token is exchanged for a Linear-scoped token at call time, no static API keys live in the server's config.
+An MCP **proxy** server that sits between Claude and Linear's official MCP server at `https://mcp.linear.app/mcp`. It exposes two tools — `search` (regex-search Linear's tool catalog) and `execute` (call any Linear tool by name). When Claude calls either tool, the proxy exchanges the user's Keycard bearer token for a Linear-scoped OAuth token via RFC 8693, then forwards the call upstream. Credentials are minted per-request — no API keys are stored anywhere.
+
+Pick this template to see Keycard's brokered-credential flow in action, or as a pattern for proxying any OAuth-protected MCP server (swap Linear's URL and the same plumbing works for any upstream supporting OAuth 2.1 + dynamic client registration).
 
 The agent (e.g. the `keycard-template-app` skill) MUST perform every step in this document before declaring the project ready. The `keycard run -- npm start` workflow at the end depends on every primitive being in place.
 
@@ -10,17 +12,7 @@ Throughout, treat `<name>` as the kebab-case project name (default: `mcp-brokere
 
 ## 0. How the agent uses this document
 
-**This SPEC is input for the agent, not output for the user.** The `keycard-template-app` skill is the sole renderer of user-facing narration. Read this document, extract the structured data below (primitives, edits, port, build command, smoke tests, handoff commands), and reason from it — but never quote or print any of it verbatim. If a sentence here is jargon-heavy, terse, or implementation-focused, the skill paraphrases it before showing anything to the user. The user should never be able to tell which sentence came from this SPEC.
-
-## 0a. What this template is
-
-A proxy MCP server that sits between Claude and Linear's official MCP server. It exposes two tools — `search` (regex-search Linear's tool catalog) and `execute` (call any Linear tool by name) — and handles all the credential brokering automatically. When Claude calls one of these tools, the proxy exchanges the user's Keycard bearer token for a Linear-scoped OAuth token via RFC 8693 token exchange, then forwards the call to `https://mcp.linear.app/mcp` with that brokered token. No Linear API key is ever stored in config, `.env`, or source code — credentials are minted on the fly and scoped to the individual call.
-
-This is the template to pick when you want to see Keycard's brokered-credential flow in action, or when you want a pattern for building proxies that fan out to other OAuth-protected MCP servers (swap out Linear's URL and the same plumbing works for any upstream that supports OAuth 2.1 + dynamic client registration).
-
-## 0b. One-line summary (for the template picker)
-
-MCP proxy to Linear with Keycard-brokered credentials — no API keys, just OAuth token exchange at call time.
+**This SPEC is input for the agent, not output for the user.** The skill is the sole renderer of user-facing narration. Read this document, extract the structured data below (primitives, edits, port, build command, smoke tests, handoff commands), and reason from it — but never quote or print any of it verbatim. If a sentence here is jargon-heavy, terse, or implementation-focused, the skill paraphrases it before showing anything to the user. 
 
 ## 0c. Concepts the agent should introduce
 
@@ -33,11 +25,11 @@ Introduce each concept **once**, the first time it appears during narration. Use
 | 3 | OAuth provider | §1a (Linear provider) | A credential provider that can mint or broker OAuth tokens for a third-party service — here it handles the OAuth 2.1 + dynamic client registration flow that Linear's MCP server expects. | https://docs.keycard.ai/platform/concepts/providers/ |
 | 4 | Application | §1b (Linear app) | A software actor registered with Keycard — the proxy and Linear each get one, so Keycard knows who is asking for credentials and who is granting them. | https://docs.keycard.ai/platform/concepts/applications/ |
 | 5 | Resource | §1c (Linear resource) | The protected API your application calls — the resource identifier must match the URL exactly so Keycard's STS knows which tokens to issue. | https://docs.keycard.ai/platform/concepts/resources/ |
-| 6 | Dependency | §1f-bis (wiring) | A declared relationship that controls which resources an application can access — a simpler way to enforce access policy without writing policies directly. Here it also means the user sees one consent screen covering both the proxy and Linear. | https://docs.keycard.ai/platform/concepts/applications/#dependencies |
-| 7 | STS provider | §1d (proxy provider) | The credential source built into every zone that mints OAuth access tokens for resources within the zone — it's what authenticates users to your proxy. | https://docs.keycard.ai/platform/concepts/providers/ |
+| 6 | Dependency | §1f-bis (wiring) | A declared relationship that controls which resources an application can access — a simpler way to enforce access policy without writing policies directly.  | https://docs.keycard.ai/platform/concepts/applications/#dependencies |
+| 7 | STS provider | §1d (proxy provider) | The credential source built into every zone that mints OAuth access tokens for resources within the zone. | https://docs.keycard.ai/platform/concepts/providers/ |
 | 8 | Vault provider | §1g (credentials) | A provider that stores static secrets (like the proxy's `client_id`/`client_secret`) and delivers them at runtime via `keycard run` — no secrets in files. | https://docs.keycard.ai/platform/concepts/providers/ |
-| 9 | Application credentials | §1g (credentials) | The `client_id`/`client_secret` pair the proxy uses to authenticate its own token-exchange calls to Keycard's STS — stored in the vault, brokered into the process by `keycard run`. | https://docs.keycard.ai/platform/concepts/applications/ |
-| 10 | OIDC issuer | §2 (KEYCARD_URL) | The URL apps use to discover Keycard's signing keys and token endpoints; for your zone it's `https://<zone-id>.<env-domain>`. | https://docs.keycard.ai/platform/architecture/standards-and-protocols/ |
+| 9 | Application credentials | §1g (credentials) | The credential the proxy uses to authenticate its own token-exchange calls to Keycard's STS. | https://docs.keycard.ai/platform/concepts/applications/ |
+| 10 | Keycard issuer | §2 (KEYCARD_URL) | The URL apps use to discover Keycard's signing keys and token endpoints; for your zone it's `https://<zone-id>.<env-domain>`. | https://docs.keycard.ai/platform/architecture/standards-and-protocols/ |
 
 ## 1. Required Keycard primitives
 
@@ -45,11 +37,11 @@ The agent MUST ensure every primitive below exists in the active Keycard environ
 
 Background reading on the domain model the steps below build:
 
-- [Platform Concepts](https://docs.keycard.ai/platform/) — top-level overview
-- [Zones](https://docs.keycard.ai/platform/concepts/zones/) — security domain that owns the STS, providers, applications, and resources used here
-- [Providers](https://docs.keycard.ai/platform/concepts/providers/) — issue authentication and access credentials (used in 1a, 1d)
-- [Applications](https://docs.keycard.ai/platform/concepts/applications/) — software actors that access resources (used in 1b, 1e)
-- [Resources](https://docs.keycard.ai/platform/concepts/resources/) — protected APIs / MCP servers / databases (used in 1c, 1f)
+- [Platform Concepts](https://docs.keycard.ai/platform/)
+- [Zones](https://docs.keycard.ai/platform/concepts/zones/)
+- [Providers](https://docs.keycard.ai/platform/concepts/providers/)
+- [Applications](https://docs.keycard.ai/platform/concepts/applications/)
+- [Resources](https://docs.keycard.ai/platform/concepts/resources/)
 
 ### 1a. Linear credential provider
 
@@ -122,7 +114,7 @@ Discover the `keycard-sts` provider — same step as the base template:
 keycard agent api /zones/<zone-id>/providers --org <org-id>
 ```
 
-Pick the entry with `type = "keycard-sts"`. Do NOT pick a `keycard-vault` provider for the proxy resource — vault providers cannot mint OAuth tokens for an MCP Resource.
+Pick the entry with `type = "keycard-sts"` (see gotcha 1 if unsure about provider type selection).
 
 Carry the result forward as `<sts-provider-id>`.
 
@@ -160,9 +152,9 @@ Carry the result forward as `<proxy-resource-id>`.
 
 ### 1f-bis. Wire Linear as a dependency of the proxy application
 
-See [Applications → Dependencies](https://docs.keycard.ai/platform/concepts/applications/#dependencies). Dependencies control which resources an application can access — a way to enforce access policy without writing policies directly. When the user authenticates to the proxy, Keycard also surfaces Linear consent in the same screen because Linear is wired as a dependency here.
+See [Applications → Dependencies](https://docs.keycard.ai/platform/concepts/applications/#dependencies). Dependencies control which resources an application can access — a way to enforce access policy without writing policies directly.
 
-Dependencies live on the **application**, not the resource. The management API accepts only `PUT /applications/<app-id>/dependencies/<resource-id>` with an empty JSON body — `dependencies: [...]` on a resource POST/PATCH is silently dropped, and there is no `POST .../dependencies` collection route.
+Dependencies live on the **application**, not the resource. Use `PUT /applications/<app-id>/dependencies/<resource-id>` with an empty JSON body (see gotcha 2 for why other routes silently fail).
 
 ```bash
 keycard agent api -X PUT \
@@ -274,7 +266,7 @@ PORT=<port>
 
 `KEYCARD_URL` is read by the MCP server itself (the proxy needs it to call Keycard's STS). `package.json` loads `.env` via `node --env-file-if-exists=.env`, so no dotenv dependency is required.
 
-`.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — those are brokered into the process by `keycard run` from the vault resources created in step 1g. Putting them here defeats the entire point of the template.
+`.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — they are brokered at runtime by `keycard run` (see gotcha 5).
 
 ### keycard.toml
 
@@ -304,11 +296,11 @@ resource = "urn:<name>:client_secret"
 
 Substitute `<name>` for the kebab-case project name so the URNs line up exactly with what `provision-credentials.sh` created.
 
-Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `keycard.toml` — no `[project]`, no `[server]`, no `schema_version`, no `[zone].url`. The MCP server reads its runtime config (`KEYCARD_URL`, `PORT`) from `.env`, not from `keycard.toml`. `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET` are never written to either file — they are brokered from the vault by `keycard run`.
+Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `keycard.toml` — the MCP server reads runtime config (`KEYCARD_URL`, `PORT`) from `.env`. See gotchas 4 and 5 for common mistakes with this file.
 
 ## 3. Runtime credential discovery
 
-The proxy no longer hard-codes `ClientSecret` as the only credential provider. At startup, `src/credentials.ts` calls `discoverApplicationCredential()` which probes the environment and returns the first matching `ApplicationCredential`:
+ At startup, `src/credentials.ts` calls `discoverApplicationCredential()` which probes the environment and returns the first matching `ApplicationCredential`:
 
 | Priority | Env signal | Provider | Typical environment |
 |---|---|---|---|
@@ -347,7 +339,7 @@ The build step does not need brokered credentials, only the runtime does. Verify
 npm install && npm run build
 ```
 
-Then a non-interactive smoke test that the two vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run -- node -e ...` here — `keycard run` requires an interactive TTY and refuses to nest inside the agent's own `keycard run` session, costing the agent minutes of debugging for no signal beyond what the API check below already gives. The actual brokered hydration is verified the first time the user runs `keycard run -- npm start` in §6.
+Then a non-interactive smoke test that the two vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run` here — see gotcha 3 in §10. The actual brokered hydration is verified when the user runs `keycard run -- npm start` in §6.
 
 ```bash
 for urn in "urn:<name>:client_id" "urn:<name>:client_secret"; do
@@ -364,19 +356,16 @@ Both lookups MUST succeed and return a non-null `credential_provider_id`. If eit
 - a `[[credentials.default]]` entry pointing at the wrong URN — re-check the `<name>` substitution in the appended blocks
 - `keycard.toml` has unresolved `<org-id>` / `<zone-id>` placeholders, or is missing `[org]` / `[zone]` blocks entirely — `keycard run` will fail to authenticate when the user runs the proxy
 
-Do NOT start the proxy server inside the agent session — Claude Code does not hot-reload MCP config, and the proxy must be running in a long-lived terminal anyway. The user starts it themselves in §6.
+Do NOT start the proxy server inside the agent session (see gotcha 3). The user starts it themselves in §6.
 
-## 5. What the agent MUST NOT do
+## 5. Agent guardrails
 
-- Do not write `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` to `.env`, `keycard.toml`, source code, or any file. Their entire role in this template is to demonstrate broker-only secret delivery.
-- Do not add `[project]`, `[server]`, `schema_version`, or any `[zone].url` field to `keycard.toml`. The shipped file is intentionally minimal — only `[org].id`, `[zone].id`, and the two `[[credentials.default]]` blocks belong there. Other server-side config goes in `.env`.
-- Do not put `${KEYCARD_URL}` (or any `${...}` interpolation) anywhere in `keycard.toml` — TOML does not expand env vars.
+Quick-reference prohibitions. §10 has diagnostics for the ones that commonly go wrong at runtime.
+
 - Do not modify the user's pre-existing `keycard.toml` outside the project directory. The project-local one is bootstrapped from it but lives independently.
 - Do not run the underlying `keycard agent api .../credentials` call yourself — always invoke `scripts/provision-credentials.sh`. The credential payload must not appear in any tool-call transcript.
 - Do not commit `.env`, `KEYCARD_URL`, or anything containing the Keycard ID.
-- Do not pick a `keycard-vault` provider for the **proxy** resource (1f) — vault providers cannot mint OAuth tokens for an MCP Resource.
-- Do not pick a `keycard-sts` provider for the **vault** resources in 1g — STS providers do not store secret material.
-- Do not start the proxy server in the agent session.
+- Do not add `[project]`, `[server]`, `schema_version`, or any `[zone].url` field to `keycard.toml`. The shipped file is intentionally minimal — only `[org].id`, `[zone].id`, and the two `[[credentials.default]]` blocks belong there.
 - Do not write Cedar or per-tool policy — v1 auth is OAuth scope-based (`mcp:tools`); per-tool authorization is out of scope.
 - Do not print SPEC phrasing such as "transitive consent", "RFC 8693", "client_assertion", "private_key_jwt", "STS provider", or "bearer token scoped to mcp:tools" in any user-facing message — translate to outcomes per §0c.
 
@@ -421,7 +410,7 @@ After §1 and §4, the agent has these values in hand: `<zone-id>`, `<linear-pro
 
 ## 7. What to say to the user (per-step narration)
 
-The `keycard-template-app` skill prescribes the narration style; the lines below supply the template-specific *content*. The agent MUST paraphrase these into the skill's voice — never read them verbatim and never pass through protocol jargon such as "transitive consent", "RFC 8693", "STS provider", "bearer token scoped to mcp:tools", "client_assertion", or "private_key_jwt" in user-facing copy. Use the concept introductions in §0c for first-mention framing; after that, use plain outcome language.
+The `keycard-template-app` skill prescribes the narration style; the lines below supply the template-specific *content*. Paraphrase into the skill's voice — never read verbatim, and follow the jargon prohibition in §5. Use §0c for first-mention framing; after that, use plain outcome language.
 
 | Step | Tell the user before you start |
 |---|---|
@@ -429,29 +418,27 @@ The `keycard-template-app` skill prescribes the narration style; the lines below
 | Step 6 (fill in) | "Filling in `.env` with your zone's OIDC issuer URL and a free local port. I'll also write `keycard.toml` with your zone/org IDs and two credential entries — those tell `keycard run` to broker the proxy's `client_id` and `client_secret` from the zone vault at startup." |
 | Step 7 (register) | "This template needs more Keycard primitives than the basic server. I'm about to register: (1) an OAuth provider for Linear so Keycard can broker tokens to `mcp.linear.app`, (2) a Linear Application + Resource so Keycard knows what it's brokering, (3) your proxy's own Application + Resource backed by the zone's STS, (4) a dependency from the proxy to Linear — dependencies control which resources an application can access, so you don't need to write policies yourself, and (5) application credentials stored in the zone vault. Each of these builds on the one before — I'll name what I get back after each step." |
 | Step 8 (smoke-test) | "Building the project and verifying the two vault resources (`urn:<name>:client_id` and `urn:<name>:client_secret`) resolve correctly in the API. I'm not starting the server here — it needs `keycard run` to broker the secrets into the process, which can't nest inside the agent session. The actual end-to-end test happens when you run it yourself in the next step." |
-| Step 9 (handoff) | "All the Keycard-side setup is done — your zone knows about both the proxy and Linear, and the vault has the proxy's credentials. The last bit has to happen in your terminal: start the proxy with `keycard run -- npm start`, restart Claude, and authenticate via `/mcp`. The first time you'll see a Linear consent screen because this proxy depends on Linear." |
+| Step 9 (handoff) | "All the Keycard-side setup is done — your zone knows about both the proxy and Linear, and the vault has the proxy's credentials. The last bit has to happen in your terminal: start the proxy with `keycard run -- npm start`, restart Claude, and authenticate via `/mcp`." |
 
 ## 8. Things to try once it's running
 
 The agent SHOULD print these as concrete suggestions after the handoff recap, so the user knows what to do first:
 
-1. **Search Linear's tool catalog.** Ask Claude: *"Use `search` with the pattern `issue`."* The proxy will list every Linear MCP tool whose name or description matches — you'll see tools like `list_issues`, `create_issue`, `update_issue`, etc., each with its full input schema.
-2. **Execute a Linear tool.** Pick a tool name from the search results (e.g. `list_issues`) and ask Claude: *"Use `execute` to call `list_issues` with `{}`."* The proxy brokers a fresh Linear-scoped token and calls Linear on your behalf — no API key anywhere.
-3. **Watch the consent flow.** The very first time you authenticate via `/mcp`, Keycard shows a consent screen that includes both the proxy *and* Linear — the dependency wiring is what grants the proxy access to Linear's resource, and the consent screen reflects that. On subsequent sessions, consent is remembered and the flow is instant.
-4. **Inspect the brokering.** Check the proxy's terminal output — you'll see the token-exchange request to Keycard's STS each time `search` or `execute` is called. The brokered Linear token is never logged (by design), but you can see the exchange happening.
+1. **Search Linear's tool catalog.** Ask Claude: *"Use `search` with the pattern `issue`."* — lists matching Linear MCP tools with their input schemas.
+2. **Execute a Linear tool.** Pick a tool from the search results (e.g. `list_issues`) and ask Claude: *"Use `execute` to call `list_issues` with `{}`."*
+3. **Watch the consent flow.** The first `/mcp` authentication surfaces both the proxy and Linear consent (because of the dependency wiring in §1f-bis). Subsequent sessions skip consent.
+4. **Inspect the brokering.** Check the proxy's terminal output — each `search`/`execute` call triggers a visible token-exchange request. The brokered Linear token is never logged (by design).
 
 ## 9. Where to extend
 
 - **Swap the upstream.** The Linear MCP URL is defined in `src/upstream.ts` as `LINEAR_RESOURCE`. To proxy a different OAuth-MCP server (e.g. GitHub, Slack), change this constant and register the new upstream's provider/application/resource in Keycard following the same pattern as §1a–§1c.
 - **Change what gets proxied.** `src/tools/search.ts` filters the upstream tool catalog by regex; `src/tools/execute.ts` forwards a single tool call. You can add tools that call multiple upstream tools, aggregate results, or transform the response before returning it.
-- **Understand the token exchange.** `src/credentials.ts` handles credential discovery — it finds `KEYCARD_CLIENT_ID`/`KEYCARD_CLIENT_SECRET` (brokered by `keycard run`) and builds the `ApplicationCredential` used for RFC 8693 token exchange. `src/upstream.ts` then calls `authProvider.exchangeTokens(subjectToken, LINEAR_RESOURCE)` to get a Linear-scoped token per request. This is the core brokering pattern you'd reuse for any upstream.
+- **Understand the token exchange.** `src/credentials.ts` handles credential discovery (see §3 for the priority table). `src/upstream.ts` calls `authProvider.exchangeTokens(subjectToken, LINEAR_RESOURCE)` to get a Linear-scoped token per request — this is the core brokering pattern you'd reuse for any upstream.
 - **Add a direct tool (no upstream).** You can also add tools that don't fan out — just create a file in `src/tools/` following the `hello` pattern from the base template. The proxy and direct tools coexist fine.
 
 ## 10. Common gotchas the agent should pre-empt
 
-Smoke-test failure messages should be surfaced as verbatim tool/server output; any framing around them is the skill's voice, never quoted from this section.
-
-When one of these fails, the agent SHOULD surface the matching diagnostic verbatim rather than printing a generic error.
+When one of these fails, surface the matching diagnostic verbatim rather than printing a generic error. Any framing around diagnostics is the skill's voice, never quoted from this section.
 
 1. **Vault provider vs. STS provider mix-up.** The proxy *resource* (§1f) MUST use the `keycard-sts` provider — it mints OAuth tokens for the `/mcp` endpoint. The vault *resources* in §1g MUST use a `keycard-vault` provider — they store the proxy's `client_id`/`client_secret`. Swapping them causes `invalid_target` on one side and "no secret material" on the other. Fix: check each resource's `credential_provider_id` in `https://console.keycard.ai → Resources`.
 
