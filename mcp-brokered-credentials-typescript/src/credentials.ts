@@ -1,4 +1,4 @@
-import * as fs from "node:fs";
+import * as http from "node:http";
 import { ClientSecret } from "@keycardai/mcp/server/auth/credentials";
 import { WebIdentity, EKSWorkloadIdentity } from "@keycardai/mcp/server/auth/credentials";
 import type { ApplicationCredential } from "@keycardai/mcp/server/auth/credentials";
@@ -13,34 +13,26 @@ const ACCESS_TOKEN_TYPE =
 
 // ── Fly workload-identity credential ────────────────────────────────
 
-const FLY_METADATA_URL =
-  "http://_api.internal:4280/v1/tokens/oidc";
+// Fly Machines expose the local API as a Unix socket at /.fly/api.
+// OIDC tokens are minted by POSTing to /v1/tokens/oidc over that socket.
+// See https://fly.io/docs/security/openid-connect/.
+const FLY_API_SOCKET = "/.fly/api";
+const FLY_OIDC_PATH = "/v1/tokens/oidc";
 
 interface FlyWorkloadIdentityOptions {
   audience: string;
-  metadataUrl?: string;
+  socketPath?: string;
 }
 
-/**
- * Fly.io machine OIDC credential provider.
- *
- * Inside a Fly Machine the platform exposes an internal metadata endpoint
- * that mints short-lived OIDC tokens (`POST /v1/tokens/oidc`). The token
- * is used as a client assertion in RFC 8693 token-exchange requests —
- * the same shape as EKSWorkloadIdentity.
- *
- * The OIDC provider + application-credential binding must already exist
- * in Keycard (see deploy-fly.md §4–§5).
- */
 export class FlyWorkloadIdentity implements ApplicationCredential {
   #audience: string;
-  #metadataUrl: string;
+  #socketPath: string;
   #cachedToken: string | null = null;
   #cachedExp = 0;
 
   constructor(options: FlyWorkloadIdentityOptions) {
     this.#audience = options.audience;
-    this.#metadataUrl = options.metadataUrl ?? FLY_METADATA_URL;
+    this.#socketPath = options.socketPath ?? FLY_API_SOCKET;
   }
 
   getAuth(): null {
@@ -66,24 +58,17 @@ export class FlyWorkloadIdentity implements ApplicationCredential {
       return this.#cachedToken;
     }
 
-    const apiToken = this.#readMachineToken();
-    const res = await fetch(this.#metadataUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ aud: this.#audience }),
-    });
+    const { status, body } = await this.#postOverUnixSocket(
+      JSON.stringify({ aud: this.#audience }),
+    );
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
+    if (status < 200 || status >= 300) {
       throw new Error(
-        `FlyWorkloadIdentity: OIDC token request failed (HTTP ${res.status}): ${body}`,
+        `FlyWorkloadIdentity: OIDC token request failed (HTTP ${status}): ${body}`,
       );
     }
 
-    const token = (await res.text()).trim();
+    const token = body.trim();
     if (!token) {
       throw new Error("FlyWorkloadIdentity: metadata endpoint returned empty token");
     }
@@ -95,18 +80,43 @@ export class FlyWorkloadIdentity implements ApplicationCredential {
     return token;
   }
 
-  #readMachineToken(): string {
-    const envToken = process.env.FLY_API_TOKEN;
-    if (envToken) return envToken;
-
-    try {
-      return fs.readFileSync("/.fly/api", "utf-8").trim();
-    } catch {
-      throw new Error(
-        "FlyWorkloadIdentity: could not read machine token. " +
-          "Expected FLY_API_TOKEN env var or /.fly/api file.",
+  #postOverUnixSocket(
+    payload: string,
+  ): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath: this.#socketPath,
+          method: "POST",
+          path: FLY_OIDC_PATH,
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+            Host: "localhost",
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c) => chunks.push(c));
+          res.on("end", () =>
+            resolve({
+              status: res.statusCode ?? 0,
+              body: Buffer.concat(chunks).toString("utf-8"),
+            }),
+          );
+        },
       );
-    }
+      req.on("error", (err) => {
+        const msg =
+          (err as NodeJS.ErrnoException).code === "ENOENT"
+            ? `FlyWorkloadIdentity: Fly API socket not found at ${this.#socketPath}. ` +
+              "Is this running inside a Fly Machine?"
+            : `FlyWorkloadIdentity: request to ${this.#socketPath} failed: ${err.message}`;
+        reject(new Error(msg));
+      });
+      req.write(payload);
+      req.end();
+    });
   }
 
   /** Decode the JWT payload to extract `exp` without verifying the signature. */

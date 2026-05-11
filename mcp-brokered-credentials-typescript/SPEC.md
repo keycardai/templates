@@ -324,10 +324,9 @@ Any other value throws.
 
 `FlyWorkloadIdentity` implements the `ApplicationCredential` interface for Fly.io machines. On each token-exchange call it:
 
-1. Reads the machine API token from `FLY_API_TOKEN` env var or `/.fly/api` file.
-2. Fetches a short-lived OIDC JWT from `POST http://_api.internal:4280/v1/tokens/oidc` with `{ "aud": "<KEYCARD_URL>" }`.
-3. Caches the token until 60 seconds before its `exp` claim.
-4. Returns the OIDC token as a `client_assertion` (type `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`), identical in shape to `EKSWorkloadIdentity`.
+1. POSTs `{ "aud": "<KEYCARD_URL>" }` to `/v1/tokens/oidc` over the `/.fly/api` Unix socket (the local machine API exposed by Fly). Trust is established by access to the socket — no separate bearer token is needed.
+2. Receives a short-lived OIDC JWT and caches it until 60 seconds before its `exp` claim.
+3. Returns the OIDC token as a `client_assertion` (type `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`), identical in shape to `EKSWorkloadIdentity`.
 
 The deploy procedure (see `deploy-fly.md` §4–§5) registers the Fly OIDC provider and an application-credential binding (subject `<fly-org>:<project-name>:*`) so that Keycard's STS accepts the machine-issued OIDC token as valid proof of identity for the proxy application.
 
@@ -469,8 +468,7 @@ Port the template-local `FlyWorkloadIdentity` class. Public API:
 ```typescript
 export interface FlyWorkloadIdentityOptions {
   audience: string;
-  metadataUrl?: string;   // default: http://_api.internal:4280/v1/tokens/oidc
-  machineTokenEnv?: string; // default: FLY_API_TOKEN
+  socketPath?: string;   // default: /.fly/api
 }
 export class FlyWorkloadIdentity implements ApplicationCredential { ... }
 ```
