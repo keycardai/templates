@@ -116,6 +116,8 @@ serverProcess = execFile("node", ["--env-file-if-exists=.env", "dist/server.js"]
   cwd: TEMPLATE_DIR,
   detached: true,
 });
+serverProcess.stderr?.on("data", (d: Buffer) => process.stderr.write(`[server] ${d}`));
+serverProcess.stdout?.on("data", (d: Buffer) => process.stdout.write(`[server] ${d}`));
 serverProcess.unref();
 
 // Wait for server ready
