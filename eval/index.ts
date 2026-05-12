@@ -52,6 +52,11 @@ const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname
 const SERVER_URL = "http://localhost:8000";
 const RUN_ID = `${Date.now()}`;
 
+// Detect template language from the presence of package.json vs pyproject.toml
+const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
+const language: "python" | "typescript" = isPython ? "python" : "typescript";
+console.log(`Language: ${language}`);
+
 let zoneId: string | undefined;
 let serverProcess: ReturnType<typeof execFile> | undefined;
 
@@ -93,12 +98,13 @@ provisioned = await provision({
   templateDir: TEMPLATE_DIR,
 });
 
-// 3. Agent: verify config + npm install + npm run build
+// 3. Agent: verify config + install + build
 console.log("\n3. Running agent (verify config + build)...");
 const agentResult = await runBuildAgent({
   templateDir: TEMPLATE_DIR,
   zoneIssuerUrl: zone.issuerUrl,
   resourceIdentifier: provisioned.resourceIdentifier,
+  language,
 });
 
 console.log(agentResult.output.split("\n").slice(-5).join("\n"));
@@ -114,7 +120,12 @@ console.log("   Build succeeded");
 console.log("\n4. Starting server...");
 await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
 await new Promise((r) => setTimeout(r, 500));
-serverProcess = execFile("node", ["--env-file-if-exists=.env", "dist/server.js"], {
+
+const [serverCmd, serverArgs] = language === "python"
+  ? ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]]
+  : ["node", ["--env-file-if-exists=.env", "dist/server.js"]];
+
+serverProcess = execFile(serverCmd, serverArgs, {
   cwd: TEMPLATE_DIR,
   detached: true,
 });

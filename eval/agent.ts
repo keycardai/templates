@@ -26,6 +26,7 @@ export async function runBuildAgent(opts: {
   templateDir: string;
   zoneIssuerUrl: string;
   resourceIdentifier: string;
+  language?: "python" | "typescript";
 }): Promise<AgentResult> {
   const client = new Anthropic();
   const specPath = path.join(opts.templateDir, "SPEC.md");
@@ -49,9 +50,9 @@ Working directory: ${opts.templateDir}
 Your task:
 1. Read the SPEC.md (provided below) and verify the .env and keycard.toml look correct for this provisioned zone
 2. Fix any config issues you find
-3. Run: npm install
-4. Run: npm run build
-5. If the build succeeds, print exactly: BUILD_COMPLETE:SUCCESS
+3. ${opts.language === "python" ? "Run: uv sync" : "Run: npm install"}
+4. ${opts.language === "python" ? "Verify the server can start (uv run python -c \"import main\" or similar)" : "Run: npm run build"}
+5. If successful, print exactly: BUILD_COMPLETE:SUCCESS
 6. If something fails, print exactly: BUILD_COMPLETE:FAILURE and explain why`;
 
   const task = `SPEC.md:\n\n${specContent}\n\nVerify config, fix if needed, then build.`;

@@ -1,0 +1,65 @@
+name: Template Eval
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      template:
+        description: "Template to eval (leave blank for all)"
+        required: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      templates: ${{ steps.find.outputs.templates }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          if [ -n "${{ inputs.template }}" ]; then
+            echo "templates=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
+              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; \) -print \
+              | sed 's|^\./||' | sort | jq -R . | jq -sc .)
+            echo "templates=$dirs" >> "$GITHUB_OUTPUT"
+          fi
+
+  eval:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.discover.outputs.templates) }}
+    env:
+      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
+      EVAL_ZONE_ID: ${{ secrets.EVAL_ZONE_ID }}
+      EVAL_ZONE_ISSUER_URL: ${{ secrets.EVAL_ZONE_ISSUER_URL }}
+      EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
+      EVAL_TEST_USER_PASSWORD: ${{ secrets.EVAL_TEST_USER_PASSWORD }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      EVAL_HEADLESS: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "eval/package-lock.json"
+
+      - name: Install eval dependencies
+        working-directory: eval
+        run: npm install
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Run eval
+        working-directory: eval
+        run: npx tsx index.ts --template ${{ matrix.template }}

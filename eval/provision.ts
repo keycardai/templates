@@ -125,8 +125,15 @@ export async function provision(opts: {
   const { id: resourceId } = await resResp.json() as { id: string };
   console.log(`   Resource: ${resourceId} (${resourceIdentifier})`);
 
-  // 4. Write .env
-  const envContent = `KEYCARD_URL=${zoneIssuerUrl}\nKEYCARD_RESOURCE_ID=${resourceIdentifier}\nPORT=${port}\n`;
+  // 4. Write .env — include all env var names used across Python and TypeScript templates
+  const zoneId_short = zoneIssuerUrl.replace(/^https?:\/\//, "").replace(/\..*/, "");
+  const envContent = [
+    `KEYCARD_URL=${zoneIssuerUrl}`,        // TypeScript MCP (KEYCARD_URL)
+    `KEYCARD_ZONE_URL=${zoneIssuerUrl}`,    // Python starlette / mcp (KEYCARD_ZONE_URL)
+    `KEYCARD_ZONE_ID=${zoneId_short}`,     // Python fastmcp / mcp (KEYCARD_ZONE_ID)
+    `KEYCARD_RESOURCE_ID=${resourceIdentifier}`,
+    `PORT=${port}`,
+  ].join("\n") + "\n";
   await fs.writeFile(path.join(templateDir, ".env"), envContent, "utf8");
   console.log(`   Wrote .env`);
 
