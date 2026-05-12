@@ -50,11 +50,17 @@ keycard run -- uv run uvicorn main:app --port 8000
 
 ## Add a tool
 
+Create a file in `tools/` following the pattern in `tools/hello.py`: export a `register_<name>_tool(mcp)` function that calls `@mcp.tool()`. Then import and call it in `main.py` — that's the only wiring needed.
+
 ```python
-@mcp.tool()
-def my_tool(arg: str) -> str:
-    """Tool description shown to the model."""
-    return f"Result: {arg}"
+# tools/my_tool.py
+from mcp.server.fastmcp import FastMCP
+
+def register_my_tool(mcp: FastMCP) -> None:
+    @mcp.tool()
+    def my_tool(arg: str) -> str:
+        """Tool description shown to the model."""
+        return f"Result: {arg}"
 ```
 
 ## Provisioning

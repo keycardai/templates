@@ -25,6 +25,8 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
+from tools.hello import register_hello_tool
+
 ZONE_ID = os.getenv("KEYCARD_ZONE_ID")
 ZONE_URL = os.getenv("KEYCARD_ZONE_URL")
 SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000/")
@@ -45,12 +47,7 @@ auth_provider = AuthProvider(
 )
 
 mcp = FastMCP(SERVER_NAME)
-
-
-@mcp.tool()
-def hello_world(name: str) -> str:
-    """Say hello to an authenticated user."""
-    return f"Hello, {name}! You are authenticated."
+register_hello_tool(mcp)
 
 
 async def healthz(request):
