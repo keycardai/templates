@@ -1,0 +1,118 @@
+/**
+ * Playwright OAuth flow: navigate to the authorization URL, log in as the
+ * test user, approve the consent screen, capture the authorization code
+ * from the redirect, and exchange it for an access token.
+ */
+
+import { chromium } from "playwright";
+import * as http from "node:http";
+import * as crypto from "node:crypto";
+
+const CALLBACK_PORT = 8888;
+const CALLBACK_URL = `http://localhost:${CALLBACK_PORT}/callback`;
+
+function base64url(buf: Buffer): string {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+function generatePkce(): { verifier: string; challenge: string } {
+  const verifier = base64url(crypto.randomBytes(48));
+  const challenge = base64url(crypto.createHash("sha256").update(verifier).digest());
+  return { verifier, challenge };
+}
+
+/** Start a local HTTP server on CALLBACK_PORT, return the first code it receives. */
+function captureCallbackCode(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url!, `http://localhost:${CALLBACK_PORT}`);
+      const code = url.searchParams.get("code");
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end("<html><body>Authorization complete. You can close this tab.</body></html>");
+      server.close();
+      if (code) resolve(code);
+      else reject(new Error(`No code in callback: ${req.url}`));
+    });
+    server.listen(CALLBACK_PORT);
+    server.on("error", reject);
+  });
+}
+
+export interface AuthResult {
+  accessToken: string;
+  idToken?: string;
+}
+
+export async function authenticateViaOAuth(opts: {
+  zoneIssuerUrl: string;
+  resourceIdentifier: string;
+  clientId: string;
+  testUserEmail: string;
+  testUserPassword: string;
+  headless?: boolean;
+}): Promise<AuthResult> {
+  const { verifier, challenge } = generatePkce();
+  const state = base64url(crypto.randomBytes(16));
+
+  const authorizeUrl = new URL(`${opts.zoneIssuerUrl}/oauth/2/authorize`);
+  authorizeUrl.searchParams.set("client_id", opts.clientId);
+  authorizeUrl.searchParams.set("redirect_uri", CALLBACK_URL);
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("scope", "openid email");
+  authorizeUrl.searchParams.set("state", state);
+  authorizeUrl.searchParams.set("code_challenge", challenge);
+  authorizeUrl.searchParams.set("code_challenge_method", "S256");
+  authorizeUrl.searchParams.set("resource", opts.resourceIdentifier);
+
+  const codePromise = captureCallbackCode();
+
+  const browser = await chromium.launch({ headless: opts.headless ?? true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  try {
+    await page.goto(authorizeUrl.toString());
+
+    // Step 1: identifier page — enter email
+    await page.waitForSelector('input[name="identifier"]');
+    await page.fill('input[name="identifier"]', opts.testUserEmail);
+    await page.click('button[type="submit"]');
+
+    // Step 2: password page — enter password
+    await page.waitForSelector('input[name="password"]');
+    await page.fill('input[name="username"]', opts.testUserEmail);
+    await page.fill('input[name="password"]', opts.testUserPassword);
+    await page.click('button[type="submit"]');
+
+    // Step 3: consent page — click "Allow access"
+    await page.waitForSelector('button.btn-primary');
+    await page.click('button.btn-primary');
+
+    // Wait for redirect to callback URL
+    await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
+  } finally {
+    await browser.close();
+  }
+
+  const code = await codePromise;
+
+  // Exchange authorization code for tokens
+  const tokenResp = await fetch(`${opts.zoneIssuerUrl}/oauth/2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: opts.clientId,
+      code,
+      redirect_uri: CALLBACK_URL,
+      code_verifier: verifier,
+    }),
+  });
+
+  if (!tokenResp.ok) {
+    throw new Error(`Token exchange failed: ${tokenResp.status} ${await tokenResp.text()}`);
+  }
+
+  const tokens = await tokenResp.json() as { access_token: string; id_token?: string };
+  return { accessToken: tokens.access_token, idToken: tokens.id_token };
+}
