@@ -99,11 +99,13 @@ export async function authenticateViaOAuth(opts: {
     // - /login/signup or /login/verify-email → new user, need to sign up
     // - consent page (button.btn-primary) → existing user, just approve
     // - callback URL → already authorized (rare)
+    const silence = () => null;
     const postPasswordOutcome = await Promise.race([
-      page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 }).then(() => "callback" as const),
-      page.waitForURL("**/login/signup**", { timeout: 30_000 }).then(() => "signup" as const),
-      page.waitForURL("**/login/verify-email**", { timeout: 30_000 }).then(() => "verify" as const),
-      page.waitForSelector("button.btn-primary", { timeout: 30_000 }).then(() => "consent" as const),
+      page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 }).then(() => "callback" as const).catch(silence),
+      page.waitForURL("**/login/signup**", { timeout: 30_000 }).then(() => "signup" as const).catch(silence),
+      page.waitForURL("**/login/verify-email**", { timeout: 30_000 }).then(() => "verify" as const).catch(silence),
+      // consent button — use a broader selector to avoid matching the signup submit button
+      page.waitForSelector(".consent-actions button.btn-primary", { timeout: 30_000 }).then(() => "consent" as const).catch(silence),
     ]);
 
     if (postPasswordOutcome === "signup" || postPasswordOutcome === "verify") {
