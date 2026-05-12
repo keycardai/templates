@@ -95,16 +95,21 @@ export async function authenticateViaOAuth(opts: {
     await page.fill('input[name="password"]', opts.testUserPassword);
     await page.click('button[type="submit"]');
 
-    // After submitting credentials, check what page we land on.
-    // If the user doesn't exist yet, we'll hit /login/signup or /login/verify-email.
-    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+    // After submitting credentials, wait to see where we land:
+    // - /login/signup or /login/verify-email → new user, need to sign up
+    // - consent page (button.btn-primary) → existing user, just approve
+    // - callback URL → already authorized (rare)
+    const postPasswordOutcome = await Promise.race([
+      page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 }).then(() => "callback" as const),
+      page.waitForURL("**/login/signup**", { timeout: 30_000 }).then(() => "signup" as const),
+      page.waitForURL("**/login/verify-email**", { timeout: 30_000 }).then(() => "verify" as const),
+      page.waitForSelector("button.btn-primary", { timeout: 30_000 }).then(() => "consent" as const),
+    ]);
 
-    const currentUrl = page.url();
-    if (currentUrl.includes("/login/signup") || currentUrl.includes("/login/verify-email")) {
+    if (postPasswordOutcome === "signup" || postPasswordOutcome === "verify") {
       if (opts.headless === false) {
         console.log("\n  ⚠️  New user detected. Complete sign-up in the browser window.");
         console.log("     After signing up and verifying your email, the eval will continue automatically.\n");
-        // Wait up to 5 minutes for the user to complete signup + verification
         await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 300_000 });
       } else {
         throw new Error(
@@ -112,14 +117,11 @@ export async function authenticateViaOAuth(opts: {
           `Run once with EVAL_HEADLESS=false to sign up and verify the account.`,
         );
       }
-    } else {
-      // Step 3: consent page — click "Allow access"
-      await page.waitForSelector('button.btn-primary', { timeout: 15_000 });
+    } else if (postPasswordOutcome === "consent") {
       await page.click('button.btn-primary');
-
-      // Wait for redirect to callback URL
       await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
     }
+    // else: postPasswordOutcome === "callback" — already redirected
   } finally {
     await browser.close();
   }
