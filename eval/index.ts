@@ -14,7 +14,7 @@ import * as fs from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
-import { provision } from "./provision.js";
+import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./provision.js";
 import { runBuildAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
 import { verifyServer } from "./verify.js";
@@ -55,9 +55,15 @@ const RUN_ID = `${Date.now()}`;
 let zoneId: string | undefined;
 let serverProcess: ReturnType<typeof execFile> | undefined;
 
+let provisioned: Awaited<ReturnType<typeof provision>> | undefined;
+
 async function cleanup() {
   if (serverProcess) {
     try { process.kill(-(serverProcess.pid!)); } catch { /* already dead */ }
+  }
+  if (provisioned && !ephemeral) {
+    await teardownProvisioning(provisioned, token).catch((e) => console.error("Resource cleanup failed:", e));
+    console.log("   Cleaned up app + resource");
   }
   if (zoneId && ephemeral) {
     console.log(`\nCleaning up zone ${zoneId}...`);
@@ -78,7 +84,8 @@ console.log(`   Zone: ${zone.id} (${zone.issuerUrl})`);
 
 // 2. Provision resources + write config files
 console.log("\n2. Provisioning resources...");
-const provisioned = await provision({
+await cleanupStaleProvisonings(zone.id, token);
+provisioned = await provision({
   zoneId: zone.id,
   zoneIssuerUrl: zone.issuerUrl,
   runId: RUN_ID,

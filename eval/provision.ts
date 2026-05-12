@@ -21,6 +21,56 @@ export interface ProvisionedZone {
   resourceIdentifier: string;
 }
 
+/** Delete App + Resource created by a previous eval run (by name prefix). */
+export async function cleanupStaleProvisonings(zoneId: string, token: string): Promise<void> {
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const [appsResp, resResp] = await Promise.all([
+    fetch(`${endpoint()}/zones/${zoneId}/applications`, { headers }),
+    fetch(`${endpoint()}/zones/${zoneId}/resources`, { headers }),
+  ]);
+
+  const staleApps = appsResp.ok
+    ? ((await appsResp.json()) as { items?: Array<{ id: string; name: string }> }).items?.filter(
+        (a) => a.name.startsWith("eval-app-"),
+      ) ?? []
+    : [];
+
+  const staleRes = resResp.ok
+    ? ((await resResp.json()) as { items?: Array<{ id: string; name: string }> }).items?.filter(
+        (r) => r.name.startsWith("eval-resource-"),
+      ) ?? []
+    : [];
+
+  await Promise.all([
+    ...staleApps.map((a) =>
+      fetch(`${endpoint()}/zones/${zoneId}/applications/${a.id}`, { method: "DELETE", headers }),
+    ),
+    ...staleRes.map((r) =>
+      fetch(`${endpoint()}/zones/${zoneId}/resources/${r.id}`, { method: "DELETE", headers }),
+    ),
+  ]);
+
+  if (staleApps.length || staleRes.length) {
+    console.log(`   Cleaned up ${staleApps.length} stale app(s), ${staleRes.length} stale resource(s)`);
+  }
+}
+
+/** Delete the App + Resource created during this eval run. */
+export async function teardownProvisioning(provisioned: ProvisionedZone, token: string): Promise<void> {
+  const headers = { Authorization: `Bearer ${token}` };
+  await Promise.all([
+    fetch(`${endpoint()}/zones/${provisioned.zoneId}/applications/${provisioned.applicationId}`, {
+      method: "DELETE",
+      headers,
+    }),
+    fetch(`${endpoint()}/zones/${provisioned.zoneId}/resources/${provisioned.resourceId}`, {
+      method: "DELETE",
+      headers,
+    }),
+  ]);
+}
+
 /** Find the keycard-sts provider on the zone. */
 async function getStsProviderId(zoneId: string, token: string): Promise<string> {
   const resp = await fetch(`${endpoint()}/zones/${zoneId}/providers`, {
