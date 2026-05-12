@@ -86,7 +86,7 @@ Your task:
 
   for (let turn = 0; turn < 15; turn++) {
     const response = await client.messages.create({
-      model: "claude-opus-4-7",
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: systemPrompt,
       tools,
