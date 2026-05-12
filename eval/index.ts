@@ -13,7 +13,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createEvalZone, deleteZone } from "./zone.js";
+import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { provision } from "./provision.js";
 import { runBuildAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
@@ -59,7 +59,7 @@ async function cleanup() {
   if (serverProcess) {
     try { process.kill(-(serverProcess.pid!)); } catch { /* already dead */ }
   }
-  if (zoneId) {
+  if (zoneId && ephemeral) {
     console.log(`\nCleaning up zone ${zoneId}...`);
     await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
   }
@@ -72,7 +72,7 @@ console.log(`Template: ${templateArg}\nRun ID:   ${RUN_ID}\n`);
 
 // 1. Create eval zone
 console.log("1. Creating eval zone...");
-const { zone, token } = await createEvalZone(RUN_ID);
+const { zone, token, ephemeral } = await getOrCreateEvalZone(RUN_ID);
 zoneId = zone.id;
 console.log(`   Zone: ${zone.id} (${zone.issuerUrl})`);
 
