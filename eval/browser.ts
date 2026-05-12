@@ -95,12 +95,31 @@ export async function authenticateViaOAuth(opts: {
     await page.fill('input[name="password"]', opts.testUserPassword);
     await page.click('button[type="submit"]');
 
-    // Step 3: consent page — click "Allow access"
-    await page.waitForSelector('button.btn-primary');
-    await page.click('button.btn-primary');
+    // After submitting credentials, check what page we land on.
+    // If the user doesn't exist yet, we'll hit /login/signup or /login/verify-email.
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
-    // Wait for redirect to callback URL
-    await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
+    const currentUrl = page.url();
+    if (currentUrl.includes("/login/signup") || currentUrl.includes("/login/verify-email")) {
+      if (opts.headless === false) {
+        console.log("\n  ⚠️  New user detected. Complete sign-up in the browser window.");
+        console.log("     After signing up and verifying your email, the eval will continue automatically.\n");
+        // Wait up to 5 minutes for the user to complete signup + verification
+        await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 300_000 });
+      } else {
+        throw new Error(
+          `Test user '${opts.testUserEmail}' does not have an account in this zone.\n` +
+          `Run once with EVAL_HEADLESS=false to sign up and verify the account.`,
+        );
+      }
+    } else {
+      // Step 3: consent page — click "Allow access"
+      await page.waitForSelector('button.btn-primary', { timeout: 15_000 });
+      await page.click('button.btn-primary');
+
+      // Wait for redirect to callback URL
+      await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
+    }
   } finally {
     await browser.close();
   }
