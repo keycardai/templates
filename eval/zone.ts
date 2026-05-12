@@ -3,7 +3,11 @@
  * Reuses the same token exchange pattern as the CI workflow.
  */
 
-const ENDPOINT = process.env.CI_KEYCARD_ENDPOINT!;
+function endpoint() {
+  const e = process.env.CI_KEYCARD_ENDPOINT;
+  if (!e) throw new Error("CI_KEYCARD_ENDPOINT is not set");
+  return e;
+}
 
 export interface ZoneInfo {
   id: string;
@@ -12,7 +16,7 @@ export interface ZoneInfo {
 }
 
 async function getToken(): Promise<string> {
-  const resp = await fetch(`${ENDPOINT}/service-account-token`, {
+  const resp = await fetch(`${endpoint()}/service-account-token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -30,7 +34,7 @@ export async function createEvalZone(runId: string): Promise<{ zone: ZoneInfo; t
   const token = await getToken();
   const name = `eval-${runId}`;
 
-  const resp = await fetch(`${ENDPOINT}/zones`, {
+  const resp = await fetch(`${endpoint()}/zones`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -54,7 +58,7 @@ export async function createEvalZone(runId: string): Promise<{ zone: ZoneInfo; t
 
 export async function deleteZone(zoneId: string): Promise<void> {
   const token = await getToken();
-  await fetch(`${ENDPOINT}/zones/${zoneId}`, {
+  await fetch(`${endpoint()}/zones/${zoneId}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -62,7 +66,7 @@ export async function deleteZone(zoneId: string): Promise<void> {
 
 /** Look up the zone's STS provider ID — needed to create a Resource with it as credential_provider. */
 export async function getStsProviderId(zoneId: string, token: string): Promise<string> {
-  const resp = await fetch(`${ENDPOINT}/zones/${zoneId}/providers`, {
+  const resp = await fetch(`${endpoint()}/zones/${zoneId}/providers`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!resp.ok) throw new Error(`Providers fetch failed: ${resp.status}`);
