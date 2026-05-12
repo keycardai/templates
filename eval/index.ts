@@ -4,21 +4,22 @@
  * Usage:
  *   npm run eval -- --template mcp-server-typescript-express
  *
- * Required env vars (put in eval/.env.eval, see .env.eval.example):
+ * Required in .env.eval (see .env.eval.example):
  *   CI_KEYCARD_CLIENT_ID, CI_KEYCARD_CLIENT_SECRET, CI_KEYCARD_ENDPOINT
  *   EVAL_TEST_USER_EMAIL, EVAL_TEST_USER_PASSWORD, ANTHROPIC_API_KEY
- *
- * One-time setup:
- *   1. Copy .env.eval.example to .env.eval and fill in values
- *   2. Run once with EVAL_HEADLESS=false to create and verify the test user account
  */
 
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createEvalZone, deleteZone } from "./zone.js";
-import { runSpecAgent } from "./agent.js";
+import { provision } from "./provision.js";
+import { runBuildAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
 import { verifyServer } from "./verify.js";
+
+const execFileAsync = promisify(execFile);
 
 try {
   const envContent = await fs.readFile(new URL(".env.eval", import.meta.url), "utf8");
@@ -27,8 +28,8 @@ try {
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eqIdx = trimmed.indexOf("=");
     if (eqIdx < 0) continue;
-    const key = trimmed.slice(0, eqIdx);
-    const val = trimmed.slice(eqIdx + 1).replace(/^["']|["']$/g, "");
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
     if (key && !process.env[key]) process.env[key] = val;
   }
 } catch { /* .env.eval optional */ }
@@ -52,8 +53,12 @@ const SERVER_URL = "http://localhost:8000";
 const RUN_ID = `${Date.now()}`;
 
 let zoneId: string | undefined;
+let serverProcess: ReturnType<typeof execFile> | undefined;
 
 async function cleanup() {
+  if (serverProcess) {
+    try { process.kill(-(serverProcess.pid!)); } catch { /* already dead */ }
+  }
   if (zoneId) {
     console.log(`\nCleaning up zone ${zoneId}...`);
     await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
@@ -71,25 +76,53 @@ const { zone, token } = await createEvalZone(RUN_ID);
 zoneId = zone.id;
 console.log(`   Zone: ${zone.id} (${zone.issuerUrl})`);
 
-// 2. Run Claude agent against SPEC.md
-console.log("\n2. Running agent against SPEC.md...");
-const agentResult = await runSpecAgent({
-  templateDir: TEMPLATE_DIR,
+// 2. Provision resources + write config files
+console.log("\n2. Provisioning resources...");
+const provisioned = await provision({
   zoneId: zone.id,
   zoneIssuerUrl: zone.issuerUrl,
-  managementToken: token,
-  endpoint: required("CI_KEYCARD_ENDPOINT"),
+  runId: RUN_ID,
+  token,
+  templateDir: TEMPLATE_DIR,
 });
 
+// 3. Agent: verify config + npm install + npm run build
+console.log("\n3. Running agent (verify config + build)...");
+const agentResult = await runBuildAgent({
+  templateDir: TEMPLATE_DIR,
+  zoneIssuerUrl: zone.issuerUrl,
+  resourceIdentifier: provisioned.resourceIdentifier,
+});
+
+console.log(agentResult.output.split("\n").slice(-5).join("\n"));
+
 if (!agentResult.success) {
-  console.error("   Agent failed:\n", agentResult.output);
+  console.error("   Build failed");
   await cleanup();
   process.exit(1);
 }
-console.log("   Agent completed SPEC successfully");
+console.log("   Build succeeded");
 
-// 3. Register user agent via DCR to get client_id for OAuth flow
-console.log("\n3. Registering user agent via DCR...");
+// 4. Start server
+console.log("\n4. Starting server...");
+serverProcess = execFile("node", ["--env-file-if-exists=.env", "dist/server.js"], {
+  cwd: TEMPLATE_DIR,
+  detached: true,
+});
+serverProcess.unref();
+
+// Wait for server ready
+for (let i = 0; i < 10; i++) {
+  await new Promise((r) => setTimeout(r, 1000));
+  try {
+    const resp = await fetch(`${SERVER_URL}/healthz`);
+    if (resp.ok) { console.log("   Server ready"); break; }
+  } catch { /* not yet */ }
+  if (i === 9) throw new Error("Server did not start in time");
+}
+
+// 5. Register user agent via DCR
+console.log("\n5. Registering user agent via DCR...");
 const dcrResp = await fetch(`${zone.issuerUrl}/oauth/2/registration`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -105,11 +138,11 @@ if (!dcrResp.ok) throw new Error(`DCR failed: ${dcrResp.status} ${await dcrResp.
 const { client_id: clientId } = await dcrResp.json() as { client_id: string };
 console.log(`   Client ID: ${clientId}`);
 
-// 4. Browser OAuth flow
-console.log("\n4. Running browser OAuth flow...");
+// 6. Browser OAuth
+console.log("\n6. Running browser OAuth flow...");
 const auth = await authenticateViaOAuth({
   zoneIssuerUrl: zone.issuerUrl,
-  resourceIdentifier: `${SERVER_URL}/mcp`,
+  resourceIdentifier: provisioned.resourceIdentifier,
   clientId,
   testUserEmail: required("EVAL_TEST_USER_EMAIL"),
   testUserPassword: required("EVAL_TEST_USER_PASSWORD"),
@@ -117,8 +150,8 @@ const auth = await authenticateViaOAuth({
 });
 console.log("   OAuth complete");
 
-// 5. Verify server
-console.log("\n5. Verifying server...");
+// 7. Verify
+console.log("\n7. Verifying server...");
 const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken });
 
 console.log("\n=== Results ===");

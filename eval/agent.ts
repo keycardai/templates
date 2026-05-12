@@ -1,60 +1,66 @@
 /**
- * Runs a Claude Code agent against a template's SPEC.md to provision
- * Keycard resources and start the server.
+ * Runs a Claude agent to verify the template config and build the server.
  *
- * The agent receives: zone credentials, the template directory path,
- * and the task "Follow SPEC.md to provision the required Keycard resources
- * and start the server." It uses the Keycard CLI and Management API to
- * execute each step, then signals completion.
+ * The harness has already provisioned Keycard resources and written
+ * .env + keycard.toml. The agent's job: read the SPEC.md, confirm the
+ * config looks correct, then npm install + npm run build.
+ *
+ * This tests: does the agent understand the config requirements well
+ * enough to validate them, and can it produce a working build?
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 const execFileAsync = promisify(execFile);
 
 export interface AgentResult {
   success: boolean;
-  serverPid?: number;
   output: string;
 }
 
-export async function runSpecAgent(opts: {
+export async function runBuildAgent(opts: {
   templateDir: string;
-  zoneId: string;
   zoneIssuerUrl: string;
-  managementToken: string;
-  endpoint: string;
-  timeout?: number;
+  resourceIdentifier: string;
 }): Promise<AgentResult> {
   const client = new Anthropic();
   const specPath = path.join(opts.templateDir, "SPEC.md");
-  const specContent = await import("node:fs/promises").then((fs) => fs.readFile(specPath, "utf8"));
+  const specContent = await fs.readFile(specPath, "utf8");
 
-  const systemPrompt = `You are running inside an automated eval. Your job is to follow the SPEC.md exactly to provision Keycard resources and start the MCP server.
+  const envContent = await fs.readFile(path.join(opts.templateDir, ".env"), "utf8").catch(() => "(not found)");
+  const tomlContent = await fs.readFile(path.join(opts.templateDir, "keycard.toml"), "utf8").catch(() => "(not found)");
 
-Environment:
-- Keycard endpoint: ${opts.endpoint}
-- Zone ID: ${opts.zoneId}
-- Zone issuer URL: ${opts.zoneIssuerUrl}
-- Management API token: ${opts.managementToken}
-- Template directory: ${opts.templateDir}
-- Working directory: ${opts.templateDir}
+  const systemPrompt = `You are an automated eval agent. The Keycard resources have already been provisioned.
 
-Use the Management API token in Authorization headers for all Keycard API calls.
-When the SPEC says to run "keycard agent api ...", translate that to a direct HTTP call using curl with the management token.
-After starting the server, it must be running on port 8000.
-Signal completion by printing: EVAL_COMPLETE:SUCCESS or EVAL_COMPLETE:FAILURE`;
+Current .env:
+${envContent}
 
-  const task = `Follow this SPEC.md to provision the Keycard resources and start the server:\n\n${specContent}`;
+Current keycard.toml:
+${tomlContent}
+
+Zone issuer URL: ${opts.zoneIssuerUrl}
+Resource identifier: ${opts.resourceIdentifier}
+Working directory: ${opts.templateDir}
+
+Your task:
+1. Read the SPEC.md (provided below) and verify the .env and keycard.toml look correct for this provisioned zone
+2. Fix any config issues you find
+3. Run: npm install
+4. Run: npm run build
+5. If the build succeeds, print exactly: BUILD_COMPLETE:SUCCESS
+6. If something fails, print exactly: BUILD_COMPLETE:FAILURE and explain why`;
+
+  const task = `SPEC.md:\n\n${specContent}\n\nVerify config, fix if needed, then build.`;
 
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: task }];
   const tools: Anthropic.Tool[] = [
     {
       name: "bash",
-      description: "Run a shell command",
+      description: "Run a shell command in the template directory",
       input_schema: {
         type: "object" as const,
         properties: { command: { type: "string" } },
@@ -63,7 +69,7 @@ Signal completion by printing: EVAL_COMPLETE:SUCCESS or EVAL_COMPLETE:FAILURE`;
     },
     {
       name: "write_file",
-      description: "Write content to a file",
+      description: "Write or overwrite a file",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -76,10 +82,8 @@ Signal completion by printing: EVAL_COMPLETE:SUCCESS or EVAL_COMPLETE:FAILURE`;
   ];
 
   let output = "";
-  const startTime = Date.now();
-  const timeout = opts.timeout ?? 120_000;
 
-  while (Date.now() - startTime < timeout) {
+  for (let turn = 0; turn < 15; turn++) {
     const response = await client.messages.create({
       model: "claude-opus-4-7",
       max_tokens: 4096,
@@ -96,12 +100,8 @@ Signal completion by printing: EVAL_COMPLETE:SUCCESS or EVAL_COMPLETE:FAILURE`;
 
       if (block.type === "text") {
         output += block.text + "\n";
-        if (block.text.includes("EVAL_COMPLETE:SUCCESS")) {
-          return { success: true, output };
-        }
-        if (block.text.includes("EVAL_COMPLETE:FAILURE")) {
-          return { success: false, output };
-        }
+        if (block.text.includes("BUILD_COMPLETE:SUCCESS")) return { success: true, output };
+        if (block.text.includes("BUILD_COMPLETE:FAILURE")) return { success: false, output };
       }
 
       if (block.type === "tool_use") {
@@ -111,13 +111,11 @@ Signal completion by printing: EVAL_COMPLETE:SUCCESS or EVAL_COMPLETE:FAILURE`;
             const { command } = block.input as { command: string };
             const { stdout, stderr } = await execFileAsync("bash", ["-c", command], {
               cwd: opts.templateDir,
-              timeout: 30_000,
-              env: { ...process.env, KEYCARD_ZONE_URL: opts.zoneIssuerUrl },
+              timeout: 60_000,
             });
             result = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
           } else if (block.name === "write_file") {
             const { path: filePath, content } = block.input as { path: string; content: string };
-            const fs = await import("node:fs/promises");
             const resolved = path.resolve(opts.templateDir, filePath);
             await fs.writeFile(resolved, content, "utf8");
             result = `Written: ${resolved}`;
@@ -125,22 +123,15 @@ Signal completion by printing: EVAL_COMPLETE:SUCCESS or EVAL_COMPLETE:FAILURE`;
         } catch (err) {
           result = `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
-
-        output += `[tool:${block.name}] ${result}\n`;
+        output += `[tool:${block.name}] ${result.slice(0, 500)}\n`;
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
       }
     }
 
     messages.push({ role: "assistant", content: assistantContent });
-
-    if (response.stop_reason === "end_turn" && toolResults.length === 0) {
-      break;
-    }
-
-    if (toolResults.length > 0) {
-      messages.push({ role: "user", content: toolResults });
-    }
+    if (response.stop_reason === "end_turn" && toolResults.length === 0) break;
+    if (toolResults.length > 0) messages.push({ role: "user", content: toolResults });
   }
 
-  return { success: false, output: output + "\n[timeout or max turns reached]" };
+  return { success: false, output: output + "\n[max turns reached]" };
 }
