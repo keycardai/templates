@@ -5,10 +5,8 @@ name = "mcp-server-python-mcp"
 kind = "mcp-server"
 
 [zone]
-url = "${KEYCARD_ZONE_URL}"
+url = "https://lmnhzl0cq4ursfuqddt37fcehw.keycard.cloud"
 
 [server]
-command = "uvicorn main:app"
+command = "uv run uvicorn main:app --port 8000"
 port = 8000
-
-[credentials]

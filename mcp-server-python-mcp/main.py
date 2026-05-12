@@ -11,6 +11,9 @@ Prerequisites:
 
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from mcp.server.fastmcp import FastMCP
 from keycardai.mcp.server.auth import AuthProvider
 from starlette.applications import Starlette

@@ -98,6 +98,9 @@ provisioned = await provision({
   templateDir: TEMPLATE_DIR,
 });
 
+// Kill any stale server on port 8000 before the agent's smoke tests run
+await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
+
 // 3. Agent: verify config + install + build
 console.log("\n3. Running agent (verify config + build)...");
 const agentResult = await runBuildAgent({
