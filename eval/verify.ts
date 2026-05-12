@@ -56,7 +56,12 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
   await check("unauthenticated POST /mcp returns 401", async () => {
     const resp = await fetch(`${base}/mcp`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Include the MCP Accept header so the request reaches the auth layer
+      // rather than being rejected at the protocol layer (406 Not Acceptable)
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+      },
       body: "{}",
     });
     if (resp.status !== 401) throw new Error(`Expected 401, got ${resp.status}`);
