@@ -54,7 +54,7 @@ export async function provision(opts: {
   const appResp = await fetch(`${endpoint()}/zones/${zoneId}/applications`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: `eval-app-${runId}` }),
+    body: JSON.stringify({ name: `eval-app-${runId}`, identifier: `eval-app-${runId}` }),
   });
   if (!appResp.ok) throw new Error(`Create application failed: ${appResp.status} ${await appResp.text()}`);
   const { id: applicationId } = await appResp.json() as { id: string };
