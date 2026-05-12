@@ -66,6 +66,9 @@ export async function getOrCreateEvalZone(runId: string): Promise<{
     protocols: { oauth2: { issuer: string; token_endpoint: string } };
   };
 
+  // Zone bootstrap is async — wait for policy bindings to propagate
+  await new Promise((r) => setTimeout(r, 5000));
+
   return {
     zone: {
       id: zone.id,
