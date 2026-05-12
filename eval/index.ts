@@ -125,8 +125,17 @@ const [serverCmd, serverArgs] = language === "python"
   ? ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]]
   : ["node", ["--env-file-if-exists=.env", "dist/server.js"]];
 
+// Inject service account credentials so brokered-credentials templates can start.
+// discoverApplicationCredential picks these up; templates that don't need them ignore them.
+const serverEnv = {
+  ...process.env,
+  KEYCARD_CLIENT_ID: process.env.CI_KEYCARD_CLIENT_ID ?? "",
+  KEYCARD_CLIENT_SECRET: process.env.CI_KEYCARD_CLIENT_SECRET ?? "",
+};
+
 serverProcess = execFile(serverCmd, serverArgs, {
   cwd: TEMPLATE_DIR,
+  env: serverEnv,
   detached: true,
 });
 serverProcess.stderr?.on("data", (d: Buffer) => process.stderr.write(`[server] ${d}`));
