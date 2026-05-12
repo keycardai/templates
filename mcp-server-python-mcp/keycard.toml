@@ -1,0 +1,14 @@
+schema_version = "1"
+
+[project]
+name = "mcp-server-python-mcp"
+kind = "mcp-server"
+
+[zone]
+url = "${KEYCARD_ZONE_URL}"
+
+[server]
+command = "uvicorn main:app"
+port = 8000
+
+[credentials]
