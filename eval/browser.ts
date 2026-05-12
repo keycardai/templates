@@ -58,7 +58,7 @@ export async function authenticateViaOAuth(opts: {
   authorizeUrl.searchParams.set("client_id", opts.clientId);
   authorizeUrl.searchParams.set("redirect_uri", CALLBACK_URL);
   authorizeUrl.searchParams.set("response_type", "code");
-  authorizeUrl.searchParams.set("scope", "openid email");
+  authorizeUrl.searchParams.set("scope", "openid email mcp:tools");
   authorizeUrl.searchParams.set("state", state);
   authorizeUrl.searchParams.set("code_challenge", challenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
