@@ -118,6 +118,7 @@ export async function provision(opts: {
       name: `eval-resource-${runId}`,
       identifier: resourceIdentifier,
       credential_provider_id: stsProviderId,
+      scopes_supported: ["mcp:tools"],
     }),
   });
   if (!resResp.ok) throw new Error(`Create resource failed: ${resResp.status} ${await resResp.text()}`);
