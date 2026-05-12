@@ -16,9 +16,8 @@ load_dotenv()
 
 from mcp.server.fastmcp import FastMCP
 from keycardai.mcp.server.auth import AuthProvider
-from starlette.applications import Starlette
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 
 ZONE_ID = os.getenv("KEYCARD_ZONE_ID")
 ZONE_URL = os.getenv("KEYCARD_ZONE_URL")
@@ -52,13 +51,13 @@ async def healthz(request):
     return JSONResponse({"ok": True, "name": SERVER_NAME})
 
 
-# Expose the MCP server as an ASGI app and add a /healthz route
-app = Starlette(
-    routes=[
-        Route("/healthz", healthz, methods=["GET"]),
-        Mount("/", auth_provider.app(mcp)),
-    ]
-)
+# auth_provider.app(mcp) returns a Starlette app that handles auth middleware,
+# .well-known discovery routes, and the MCP transport with its own task group
+# lifecycle. We insert /healthz directly into its route list before the first
+# request — wrapping in another Starlette app would prevent FastMCP's task
+# group from initialising and cause 500 errors on POST /mcp.
+app = auth_provider.app(mcp)
+app.router.routes.insert(0, Route("/healthz", healthz, methods=["GET"]))
 
 if __name__ == "__main__":
     import uvicorn
