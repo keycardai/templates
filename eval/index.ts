@@ -161,7 +161,7 @@ console.log("   OAuth complete");
 
 // 7. Verify
 console.log("\n7. Verifying server...");
-const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken });
+const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken, expectedIssuer: zone.issuerUrl });
 
 console.log("\n=== Results ===");
 for (const c of result.checks) {
