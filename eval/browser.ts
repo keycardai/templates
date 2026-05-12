@@ -73,13 +73,24 @@ export async function authenticateViaOAuth(opts: {
   try {
     await page.goto(authorizeUrl.toString());
 
-    // Step 1: identifier page — enter email
-    await page.waitForSelector('input[name="identifier"]');
-    await page.fill('input[name="identifier"]', opts.testUserEmail);
-    await page.click('button[type="submit"]');
+    // May land on identifier page first, or skip straight to password page
+    // depending on zone config and whether the browser has a prior session.
+    const identifierInput = page.locator('input[name="identifier"]');
+    const passwordInput = page.locator('input[name="password"]');
 
-    // Step 2: password page — enter password
-    await page.waitForSelector('input[name="password"]');
+    // Wait for whichever shows up first
+    await Promise.race([
+      identifierInput.waitFor({ timeout: 15_000 }),
+      passwordInput.waitFor({ timeout: 15_000 }),
+    ]);
+
+    if (await identifierInput.isVisible()) {
+      await page.fill('input[name="identifier"]', opts.testUserEmail);
+      await page.click('button[type="submit"]');
+      await page.waitForSelector('input[name="password"]');
+    }
+
+    // Password page
     await page.fill('input[name="username"]', opts.testUserEmail);
     await page.fill('input[name="password"]', opts.testUserPassword);
     await page.click('button[type="submit"]');

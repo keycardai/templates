@@ -30,14 +30,34 @@ async function getToken(): Promise<string> {
   return access_token;
 }
 
-export async function createEvalZone(runId: string): Promise<{ zone: ZoneInfo; token: string }> {
+/**
+ * Returns zone info for the eval run.
+ * If EVAL_ZONE_ID + EVAL_ZONE_ISSUER_URL are set, reuses a persistent zone
+ * (test user already exists there — no sign-up flow needed each run).
+ * Otherwise creates a fresh ephemeral zone and marks it for teardown.
+ */
+export async function getOrCreateEvalZone(runId: string): Promise<{
+  zone: ZoneInfo;
+  token: string;
+  ephemeral: boolean;
+}> {
   const token = await getToken();
-  const name = `eval-${runId}`;
+
+  const persistentId = process.env.EVAL_ZONE_ID;
+  const persistentIssuer = process.env.EVAL_ZONE_ISSUER_URL;
+
+  if (persistentId && persistentIssuer) {
+    return {
+      zone: { id: persistentId, issuerUrl: persistentIssuer, stsProviderUrl: `${persistentIssuer}/oauth/2/token` },
+      token,
+      ephemeral: false,
+    };
+  }
 
   const resp = await fetch(`${endpoint()}/zones`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name: `eval-${runId}` }),
   });
   if (!resp.ok) throw new Error(`Zone creation failed: ${resp.status} ${await resp.text()}`);
 
@@ -53,6 +73,7 @@ export async function createEvalZone(runId: string): Promise<{ zone: ZoneInfo; t
       stsProviderUrl: zone.protocols.oauth2.token_endpoint,
     },
     token,
+    ephemeral: true,
   };
 }
 
