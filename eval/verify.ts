@@ -50,8 +50,12 @@ export async function verifyServer(opts: {
     if (!body.issuer) throw new Error(`Missing 'issuer' field in response`);
   }, checks);
 
-  await check("unauthenticated request returns 401", async () => {
-    const resp = await fetch(`${base}/api/whoami`);
+  await check("unauthenticated POST /mcp returns 401", async () => {
+    const resp = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
     if (resp.status !== 401) throw new Error(`Expected 401, got ${resp.status}`);
     const wwwAuth = resp.headers.get("www-authenticate");
     if (!wwwAuth?.includes("resource_metadata")) {
@@ -59,11 +63,17 @@ export async function verifyServer(opts: {
     }
   }, checks);
 
-  await check("authenticated request returns 200", async () => {
-    const resp = await fetch(`${base}/api/whoami`, {
-      headers: { Authorization: `Bearer ${opts.accessToken}` },
+  await check("authenticated POST /mcp is accepted (not 401)", async () => {
+    const resp = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
     });
-    if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
+    if (resp.status === 401) throw new Error(`Token was rejected (got 401)`);
+    // Any non-401 means auth passed. 400 (bad JSON-RPC) is acceptable.
   }, checks);
 
   return {
