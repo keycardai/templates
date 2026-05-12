@@ -11,6 +11,12 @@ export interface VerifyResult {
   checks: Array<{ name: string; passed: boolean; detail?: string }>;
 }
 
+export interface VerifyOptions {
+  serverUrl: string;
+  accessToken: string;
+  expectedIssuer?: string;
+}
+
 async function check(
   name: string,
   fn: () => Promise<void>,
@@ -24,10 +30,7 @@ async function check(
   }
 }
 
-export async function verifyServer(opts: {
-  serverUrl: string;
-  accessToken: string;
-}): Promise<VerifyResult> {
+export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
   const base = opts.serverUrl.replace(/\/$/, "");
   const checks: VerifyResult["checks"] = [];
 
@@ -64,10 +67,18 @@ export async function verifyServer(opts: {
   }, checks);
 
   // Decode token to surface claims for debugging
+  let tokenIss = "";
   try {
     const payload = JSON.parse(Buffer.from(opts.accessToken.split(".")[1], "base64url").toString());
+    tokenIss = payload.iss ?? "";
     console.log(`   Token claims: iss=${payload.iss} aud=${JSON.stringify(payload.aud)} scope=${payload.scope}`);
   } catch { /* non-JWT */ }
+
+  if (opts.expectedIssuer) {
+    console.log(`   .env KEYCARD_URL: ${JSON.stringify(opts.expectedIssuer)} (len=${opts.expectedIssuer.length})`);
+    console.log(`   Token iss:        ${JSON.stringify(tokenIss)} (len=${tokenIss.length})`);
+    console.log(`   Match: ${opts.expectedIssuer === tokenIss}`);
+  }
 
   await check("authenticated POST /mcp is accepted (not 401)", async () => {
     const resp = await fetch(`${base}/mcp`, {
