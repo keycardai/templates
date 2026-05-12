@@ -110,8 +110,10 @@ if (!agentResult.success) {
 }
 console.log("   Build succeeded");
 
-// 4. Start server
+// 4. Start server — kill any stale process on port 8000 first
 console.log("\n4. Starting server...");
+await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
+await new Promise((r) => setTimeout(r, 500));
 serverProcess = execFile("node", ["--env-file-if-exists=.env", "dist/server.js"], {
   cwd: TEMPLATE_DIR,
   detached: true,
@@ -161,7 +163,7 @@ console.log("   OAuth complete");
 
 // 7. Verify
 console.log("\n7. Verifying server...");
-const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken, expectedIssuer: zone.issuerUrl });
+const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken });
 
 console.log("\n=== Results ===");
 for (const c of result.checks) {

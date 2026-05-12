@@ -2,8 +2,8 @@
  * Verify the running template server behaves correctly:
  * - /healthz returns 200
  * - .well-known endpoints return valid JSON
- * - An authenticated request (Bearer token) returns 200
- * - An unauthenticated request returns 401
+ * - An unauthenticated POST /mcp returns 401 with WWW-Authenticate
+ * - An authenticated POST /mcp returns non-401 (auth passed)
  */
 
 export interface VerifyResult {
@@ -66,27 +66,12 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     }
   }, checks);
 
-  // Decode token to surface claims for debugging
-  let tokenIss = "";
-  try {
-    const payload = JSON.parse(Buffer.from(opts.accessToken.split(".")[1], "base64url").toString());
-    tokenIss = payload.iss ?? "";
-    console.log(`   Token claims: iss=${payload.iss} aud=${JSON.stringify(payload.aud)} scope=${payload.scope}`);
-  } catch { /* non-JWT */ }
-
-  if (opts.expectedIssuer) {
-    console.log(`   .env KEYCARD_URL: ${JSON.stringify(opts.expectedIssuer)} (len=${opts.expectedIssuer.length})`);
-    console.log(`   Token iss:        ${JSON.stringify(tokenIss)} (len=${tokenIss.length})`);
-    console.log(`   Match: ${opts.expectedIssuer === tokenIss}`);
-  }
-
   await check("authenticated POST /mcp is accepted (not 401)", async () => {
     const resp = await fetch(`${base}/mcp`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,
         "Content-Type": "application/json",
-        Host: "localhost:8000",
       },
       body: "{}",
     });
