@@ -75,10 +75,14 @@ export async function verifyServer(opts: {
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,
         "Content-Type": "application/json",
+        Host: "localhost:8000",
       },
       body: "{}",
     });
-    if (resp.status === 401) throw new Error(`Token was rejected (got 401)`);
+    if (resp.status === 401) {
+      const wwwAuth = resp.headers.get("www-authenticate") ?? "(none)";
+      throw new Error(`Token was rejected (got 401). WWW-Authenticate: ${wwwAuth}`);
+    }
     // Any non-401 means auth passed. 400 (bad JSON-RPC) is acceptable.
   }, checks);
 
