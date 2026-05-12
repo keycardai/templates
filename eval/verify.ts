@@ -63,6 +63,12 @@ export async function verifyServer(opts: {
     }
   }, checks);
 
+  // Decode token to surface claims for debugging
+  try {
+    const payload = JSON.parse(Buffer.from(opts.accessToken.split(".")[1], "base64url").toString());
+    console.log(`   Token claims: iss=${payload.iss} aud=${JSON.stringify(payload.aud)} scope=${payload.scope}`);
+  } catch { /* non-JWT */ }
+
   await check("authenticated POST /mcp is accepted (not 401)", async () => {
     const resp = await fetch(`${base}/mcp`, {
       method: "POST",
