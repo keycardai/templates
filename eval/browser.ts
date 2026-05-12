@@ -101,12 +101,19 @@ export async function authenticateViaOAuth(opts: {
     // - callback URL → already authorized (rare)
     const silence = () => null;
     const postPasswordOutcome = await Promise.race([
-      page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 }).then(() => "callback" as const).catch(silence),
-      page.waitForURL("**/login/signup**", { timeout: 30_000 }).then(() => "signup" as const).catch(silence),
-      page.waitForURL("**/login/verify-email**", { timeout: 30_000 }).then(() => "verify" as const).catch(silence),
-      // consent button — use a broader selector to avoid matching the signup submit button
-      page.waitForSelector(".consent-actions button.btn-primary", { timeout: 30_000 }).then(() => "consent" as const).catch(silence),
+      page.waitForURL(`${CALLBACK_URL}**`, { timeout: 45_000 }).then(() => "callback" as const).catch(silence),
+      page.waitForURL("**/login/signup**", { timeout: 45_000 }).then(() => "signup" as const).catch(silence),
+      page.waitForURL("**/login/verify-email**", { timeout: 45_000 }).then(() => "verify" as const).catch(silence),
+      page.waitForURL("**/login/consent**", { timeout: 45_000 }).then(() => "consent-url" as const).catch(silence),
+      page.waitForSelector(".consent-actions button.btn-primary", { timeout: 45_000 }).then(() => "consent" as const).catch(silence),
     ]);
+
+    if (!postPasswordOutcome) {
+      throw new Error(
+        `OAuth flow stalled after password submission — unexpected page: ${page.url()}\n` +
+        `Run with EVAL_HEADLESS=false to inspect the browser state.`,
+      );
+    }
 
     if (postPasswordOutcome === "signup" || postPasswordOutcome === "verify") {
       if (opts.headless === false) {
@@ -119,8 +126,9 @@ export async function authenticateViaOAuth(opts: {
           `Run once with EVAL_HEADLESS=false to sign up and verify the account.`,
         );
       }
-    } else if (postPasswordOutcome === "consent") {
-      await page.click('button.btn-primary');
+    } else if (postPasswordOutcome === "consent" || postPasswordOutcome === "consent-url") {
+      await page.waitForSelector(".consent-actions button.btn-primary", { timeout: 10_000 });
+      await page.click(".consent-actions button.btn-primary");
       await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
     }
     // else: postPasswordOutcome === "callback" — already redirected
