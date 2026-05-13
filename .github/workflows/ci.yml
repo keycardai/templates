@@ -14,27 +14,41 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     outputs:
-      templates: ${{ steps.find.outputs.templates }}
+      typescript: ${{ steps.find.outputs.typescript }}
+      python: ${{ steps.find.outputs.python }}
     steps:
       - uses: actions/checkout@v4
       - id: find
         run: |
           if [ -n "${{ inputs.template }}" ]; then
-            echo "templates=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+            # Detect language from the specified template
+            if [ -f "${{ inputs.template }}/package.json" ]; then
+              echo "typescript=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+              echo "python=[]" >> "$GITHUB_OUTPUT"
+            else
+              echo "typescript=[]" >> "$GITHUB_OUTPUT"
+              echo "python=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+            fi
           else
-            dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' \
+            ts=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
               -exec test -f '{}/package.json' \; -print \
               | sed 's|^\./||' | sort | jq -R . | jq -sc .)
-            echo "templates=$dirs" >> "$GITHUB_OUTPUT"
+            py=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
+              -exec test -f '{}/pyproject.toml' \; \
+              ! -exec test -f '{}/package.json' \; -print \
+              | sed 's|^\./||' | sort | jq -R . | jq -sc .)
+            echo "typescript=$ts" >> "$GITHUB_OUTPUT"
+            echo "python=$py" >> "$GITHUB_OUTPUT"
           fi
 
   verify-typescript:
     needs: discover
+    if: needs.discover.outputs.typescript != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        template: ${{ fromJson(needs.discover.outputs.templates) }}
+        template: ${{ fromJson(needs.discover.outputs.typescript) }}
     env:
       CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
       CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
@@ -59,70 +73,115 @@ jobs:
         id: zone
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
-
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
             -d "grant_type=client_credentials" \
             -d "client_id=${CI_KEYCARD_CLIENT_ID}" \
             -d "client_secret=${CI_KEYCARD_CLIENT_SECRET}" \
             | jq -r '.access_token')
-
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "Failed to obtain access token"
-            exit 1
-          fi
-
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then echo "Failed to obtain access token"; exit 1; fi
           echo "::add-mask::$TOKEN"
           echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
-
+          sleep 5
           ZONE=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/zones" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"name\": \"${ZONE_NAME}\"}")
-
-          ZONE_ID=$(echo "$ZONE" | jq -r '.id')
-          KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')
-
-          echo "ZONE_ID=$ZONE_ID" >> "$GITHUB_OUTPUT"
-          echo "KEYCARD_URL=$KEYCARD_URL" >> "$GITHUB_OUTPUT"
-          echo "Created zone: $ZONE_ID ($KEYCARD_URL)"
+          echo "ZONE_ID=$(echo "$ZONE" | jq -r '.id')" >> "$GITHUB_OUTPUT"
+          echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
 
       - name: Start server and verify
         working-directory: ${{ matrix.template }}
         env:
           PORT: "8000"
           KEYCARD_URL: ${{ steps.zone.outputs.KEYCARD_URL }}
-          # Brokered-credentials templates guard against missing KEYCARD_CLIENT_ID/SECRET
-          # at startup. In CI we inject the service account credentials so the server
-          # starts and serves .well-known correctly; actual token exchange is not tested here.
           KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
           KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
         run: |
           node dist/server.js &
           SERVER_PID=$!
-
           for i in $(seq 1 10); do
-            if curl -sf http://localhost:8000/healthz > /dev/null 2>&1; then
-              echo "Server ready"
-              break
-            fi
-            echo "Waiting... ($i/10)"
-            sleep 2
+            curl -sf http://localhost:8000/healthz > /dev/null 2>&1 && echo "Server ready" && break
+            echo "Waiting... ($i/10)"; sleep 2
           done
-
           curl -sf http://localhost:8000/healthz | jq .
-
-          echo "Checking .well-known/oauth-protected-resource..."
           curl -sf http://localhost:8000/.well-known/oauth-protected-resource | jq .
-
-          echo "Checking .well-known/oauth-authorization-server..."
           curl -sf http://localhost:8000/.well-known/oauth-authorization-server | jq .
-
           kill $SERVER_PID
 
       - name: Delete ephemeral zone
         if: always()
         run: |
-          if [ -n "${{ steps.zone.outputs.ZONE_ID }}" ]; then
+          [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
-              -H "Authorization: Bearer $TOKEN" && echo "Zone deleted"
-          fi
+              -H "Authorization: Bearer $TOKEN" && echo "Zone deleted" || true
+
+  verify-python:
+    needs: discover
+    if: needs.discover.outputs.python != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.discover.outputs.python) }}
+    env:
+      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.template }}
+        run: uv sync
+
+      - name: Create ephemeral zone
+        id: zone
+        run: |
+          ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
+          TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
+            -d "grant_type=client_credentials" \
+            -d "client_id=${CI_KEYCARD_CLIENT_ID}" \
+            -d "client_secret=${CI_KEYCARD_CLIENT_SECRET}" \
+            | jq -r '.access_token')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then echo "Failed to obtain access token"; exit 1; fi
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          sleep 5
+          ZONE=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/zones" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"${ZONE_NAME}\"}")
+          echo "ZONE_ID=$(echo "$ZONE" | jq -r '.id')" >> "$GITHUB_OUTPUT"
+          echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
+
+      - name: Start server and verify
+        working-directory: ${{ matrix.template }}
+        env:
+          PORT: "8000"
+          KEYCARD_URL: ${{ steps.zone.outputs.KEYCARD_URL }}
+          KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+        run: |
+          uv run uvicorn main:app --host 0.0.0.0 --port 8000 &
+          SERVER_PID=$!
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8000/healthz > /dev/null 2>&1 && echo "Server ready" && break
+            echo "Waiting... ($i/10)"; sleep 2
+          done
+          curl -sf http://localhost:8000/healthz | jq .
+          curl -sf http://localhost:8000/.well-known/oauth-protected-resource | jq .
+          curl -sf http://localhost:8000/.well-known/oauth-authorization-server | jq .
+          kill $SERVER_PID
+
+      - name: Delete ephemeral zone
+        if: always()
+        run: |
+          [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
+            curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
+              -H "Authorization: Bearer $TOKEN" && echo "Zone deleted" || true
