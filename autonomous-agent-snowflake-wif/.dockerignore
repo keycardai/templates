@@ -1,0 +1,8 @@
+node_modules/
+dist/
+agent_keys/
+.env
+.env.local
+.env.*
+*.tsbuildinfo
+.git/
