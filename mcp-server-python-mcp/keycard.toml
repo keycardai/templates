@@ -1,12 +1,7 @@
-schema_version = "1"
-
-[project]
-name = "mcp-server-python-mcp"
-kind = "mcp-server"
+[org]
+id = "<org-id>"
 
 [zone]
-url = "https://lmnhzl0cq4ursfuqddt37fcehw.keycard.cloud"
+id = "<zone-id>"
 
-[server]
-command = "uv run uvicorn main:app --port 8000"
-port = 8000
+[credentials]
