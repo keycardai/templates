@@ -45,7 +45,7 @@ auth_provider = AuthProvider(
     mcp_server_url=SERVER_URL,
 )
 
-mcp = FastMCP(SERVER_NAME)
+mcp = FastMCP(SERVER_NAME, streamable_http_path="/")
 register_hello_tool(mcp)
 
 
