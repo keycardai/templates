@@ -71,7 +71,7 @@ The identifier MUST include the `/mcp` suffix. Carry as `<resource-id>`.
 
 ### Zone URL
 
-Resolve `KEYCARD_ZONE_URL` from the zone ID and the `KEYCARD_ENV` domain:
+Resolve `KEYCARD_URL` from the zone ID and the `KEYCARD_ENV` domain:
 
 | `KEYCARD_ENV` | Domain | Scheme |
 |---|---|---|
@@ -85,7 +85,7 @@ Example: ID `<id>` in production → `https://<id>.keycard.cloud`.
 ### .env
 
 ```
-KEYCARD_ZONE_URL=https://<id>.keycard.cloud
+KEYCARD_URL=https://<id>.keycard.cloud
 MCP_SERVER_URL=http://localhost:<port>/
 PORT=<port>
 ```
@@ -94,7 +94,7 @@ PORT=<port>
 
 ### keycard.toml
 
-`[zone].url` in `keycard.toml` interpolates `${KEYCARD_ZONE_URL}` — already correct, no changes needed.
+The agent MUST set `[zone].id` in `keycard.toml` — do not use `${KEYCARD_URL}` interpolation; TOML does not expand environment variables.
 
 ### Credentials
 
@@ -113,13 +113,13 @@ curl -fsS http://localhost:<port>/healthz | head -1
 kill $SERVER_PID 2>/dev/null || true
 ```
 
-All three endpoints MUST return JSON. If `oauth-authorization-server` returns HTML mentioning `TypeError: Invalid URL`, `KEYCARD_ZONE_URL` was not loaded — confirm `.env` contains a real URL, then restart.
+All three endpoints MUST return JSON. If `oauth-authorization-server` returns HTML mentioning `TypeError: Invalid URL`, `KEYCARD_URL` was not loaded — confirm `.env` contains a real URL, then restart.
 
 The agent MUST stop the smoke-test process before handing off.
 
 ## 4. What the agent MUST NOT do
 
-- Do not commit `KEYCARD_ZONE_URL` or `.env` to the repo.
+- Do not commit `KEYCARD_URL` or `.env` to the repo.
 - Do not invent Resource identifiers — derive from the project name and reuse on re-runs.
 - Do not pick a `keycard-vault` provider.
 - Do not start the server inside the agent session.
@@ -152,7 +152,7 @@ If `claude` is not on PATH, add to `~/.claude.json`:
 
 ## 6. Common gotchas
 
-1. **`RuntimeError: Either KEYCARD_ZONE_ID or KEYCARD_ZONE_URL is required`** — `.env` is missing or was not loaded. Confirm the file exists with a real zone URL and restart.
+1. **`RuntimeError: KEYCARD_URL is required`** — `.env` is missing or was not loaded. Confirm the file exists with a real zone URL and restart.
 
 2. **`invalid_target` during OAuth flow** — The Resource `identifier` does not match `http://localhost:<port>/mcp`. Check Console → Resources and correct the identifier.
 
