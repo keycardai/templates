@@ -1,0 +1,17 @@
+[org]
+id = "<org-id>"
+
+[zone]
+id = "<eval-zone-id>"
+
+[[credentials.default]]
+env_var = "ANTHROPIC_API_KEY"
+resource = "urn:keycard-eval:anthropic_api_key"
+
+[[credentials.default]]
+env_var = "EVAL_TEST_USER_EMAIL"
+resource = "urn:keycard-eval:test_user_email"
+
+[[credentials.default]]
+env_var = "EVAL_TEST_USER_PASSWORD"
+resource = "urn:keycard-eval:test_user_password"

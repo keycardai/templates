@@ -3,6 +3,17 @@
  * Reuses the same token exchange pattern as the CI workflow.
  */
 
+import * as fs from "node:fs/promises";
+
+async function getZoneIdFromToml(): Promise<string | undefined> {
+  try {
+    const toml = await fs.readFile(new URL("keycard.toml", import.meta.url), "utf8");
+    // Match [zone] section then find id = "..."
+    const match = toml.match(/\[zone\][^\[]*\bid\s*=\s*"([^"]+)"/s);
+    return match?.[1];
+  } catch { return undefined; }
+}
+
 function endpoint() {
   const e = process.env.CI_KEYCARD_ENDPOINT;
   if (!e) throw new Error("CI_KEYCARD_ENDPOINT is not set");
@@ -43,12 +54,12 @@ export async function getOrCreateEvalZone(runId: string): Promise<{
 }> {
   const token = await getToken();
 
-  const persistentId = process.env.EVAL_ZONE_ID;
-  const persistentIssuer = process.env.EVAL_ZONE_ISSUER_URL;
-
-  if (persistentId && persistentIssuer) {
+  // Read persistent zone from keycard.toml [zone].id — avoids email verification each run
+  const persistentId = await getZoneIdFromToml();
+  if (persistentId && persistentId !== "<eval-zone-id>") {
+    const issuerUrl = `https://${persistentId}.keycard.cloud`;
     return {
-      zone: { id: persistentId, issuerUrl: persistentIssuer, stsProviderUrl: `${persistentIssuer}/oauth/2/token` },
+      zone: { id: persistentId, issuerUrl, stsProviderUrl: `${issuerUrl}/oauth/2/token` },
       token,
       ephemeral: false,
     };
