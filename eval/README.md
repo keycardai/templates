@@ -8,7 +8,7 @@ End-to-end eval harness for Keycard templates. Tests whether a Claude agent can 
 2. Runs a Claude agent against the template's `SPEC.md` — the agent provisions the zone's Application and Resource, writes config files, and starts the server
 3. Uses Playwright to authenticate as a test user via the zone's OAuth consent flow
 4. Verifies the server accepts authenticated requests and rejects unauthenticated ones
-5. Tears down the zone
+5. Tears down the Application + Resource (zone is reused)
 
 ## Setup
 
@@ -16,22 +16,45 @@ End-to-end eval harness for Keycard templates. Tests whether a Claude agent can 
 cd eval
 npm install
 npx playwright install chromium
-cp .env.eval.example .env.eval
-# Fill in .env.eval with your credentials
 ```
 
-### One-time test user setup
+### 1. Fill in `keycard.toml`
 
-Run with a visible browser once to create the test user account:
+Edit `eval/keycard.toml` and replace the placeholders:
+
+- `[org] id` — your Keycard organization ID (Console → Settings)
+- `[zone] id` — a dedicated eval zone ID (create one in Console, configure zone auth with no external IDP and no invite requirement)
+
+### 2. Provision vault resources
+
+In Keycard Console, create three vault resources in your eval zone:
+
+| Resource URN | Secret |
+|---|---|
+| `urn:keycard-eval:anthropic_api_key` | Your Anthropic API key |
+| `urn:keycard-eval:test_user_email` | Email for the Playwright test user |
+| `urn:keycard-eval:test_user_password` | Password for the Playwright test user |
+
+### 3. Bootstrap credentials
+
+Copy `.env.eval.example` to `.env.eval` and fill in the service account credentials (these bootstrap zone creation and can't live in Keycard itself):
 
 ```bash
-EVAL_HEADLESS=false npm run eval -- --template mcp-server-typescript-express
+cp .env.eval.example .env.eval
 ```
 
-When the browser opens, sign up with the email/password you put in `.env.eval`. Verify your email when prompted. After that, all subsequent runs are fully headless.
+### 4. One-time test user signup
+
+Run once with a visible browser to sign up the test user in the eval zone:
+
+```bash
+EVAL_HEADLESS=false keycard run -- npm run eval -- --template mcp-server-typescript-express
+```
+
+When the browser opens, sign up with the email/password from your vault resources. Verify your email. After that, all subsequent runs are fully headless.
 
 ## Run
 
 ```bash
-npm run eval -- --template mcp-server-typescript-express
+keycard run -- npm run eval -- --template mcp-server-typescript-express
 ```
