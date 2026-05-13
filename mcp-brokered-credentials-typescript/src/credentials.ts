@@ -114,6 +114,13 @@ export class FlyWorkloadIdentity implements ApplicationCredential {
             : `FlyWorkloadIdentity: request to ${this.#socketPath} failed: ${err.message}`;
         reject(new Error(msg));
       });
+      req.setTimeout(5_000, () =>
+        req.destroy(
+          new Error(
+            "FlyWorkloadIdentity: OIDC token request timed out after 5 s",
+          ),
+        ),
+      );
       req.write(payload);
       req.end();
     });

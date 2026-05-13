@@ -12,6 +12,7 @@
     "@keycardai/mcp": "^0.4.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "express": "^5.0.0",
+    "safe-regex2": "^5.1.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {

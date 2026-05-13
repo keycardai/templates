@@ -57,6 +57,10 @@ async function main() {
     requiredScopes: ["mcp:tools"],
   });
 
+  // NOTE: entries are removed on graceful MCP close (server.onclose) but NOT
+  // on raw client disconnect, idle timeout, or token expiry. For a long-lived
+  // production service, add a TTL sweep or idle-timeout reaper so stale
+  // sessions don't accumulate indefinitely.
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
   app.post("/mcp", bearerAuth, async (req: Request, res: Response) => {

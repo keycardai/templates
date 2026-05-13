@@ -126,7 +126,21 @@ Commit `.env.example` with placeholder values for other developers. `.env` is al
 
 ### keycard.toml
 
-`[zone].url` in `keycard.toml` interpolates `${KEYCARD_URL}` — already correct in the template, no changes needed.
+The template ships a minimal `keycard.toml` at the project root with only `[org]`, `[zone]`, and an empty `[credentials]` block:
+
+```toml
+[org]
+id = "<org-id>"
+
+[zone]
+id = "<zone-id>"
+
+[credentials]
+```
+
+The agent MUST replace both placeholder IDs with the values from the user's existing zone-bound `keycard.toml`. If no such file exists, abort and tell the user to run `keycard init` first.
+
+Do not add `schema_version`, `[project]`, `[server]`, or a `[zone].url` field — runtime config (`KEYCARD_URL`, `PORT`) belongs in `.env`, not `keycard.toml`. TOML does not expand environment variables; `${KEYCARD_URL}` would be treated as a literal string.
 
 ### Credentials
 

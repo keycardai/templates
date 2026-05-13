@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthProvider } from "@keycardai/mcp/server/auth/provider";
 import { z } from "zod";
+import safe from "safe-regex2";
 import { withLinearClient } from "../upstream.js";
 
 export function registerSearchTool(
@@ -30,6 +31,12 @@ export function registerSearchTool(
       } catch (err) {
         throw new Error(
           `Invalid regex pattern: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      if (!safe(regex)) {
+        throw new Error(
+          "This regex pattern is too complex. Try a simpler pattern.",
         );
       }
 

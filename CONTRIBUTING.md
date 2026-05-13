@@ -42,6 +42,24 @@ This is the contract with whatever agent provisions Keycard for the user. It MUS
 
 Keep `SPEC.md` short and unambiguous. It is read by agents, not humans browsing GitHub.
 
+## `keycard.toml` format
+
+Every template's `keycard.toml` uses the **minimal** format — only static IDs and credential-mapping entries:
+
+```toml
+[org]
+id = "<org-id>"
+
+[zone]
+id = "<zone-id>"
+```
+
+Do **not** add `schema_version`, `[project]`, `[server]`, or a `[zone].url` field. Runtime config (`KEYCARD_URL`, `PORT`, etc.) belongs in `.env`. TOML does not expand environment variables — `${KEYCARD_URL}` would be treated as a literal string.
+
+## Lockfiles
+
+Commit `package-lock.json` (or the equivalent for other package managers). Someone copying a template directory should get the same dependency versions that were tested.
+
 ## Defaults over placeholders
 
 Templates run as-is. Bake in defaults that work for `npm run dev`, then let the user override via env vars.
