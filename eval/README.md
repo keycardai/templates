@@ -27,13 +27,14 @@ Edit `eval/keycard.toml` and replace the placeholders:
 
 ### 2. Provision vault resources
 
-In Keycard Console, create three vault resources in your eval zone:
+In Keycard Console, create four vault resources in your eval zone:
 
 | Resource URN | Secret |
 |---|---|
 | `urn:keycard-eval:anthropic_api_key` | Your Anthropic API key |
 | `urn:keycard-eval:test_user_email` | Email for the Playwright test user |
 | `urn:keycard-eval:test_user_password` | Password for the Playwright test user |
+| `urn:keycard-eval:org_id` | Your Keycard organization ID (Console → Settings) |
 
 ### 3. Bootstrap credentials
 

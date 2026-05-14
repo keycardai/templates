@@ -15,3 +15,7 @@ resource = "urn:keycard-eval:test_user_email"
 [[credentials.default]]
 env_var = "EVAL_TEST_USER_PASSWORD"
 resource = "urn:keycard-eval:test_user_password"
+
+[[credentials.default]]
+env_var = "EVAL_ORG_ID"
+resource = "urn:keycard-eval:org_id"
