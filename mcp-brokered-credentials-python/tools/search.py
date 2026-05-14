@@ -2,9 +2,9 @@ import json
 import re
 
 from mcp.server.fastmcp import Context, FastMCP
-from keycardai.mcp.server.auth import AccessContext, AuthProvider
+from keycardai.mcp.server.auth import AuthProvider
 
-from upstream import LINEAR_MCP_URL, linear_client
+from upstream import linear_client_for_user
 
 
 def register_search_tool(mcp: FastMCP, auth_provider: AuthProvider) -> None:
@@ -15,19 +15,13 @@ def register_search_tool(mcp: FastMCP, auth_provider: AuthProvider) -> None:
             "or description matches the pattern."
         )
     )
-    @auth_provider.grant(LINEAR_MCP_URL)
-    async def search(access_ctx: AccessContext, ctx: Context, pattern: str) -> str:
-        """pattern: Regex matched case-insensitively against each tool's name and description."""
-        if access_ctx.has_errors():
-            raise Exception(f"Token exchange failed: {access_ctx.get_errors()}")
-
+    async def search(ctx: Context, pattern: str) -> str:
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as exc:
             raise Exception(f"Invalid regex pattern: {exc}") from exc
 
-        token = access_ctx.access(LINEAR_MCP_URL).access_token
-        async with linear_client(token) as client:
+        async with linear_client_for_user(auth_provider, ctx) as client:
             result = await client.list_tools()
             matched = [
                 {
