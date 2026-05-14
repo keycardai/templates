@@ -43,6 +43,51 @@ export interface AuthResult {
   idToken?: string;
 }
 
+/**
+ * Handle Linear's OAuth authorization page if Keycard redirects there during
+ * the dependency consent flow. Linear's auth page lives at linear.app/oauth
+ * or auth.linear.app. We use the same credentials as the Keycard test user
+ * since the eval uses a single personal account for both.
+ */
+async function handleLinearOAuthIfPresent(
+  page: import("playwright").Page,
+  email: string,
+  password: string,
+  callbackUrl: string,
+): Promise<void> {
+  if (!page.url().includes("linear.app")) return;
+
+  console.log("   Linear OAuth page detected, authenticating...");
+
+  // Linear shows an email input first, then password
+  const emailInput = page.locator('input[type="email"], input[name="email"]');
+  const continueBtn = page.locator('button[type="submit"]').first();
+
+  if (await emailInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await emailInput.fill(email);
+    await continueBtn.click();
+  }
+
+  const passwordInput = page.locator('input[type="password"]');
+  if (await passwordInput.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    await passwordInput.fill(password);
+    await page.locator('button[type="submit"]').last().click();
+  }
+
+  // After login, Linear shows an "Authorize" button to approve scope access
+  const authorizeBtn = page.locator('button:has-text("Authorize"), button:has-text("Allow"), button[type="submit"]').first();
+  if (await authorizeBtn.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    await authorizeBtn.click();
+  }
+
+  // Wait to land back at callback or Keycard
+  await Promise.race([
+    page.waitForURL(`${callbackUrl}**`, { timeout: 30_000 }),
+    page.waitForURL("**/keycard**", { timeout: 30_000 }),
+    page.waitForURL("**keycard.cloud**", { timeout: 30_000 }),
+  ]).catch(() => { /* may already be past this */ });
+}
+
 export async function authenticateViaOAuth(opts: {
   zoneIssuerUrl: string;
   resourceIdentifier: string;
@@ -129,7 +174,14 @@ export async function authenticateViaOAuth(opts: {
     } else if (postPasswordOutcome === "consent" || postPasswordOutcome === "consent-url") {
       await page.waitForSelector(".consent-actions button.btn-primary", { timeout: 10_000 });
       await page.click(".consent-actions button.btn-primary");
-      await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
+
+      // For brokered-credentials templates, Keycard may redirect to Linear's OAuth
+      // page to obtain a Linear token as part of the dependency consent chain.
+      // We wait briefly to see if the URL moves to linear.app before waiting for callback.
+      await page.waitForTimeout(2_000);
+      await handleLinearOAuthIfPresent(page, opts.testUserEmail, opts.testUserPassword, CALLBACK_URL);
+
+      await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 });
     }
     // else: postPasswordOutcome === "callback" — already redirected
   } finally {
