@@ -194,6 +194,14 @@ export async function runProvisioningAgent(opts: {
   const client = new Anthropic();
   const specContent = await fs.readFile(path.join(opts.templateDir, "SPEC.md"), "utf8");
 
+  // Pre-write a valid keycard.toml so `keycard agent api` has auth context from the start.
+  // The agent will overwrite this at the end of §2 with the full credential entries.
+  await fs.writeFile(
+    path.join(opts.templateDir, "keycard.toml"),
+    `[org]\nid = "${opts.orgId}"\n\n[zone]\nid = "${opts.zoneId}"\n`,
+    "utf8",
+  );
+
   // Environment the agent's bash commands run in.
   // KEYCARD_CLIENT_ID/SECRET let `keycard agent api` authenticate as the CI service account.
   const extraEnv: Record<string, string> = {
@@ -215,8 +223,12 @@ Context:
   Template:    ${opts.templateDir}
 
 Rules:
-- Use \`keycard agent api\` for all Keycard Management API calls. Auth is already configured via KEYCARD_CLIENT_ID/SECRET in the environment. Always pass --org ${opts.orgId} on every keycard agent api call.
-- Follow the SPEC.md sections in order: §1 (provision primitives), §2 (write config files), §4 (install + verify).
+- Use \`keycard agent api\` for all Keycard Management API calls. Auth is configured via KEYCARD_CLIENT_ID/SECRET and the keycard.toml in the working directory. Always pass --org ${opts.orgId} on every call.
+- CRITICAL: \`keycard agent api\` reads the request body from stdin — it does NOT support a -d flag. Always pipe JSON:
+    printf '{"name":"linear"}' | keycard agent api -X POST /zones/... --org ...
+  or use jq to construct the body and pipe it:
+    jq -n '{"name":"linear"}' | keycard agent api -X POST /zones/... --org ...
+- Follow SPEC.md sections in order: §1 (provision primitives), §2 (write config files), §4 (install + verify).
 - For §1g (vault credentials), run: bash scripts/provision-credentials.sh with the correct flags.
 - Do NOT start the server — the harness does that after you signal success.
 - Do NOT run keycard run.
