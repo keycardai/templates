@@ -225,19 +225,19 @@ Context:
 
 Rules:
 - Make all Keycard Management API calls using curl. A bearer token is obtained once at the start and reused:
-    TOKEN=$(curl -sf -X POST "${KEYCARD_API_ENDPOINT}/service-account-token" \
-      -d "grant_type=client_credentials" \
-      -d "client_id=${KEYCARD_CLIENT_ID}" \
-      -d "client_secret=${KEYCARD_CLIENT_SECRET}" \
+    TOKEN=$(curl -sf -X POST "\${KEYCARD_API_ENDPOINT}/service-account-token" \\
+      -d "grant_type=client_credentials" \\
+      -d "client_id=\${KEYCARD_CLIENT_ID}" \\
+      -d "client_secret=\${KEYCARD_CLIENT_SECRET}" \\
       | jq -r '.access_token')
   Then use it for every call:
-    curl -sf -X POST "${KEYCARD_API_ENDPOINT}/zones/${ZONE_ID}/..." \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
+    curl -sf -X POST "\${KEYCARD_API_ENDPOINT}/zones/\${ZONE_ID}/..." \\
+      -H "Authorization: Bearer \$TOKEN" \\
+      -H "Content-Type: application/json" \\
       -d '{"name":"..."}'
   Always check that TOKEN is non-empty before proceeding.
 - Follow SPEC.md sections in order: §1 (provision primitives), §2 (write config files), §4 (install + verify).
-- The SPEC.md shows \`keycard agent api\` commands — translate each one to the equivalent curl call against ${KEYCARD_API_ENDPOINT}.
+- The SPEC.md shows \`keycard agent api\` commands — translate each one to the equivalent curl call against \${KEYCARD_API_ENDPOINT}.
 - For §1g (vault credentials), run: bash scripts/provision-credentials.sh with the correct flags. That script uses \`keycard agent api\` internally and will work correctly from the terminal context.
 - Do NOT start the server — the harness does that after you signal success.
 - Do NOT run keycard run.
