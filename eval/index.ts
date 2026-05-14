@@ -112,13 +112,12 @@ if (isBrokered) {
   const clientId = required("CI_KEYCARD_CLIENT_ID");
   const clientSecret = required("CI_KEYCARD_CLIENT_SECRET");
 
-  // Delete stale vault resources from previous runs so provision-credentials.sh
-  // always issues fresh credentials (the password field is unretrievable after creation).
+  // Tear down all resources from previous runs so each eval tests the full
+  // provisioning path from scratch. Vault resources must be deleted because
+  // the credential password is only returned on creation — stale ones leave
+  // provision-credentials.sh unable to issue fresh credentials.
   const templateName = path.basename(TEMPLATE_DIR);
-  const staleUrns = [
-    `urn:${templateName}:client_id`,
-    `urn:${templateName}:client_secret`,
-  ];
+  console.log("   Tearing down resources from previous runs...");
   try {
     const tokenResp = await fetch(`${endpoint}/service-account-token`, {
       method: "POST",
@@ -126,19 +125,30 @@ if (isBrokered) {
       body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
     });
     const { access_token: cleanupToken } = await tokenResp.json() as { access_token: string };
-    const resResp = await fetch(`${endpoint}/zones/${zone.id}/resources`, {
-      headers: { Authorization: `Bearer ${cleanupToken}` },
-    });
-    const { items } = await resResp.json() as { items: Array<{ id: string; identifier: string }> };
-    for (const item of items.filter((r) => staleUrns.includes(r.identifier))) {
-      await fetch(`${endpoint}/zones/${zone.id}/resources/${item.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${cleanupToken}` },
-      });
-      console.log(`   Deleted stale vault resource: ${item.identifier}`);
+    const headers = { Authorization: `Bearer ${cleanupToken}` };
+
+    // Delete all resources whose identifier matches the template name (covers
+    // vault URNs, proxy resource at localhost, and the upstream Linear resource).
+    const resResp = await fetch(`${endpoint}/zones/${zone.id}/resources`, { headers });
+    const { items: resources } = await resResp.json() as { items: Array<{ id: string; name: string; identifier: string }> };
+    for (const r of resources.filter((r) =>
+      r.name.includes(templateName) ||
+      r.identifier.startsWith(`urn:${templateName}:`) ||
+      r.identifier === "http://localhost:8000/mcp"
+    )) {
+      await fetch(`${endpoint}/zones/${zone.id}/resources/${r.id}`, { method: "DELETE", headers });
+      console.log(`   Deleted resource: ${r.identifier}`);
+    }
+
+    // Delete the proxy application (and its credentials cascade).
+    const appResp = await fetch(`${endpoint}/zones/${zone.id}/applications`, { headers });
+    const { items: apps } = await appResp.json() as { items: Array<{ id: string; name: string }> };
+    for (const a of apps.filter((a) => a.name === templateName)) {
+      await fetch(`${endpoint}/zones/${zone.id}/applications/${a.id}`, { method: "DELETE", headers });
+      console.log(`   Deleted application: ${a.name}`);
     }
   } catch (e) {
-    console.warn(`   Warning: stale vault resource cleanup failed: ${e}`);
+    console.warn(`   Warning: teardown failed (proceeding anyway): ${e}`);
   }
 
   const agentResult = await runProvisioningAgent({
