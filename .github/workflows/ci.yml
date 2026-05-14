@@ -91,33 +91,10 @@ jobs:
         env:
           PORT: "8000"
           KEYCARD_URL: ${{ steps.zone.outputs.KEYCARD_URL }}
-          # Brokered-credentials templates guard against missing KEYCARD_CLIENT_ID/SECRET
-          # at startup. In CI we inject the service account credentials so the server
-          # starts and serves .well-known correctly; actual token exchange is not tested here.
           KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
           KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-        run: |
-          node dist/server.js &
-          SERVER_PID=$!
-
-          for i in $(seq 1 10); do
-            if curl -sf http://localhost:8000/healthz > /dev/null 2>&1; then
-              echo "Server ready"
-              break
-            fi
-            echo "Waiting... ($i/10)"
-            sleep 2
-          done
-
-          curl -sf http://localhost:8000/healthz | jq .
-
-          echo "Checking .well-known/oauth-protected-resource..."
-          curl -sf http://localhost:8000/.well-known/oauth-protected-resource | jq .
-
-          echo "Checking .well-known/oauth-authorization-server..."
-          curl -sf http://localhost:8000/.well-known/oauth-authorization-server | jq .
-
-          kill $SERVER_PID
+          AGENT_BASE_URL: "http://localhost:8000"
+        run: npm run ci:verify
 
       - name: Delete ephemeral zone
         if: always()
