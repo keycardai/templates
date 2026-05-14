@@ -191,7 +191,7 @@ export async function runProvisioningAgent(opts: {
   keycardEndpoint: string;
   keycardClientId: string;
   keycardClientSecret: string;
-}): Promise<AgentResult> {
+}): Promise<AgentResult & { evalCredsFile: string }> {
   const client = new Anthropic();
   const specContent = await fs.readFile(path.join(opts.templateDir, "SPEC.md"), "utf8");
 
@@ -203,14 +203,19 @@ export async function runProvisioningAgent(opts: {
     "utf8",
   );
 
+  // provision-credentials.sh writes proxy creds here when EVAL_CREDS_FILE is set.
+  // The eval harness reads this to inject credentials directly into the server process,
+  // avoiding a nested `keycard run` call.
+  const evalCredsFile = `/tmp/eval-proxy-creds-${opts.zoneId}.json`;
+
   // Environment the agent's bash commands run in.
-  // KEYCARD_CLIENT_ID/SECRET let `keycard agent api` authenticate as the CI service account.
   const extraEnv: Record<string, string> = {
     KEYCARD_CLIENT_ID: opts.keycardClientId,
     KEYCARD_CLIENT_SECRET: opts.keycardClientSecret,
     KEYCARD_API_ENDPOINT: opts.keycardEndpoint,
     ZONE_ID: opts.zoneId,
     ORG_ID: opts.orgId,
+    EVAL_CREDS_FILE: evalCredsFile,
   };
 
   const systemPrompt = `You are an automated CI eval agent testing a Keycard MCP template.
@@ -248,7 +253,7 @@ Signal completion by printing exactly one of:
   PROVISION_COMPLETE:SUCCESS
   PROVISION_COMPLETE:FAILURE: <reason>`;
 
-  return runAgentLoop(
+  const result = await runAgentLoop(
     client,
     systemPrompt,
     `SPEC.md:\n\n${specContent}\n\nProvision all primitives, configure the template, install dependencies, and verify the build.`,
@@ -258,4 +263,5 @@ Signal completion by printing exactly one of:
     "PROVISION_COMPLETE:SUCCESS",
     "PROVISION_COMPLETE:FAILURE",
   );
+  return { ...result, evalCredsFile };
 }

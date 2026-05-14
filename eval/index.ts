@@ -103,6 +103,8 @@ console.log(`   Zone: ${zone.id} (${zone.issuerUrl})`);
 // 2. Provision / configure
 await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
 
+let evalCredsFile: string | undefined;
+
 if (isBrokered) {
   // Agent provisions ALL primitives from SPEC.md (mirrors the skill flow)
   console.log("\n2. Running provisioning agent (full SPEC.md flow)...");
@@ -118,6 +120,8 @@ if (isBrokered) {
     keycardClientId: required("CI_KEYCARD_CLIENT_ID"),
     keycardClientSecret: required("CI_KEYCARD_CLIENT_SECRET"),
   });
+
+  evalCredsFile = agentResult.evalCredsFile;
 
   if (!agentResult.success) {
     console.error("\n   Provisioning agent failed");
@@ -159,29 +163,29 @@ console.log("\n3. Starting server...");
 await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
 await new Promise((r) => setTimeout(r, 500));
 
-let serverCmd: string;
-let serverArgs: string[];
+const serverCmd = language === "python" ? "uv" : "node";
+const serverArgs = language === "python"
+  ? ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+  : ["--env-file-if-exists=.env", "dist/server.js"];
 
-if (isBrokered) {
-  // Brokered templates need keycard run to broker vault credentials into the process.
-  // The agent wrote keycard.toml with [[credentials.default]] entries pointing at vault
-  // resources it created. keycard run fetches those and injects KEYCARD_CLIENT_ID/SECRET.
-  serverCmd = "keycard";
-  serverArgs = language === "python"
-    ? ["run", "--", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-    : ["run", "--", "node", "--env-file-if-exists=.env", "dist/server.js"];
-} else {
-  serverCmd = language === "python" ? "uv" : "node";
-  serverArgs = language === "python"
-    ? ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-    : ["--env-file-if-exists=.env", "dist/server.js"];
+// For brokered templates, provision-credentials.sh wrote the proxy application's
+// client_id/secret to evalCredsFile. Inject those directly — we can't use a nested
+// `keycard run` since we're already inside one.
+let proxyCreds: { client_id: string; client_secret: string } | undefined;
+if (evalCredsFile) {
+  try {
+    proxyCreds = JSON.parse(await fs.readFile(evalCredsFile, "utf8"));
+    await fs.unlink(evalCredsFile).catch(() => {});
+    console.log("   Loaded proxy credentials from provisioning step");
+  } catch {
+    console.warn("   Warning: could not read proxy creds file, falling back to service account");
+  }
 }
 
-// Inject service account credentials so keycard run can authenticate to fetch vault resources.
 const serverEnv = {
   ...process.env,
-  KEYCARD_CLIENT_ID: process.env.CI_KEYCARD_CLIENT_ID ?? "",
-  KEYCARD_CLIENT_SECRET: process.env.CI_KEYCARD_CLIENT_SECRET ?? "",
+  KEYCARD_CLIENT_ID: proxyCreds?.client_id ?? process.env.CI_KEYCARD_CLIENT_ID ?? "",
+  KEYCARD_CLIENT_SECRET: proxyCreds?.client_secret ?? process.env.CI_KEYCARD_CLIENT_SECRET ?? "",
 };
 
 serverProcess = execFile(serverCmd, serverArgs, {

@@ -176,6 +176,13 @@ echo "$creds_json" | jq --arg eid "$resource_id_client_secret" --arg n "$name" '
   data: { type: "token", token: .password }
 }' | kc_post "/zones/${zone}/secrets" >/dev/null
 
+
+# If EVAL_CREDS_FILE is set, write proxy credentials to that path so the eval
+# harness can inject them directly into the server process (avoids nested keycard run).
+if [[ -n "${EVAL_CREDS_FILE:-}" ]]; then
+  echo "$creds_json" | jq '{"client_id": .identifier, "client_secret": .password}' > "$EVAL_CREDS_FILE"
+fi
+
 unset creds_json
 
 echo ""
