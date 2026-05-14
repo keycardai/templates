@@ -3,7 +3,6 @@ import { z } from "zod";
 const Env = z.object({
   AGENT_BASE_URL: z.string().url(),
   KEYCARD_URL: z.string().url(),
-  SNOWFLAKE_ACCOUNT: z.string().min(1),
 
   AGENT_PROVIDER: z.string().default("anthropic"),
   AGENT_MODEL: z.string().default("claude-sonnet-4-20250514"),
@@ -11,6 +10,7 @@ const Env = z.object({
   AGENT_KEYS_DIR: z.string().default("./agent_keys"),
   AGENT_NAME: z.string().default("autonomous-agent-snowflake-wif"),
 
+  SNOWFLAKE_ACCOUNT: z.string().optional(),
   SNOWFLAKE_USER: z.string().optional(),
   SNOWFLAKE_DATABASE: z.string().optional(),
   SNOWFLAKE_WAREHOUSE: z.string().optional(),

@@ -14,13 +14,14 @@ import { loadEnv } from "./env.js";
 async function main() {
   const env = loadEnv();
 
-  // 1. Bootstrap the agent's cryptographic identity (generates/loads keypair).
+  // 1. Create (or load) a keypair that gives this agent a verifiable identity.
   console.log("Bootstrapping agent identity...");
   const identity = await bootstrapIdentity({
     storageDir: env.AGENT_KEYS_DIR,
   });
 
-  // 2. Build the A2A executor, agent card, and auth layer.
+  // 2. Configure the A2A layer: how this agent describes itself (agent card)
+  //    and how it handles incoming requests from other agents.
   const tools: AgentTool[] = [];
   const executor = createA2AExecutor({ provider: env.AGENT_PROVIDER, modelId: env.AGENT_MODEL, tools });
 
@@ -35,11 +36,11 @@ async function main() {
   const requestHandler = createKeycardRequestHandler(executor, agentCard);
   const userBuilder = keycardUserBuilder({ issuer: env.KEYCARD_URL });
 
-  // 3. Start Express server with identity + A2A endpoints.
-  //    Must be running before token exchange — Keycard fetches the agent's JWKS
-  //    to verify the client assertion.
+  // 3. Start the HTTP server with identity discovery (JWKS, OAuth client
+  //    metadata) and A2A endpoints. Must be up before token exchange — the
+  //    authorization server needs to reach our public keys.
   setAgentBaseUrl(env.AGENT_BASE_URL);
-  await startServer({
+  const server = await startServer({
     port: env.PORT,
     agentBaseUrl: env.AGENT_BASE_URL,
     a2a: { requestHandler, userBuilder },
@@ -47,31 +48,47 @@ async function main() {
 
   const clientId = getClientId();
 
-  // 4. Create shared Keycard token provider.
+  // 4. Set up the token provider. It uses the agent's identity to request
+  //    scoped access tokens from the authorization server (OAuth 2.0).
   const tokenProvider = new KeycardTokenProvider({
     keycardUrl: env.KEYCARD_URL,
     identity,
     clientId,
   });
 
-  // 5. Establish Snowflake connection with managed token lifecycle.
-  console.log("\nConnecting to Snowflake via Keycard WIF...");
-  const snowflake = new SnowflakeClient(tokenProvider, {
-    account: env.SNOWFLAKE_ACCOUNT,
-    user: env.SNOWFLAKE_USER,
-    database: env.SNOWFLAKE_DATABASE,
-    warehouse: env.SNOWFLAKE_WAREHOUSE,
-    role: env.SNOWFLAKE_ROLE,
-  });
-  await snowflake.connect();
-  console.log("Snowflake connection established successfully.");
+  // 5. Connect to Snowflake via Workload Identity Federation (WIF) using
+  //    the token provider's access token. Falls back to degraded mode if
+  //    Snowflake is not configured.
+  let snowflake: SnowflakeClient | undefined;
+
+  if (env.SNOWFLAKE_ACCOUNT) {
+    try {
+      console.log("\nConnecting to Snowflake via Keycard WIF...");
+      snowflake = new SnowflakeClient(tokenProvider, {
+        account: env.SNOWFLAKE_ACCOUNT,
+        user: env.SNOWFLAKE_USER,
+        database: env.SNOWFLAKE_DATABASE,
+        warehouse: env.SNOWFLAKE_WAREHOUSE,
+        role: env.SNOWFLAKE_ROLE,
+      });
+      await snowflake.connect();
+      console.log("Snowflake connection established successfully.");
+    } catch (err) {
+      console.warn("WARNING: Snowflake connection failed — running in degraded mode.", err);
+      snowflake = undefined;
+      server.setDegraded("Snowflake connection failed");
+    }
+  } else {
+    console.warn("WARNING: SNOWFLAKE_ACCOUNT not set — running in degraded mode (no Snowflake access).");
+    server.setDegraded("SNOWFLAKE_ACCOUNT not configured");
+  }
 
   console.log(`\nAgent ready (${env.AGENT_PROVIDER}/${env.AGENT_MODEL}). Waiting for A2A requests...`);
 
-  // 6. Graceful shutdown.
+  // 6. Graceful shutdown — close the Snowflake connection pool.
   const shutdown = async () => {
     console.log("\nShutting down...");
-    await snowflake.destroy().catch((err) => {
+    await snowflake?.destroy().catch((err) => {
       console.error("Error destroying Snowflake connection:", err);
     });
     process.exit(0);

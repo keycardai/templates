@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
-    "start": "node --env-file-if-exists=.env dist/index.js"
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "ci:verify": "bash scripts/ci-verify.sh"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.0",

@@ -18,14 +18,20 @@ export interface ServerConfig {
   a2a: A2AConfig;
 }
 
+export interface ServerHandle {
+  setDegraded(reason: string): void;
+}
+
 /**
  * Starts the Express server that hosts the agent's well-known endpoints
  * and the A2A JSON-RPC interface.
  */
 export async function startServer(
   config: ServerConfig,
-): Promise<void> {
+): Promise<ServerHandle> {
   const app = express();
+
+  let degradedReason: string | undefined;
 
   app.use(express.json());
   app.use(identityRouter());
@@ -41,13 +47,22 @@ export async function startServer(
   );
 
   app.get("/healthz", (_req, res) => {
-    res.json({ ok: true, name: "autonomous-agent-snowflake-wif" });
+    const status = degradedReason ? "degraded" : "ok";
+    res.status(200).json({
+      status,
+      name: "autonomous-agent-snowflake-wif",
+      ...(degradedReason && { reason: degradedReason }),
+    });
   });
 
-  return new Promise<void>((resolve) => {
+  return new Promise<ServerHandle>((resolve) => {
     app.listen(config.port, () => {
       console.log(`agent identity:  ${config.agentBaseUrl}/.well-known/agent-card.json`);
-      resolve();
+      resolve({
+        setDegraded(reason: string) {
+          degradedReason = reason;
+        },
+      });
     });
   });
 }
