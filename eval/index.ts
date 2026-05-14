@@ -106,9 +106,40 @@ await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; 
 let evalCredsFile: string | undefined;
 
 if (isBrokered) {
-  // Agent provisions ALL primitives from SPEC.md (mirrors the skill flow)
   console.log("\n2. Running provisioning agent (full SPEC.md flow)...");
   const orgId = required("EVAL_ORG_ID");
+  const endpoint = required("CI_KEYCARD_ENDPOINT");
+  const clientId = required("CI_KEYCARD_CLIENT_ID");
+  const clientSecret = required("CI_KEYCARD_CLIENT_SECRET");
+
+  // Delete stale vault resources from previous runs so provision-credentials.sh
+  // always issues fresh credentials (the password field is unretrievable after creation).
+  const templateName = path.basename(TEMPLATE_DIR);
+  const staleUrns = [
+    `urn:${templateName}:client_id`,
+    `urn:${templateName}:client_secret`,
+  ];
+  try {
+    const tokenResp = await fetch(`${endpoint}/service-account-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
+    });
+    const { access_token: cleanupToken } = await tokenResp.json() as { access_token: string };
+    const resResp = await fetch(`${endpoint}/zones/${zone.id}/resources`, {
+      headers: { Authorization: `Bearer ${cleanupToken}` },
+    });
+    const { items } = await resResp.json() as { items: Array<{ id: string; identifier: string }> };
+    for (const item of items.filter((r) => staleUrns.includes(r.identifier))) {
+      await fetch(`${endpoint}/zones/${zone.id}/resources/${item.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${cleanupToken}` },
+      });
+      console.log(`   Deleted stale vault resource: ${item.identifier}`);
+    }
+  } catch (e) {
+    console.warn(`   Warning: stale vault resource cleanup failed: ${e}`);
+  }
 
   const agentResult = await runProvisioningAgent({
     templateDir: TEMPLATE_DIR,

@@ -95,6 +95,7 @@ export async function authenticateViaOAuth(opts: {
   testUserEmail: string;
   testUserPassword: string;
   headless?: boolean;
+  allowManualLinearAuth?: boolean;
 }): Promise<AuthResult> {
   const { verifier, challenge } = generatePkce();
   const state = base64url(crypto.randomBytes(16));
@@ -179,9 +180,19 @@ export async function authenticateViaOAuth(opts: {
       // page to obtain a Linear token as part of the dependency consent chain.
       // We wait briefly to see if the URL moves to linear.app before waiting for callback.
       await page.waitForTimeout(2_000);
-      await handleLinearOAuthIfPresent(page, opts.testUserEmail, opts.testUserPassword, CALLBACK_URL);
 
-      await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 });
+      if (page.url().includes("linear.app")) {
+        if (opts.headless === false) {
+          // Visible mode: let the user complete Linear OAuth manually.
+          console.log("\n   Linear OAuth page detected. Complete the authorization in the browser window...");
+          await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 120_000 });
+        } else {
+          await handleLinearOAuthIfPresent(page, opts.testUserEmail, opts.testUserPassword, CALLBACK_URL);
+          await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 });
+        }
+      } else {
+        await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 30_000 });
+      }
     }
     // else: postPasswordOutcome === "callback" — already redirected
   } finally {
