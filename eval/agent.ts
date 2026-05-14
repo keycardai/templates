@@ -117,7 +117,8 @@ async function runAgentLoop(
             result = await fs.readFile(resolved, "utf8");
           }
         } catch (err) {
-          result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+          const e = err as { stdout?: string; stderr?: string; message?: string };
+          result = `FAILED\nSTDOUT: ${e.stdout ?? ""}\nSTDERR: ${e.stderr ?? ""}\n${e.message ?? String(err)}`;
         }
         if (result) process.stdout.write(`→ ${result.slice(0, 400)}\n`);
         output += `[tool:${block.name}] ${result.slice(0, 800)}\n`;
@@ -223,13 +224,21 @@ Context:
   Template:    ${opts.templateDir}
 
 Rules:
-- Use \`keycard agent api\` for all Keycard Management API calls. Auth is configured via KEYCARD_CLIENT_ID/SECRET and the keycard.toml in the working directory. Always pass --org ${opts.orgId} on every call.
-- CRITICAL: \`keycard agent api\` reads the request body from stdin — it does NOT support a -d flag. Always pipe JSON:
-    printf '{"name":"linear"}' | keycard agent api -X POST /zones/... --org ...
-  or use jq to construct the body and pipe it:
-    jq -n '{"name":"linear"}' | keycard agent api -X POST /zones/... --org ...
+- Make all Keycard Management API calls using curl. A bearer token is obtained once at the start and reused:
+    TOKEN=$(curl -sf -X POST "${KEYCARD_API_ENDPOINT}/service-account-token" \
+      -d "grant_type=client_credentials" \
+      -d "client_id=${KEYCARD_CLIENT_ID}" \
+      -d "client_secret=${KEYCARD_CLIENT_SECRET}" \
+      | jq -r '.access_token')
+  Then use it for every call:
+    curl -sf -X POST "${KEYCARD_API_ENDPOINT}/zones/${ZONE_ID}/..." \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"name":"..."}'
+  Always check that TOKEN is non-empty before proceeding.
 - Follow SPEC.md sections in order: §1 (provision primitives), §2 (write config files), §4 (install + verify).
-- For §1g (vault credentials), run: bash scripts/provision-credentials.sh with the correct flags.
+- The SPEC.md shows \`keycard agent api\` commands — translate each one to the equivalent curl call against ${KEYCARD_API_ENDPOINT}.
+- For §1g (vault credentials), run: bash scripts/provision-credentials.sh with the correct flags. That script uses \`keycard agent api\` internally and will work correctly from the terminal context.
 - Do NOT start the server — the harness does that after you signal success.
 - Do NOT run keycard run.
 - KEYCARD_URL for .env is: ${opts.zoneIssuerUrl}
