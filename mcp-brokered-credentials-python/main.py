@@ -69,11 +69,37 @@ strict_auth = Middleware(
     on_error=keycard_on_error,
 )
 
+
+class _CopyAuthToState:
+    """Copies KeycardUser fields into request.state.keycardai_auth_info.
+
+    AuthenticationMiddleware sets scope["user"] but @auth_provider.grant() reads
+    request.state.keycardai_auth_info. This middleware bridges the two — it must
+    run after AuthenticationMiddleware and before the MCP app.
+    """
+
+    def __init__(self, app):
+        self._app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            user = scope.get("user")
+            if user is not None and getattr(user, "is_authenticated", False):
+                scope.setdefault("state", {})["keycardai_auth_info"] = {
+                    "access_token": getattr(user, "access_token", None),
+                    "zone_id": getattr(user, "zone_id", None),
+                    "client_id": getattr(user, "client_id", None),
+                }
+        await self._app(scope, receive, send)
+
+
+copy_auth_to_state = Middleware(_CopyAuthToState)
+
 app = Starlette(
     routes=[
         Route("/healthz", healthz, methods=["GET"]),
         auth_metadata_mount(auth_provider.issuer),
-        Mount("/mcp", app=mcp.streamable_http_app(), middleware=[strict_auth]),
+        Mount("/mcp", app=mcp.streamable_http_app(), middleware=[strict_auth, copy_auth_to_state]),
     ],
     lifespan=lifespan,
 )
