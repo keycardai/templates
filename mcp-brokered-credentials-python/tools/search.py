@@ -16,7 +16,6 @@ def register_search_tool(mcp: FastMCP, auth_provider: AuthProvider) -> None:
         )
     )
     async def search(ctx: Context, pattern: str) -> str:
-        """pattern: Regex matched case-insensitively against each tool's name and description."""
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as exc:

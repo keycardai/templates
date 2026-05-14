@@ -19,7 +19,6 @@ def register_execute_tool(mcp: FastMCP, auth_provider: AuthProvider) -> None:
         name: str,
         arguments: dict[str, Any] | None = None,
     ) -> str:
-        """name: Tool name exactly as returned by search. arguments: Input matching the tool's inputSchema."""
         async with linear_client_for_user(auth_provider, ctx) as client:
             result = await client.call_tool(name, arguments=arguments or {})
 

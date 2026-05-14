@@ -1,9 +1,4 @@
-"""Linear MCP client factory with Keycard token exchange.
-
-Mirrors the TypeScript template's withLinearClient pattern: exchange the
-user's Keycard bearer token for a Linear-scoped token via RFC 8693, then
-open a fresh MCP session to the upstream Linear server.
-"""
+"""Linear MCP client factory with Keycard token exchange."""
 
 import contextlib
 
@@ -19,16 +14,8 @@ LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 @contextlib.asynccontextmanager
 async def linear_client_for_user(auth_provider: AuthProvider, ctx: Context):
-    """Exchange the user's Keycard token for a Linear token and open an MCP session.
-
-    Equivalent to the TypeScript template's withLinearClient. Reads the bearer
-    token from ctx.request_context.request.user (set by KeycardAuthBackend after
-    validation) and exchanges it for a Linear-scoped token via RFC 8693.
-
-    Note: uses auth_provider._get_or_create_client() because the Python SDK does
-    not yet expose a public exchange_tokens() method equivalent to the TypeScript
-    one. This should be updated once that surface is added to keycardai-mcp.
-    """
+    # auth_provider._get_or_create_client() is private; keycardai-mcp does not yet
+    # expose a public exchange_tokens() method. Track: add AuthProvider.exchange_tokens().
     user = ctx.request_context.request.user
     bearer_token: str = user.access_token
     auth_info = {
