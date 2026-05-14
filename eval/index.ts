@@ -119,13 +119,12 @@ if (isBrokered) {
     keycardClientSecret: required("CI_KEYCARD_CLIENT_SECRET"),
   });
 
-  console.log(agentResult.output.split("\n").slice(-10).join("\n"));
   if (!agentResult.success) {
-    console.error("   Provisioning agent failed");
+    console.error("\n   Provisioning agent failed");
     await cleanup();
     process.exit(1);
   }
-  console.log("   Provisioning complete");
+  console.log("\n   Provisioning complete");
 } else {
   // Harness pre-provisions basic app + resource, agent verifies config + builds
   console.log("\n2. Provisioning resources...");

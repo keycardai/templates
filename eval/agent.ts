@@ -88,6 +88,7 @@ async function runAgentLoop(
       assistantContent.push(block);
 
       if (block.type === "text") {
+        process.stdout.write(block.text);
         output += block.text + "\n";
         if (block.text.includes(successSignal)) return { success: true, output };
         if (block.text.includes(failureSignal)) return { success: false, output };
@@ -95,6 +96,7 @@ async function runAgentLoop(
 
       if (block.type === "tool_use") {
         let result = "";
+        process.stdout.write(`\n[${block.name}: ${JSON.stringify(block.input).slice(0, 120)}]\n`);
         try {
           if (block.name === "bash") {
             const { command } = block.input as { command: string };
@@ -117,6 +119,7 @@ async function runAgentLoop(
         } catch (err) {
           result = `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
+        if (result) process.stdout.write(`→ ${result.slice(0, 400)}\n`);
         output += `[tool:${block.name}] ${result.slice(0, 800)}\n`;
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
       }
