@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "playwright": "^1.44.0"
   },
   "devDependencies": {

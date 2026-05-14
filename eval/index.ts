@@ -3,10 +3,18 @@
  *
  * Usage:
  *   npm run eval -- --template mcp-server-typescript-express
+ *   npm run eval -- --template mcp-brokered-credentials-python
  *
  * Required in .env.eval (see .env.eval.example):
  *   CI_KEYCARD_CLIENT_ID, CI_KEYCARD_CLIENT_SECRET, CI_KEYCARD_ENDPOINT
+ *   EVAL_ORG_ID
  *   EVAL_TEST_USER_EMAIL, EVAL_TEST_USER_PASSWORD, ANTHROPIC_API_KEY
+ *
+ * Two eval modes are selected automatically based on template structure:
+ *   Basic (express, python-mcp): harness pre-provisions resources, agent verifies config + builds.
+ *   Brokered (brokered-credentials-*): agent provisions ALL primitives from SPEC.md end-to-end,
+ *     mirroring the keycard-template-app skill flow documented at
+ *     https://docs.keycard.ai/guides/access-apis-on-behalf-of-users.md
  */
 
 import * as path from "node:path";
@@ -15,9 +23,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./provision.js";
-import { runBuildAgent } from "./agent.js";
+import { runBuildAgent, runProvisioningAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
-import { verifyServer } from "./verify.js";
+import { verifyServer, verifyBrokeredTools } from "./verify.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,14 +60,22 @@ const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname
 const SERVER_URL = "http://localhost:8000";
 const RUN_ID = `${Date.now()}`;
 
-// Detect template language from the presence of package.json vs pyproject.toml
+// Detect template language
 const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
 const language: "python" | "typescript" = isPython ? "python" : "typescript";
+
+// Detect brokered-credentials template: they ship provision-credentials.sh which
+// the agent runs as part of full SPEC.md provisioning (basic templates don't have it).
+const isBrokered = await fs.access(path.join(TEMPLATE_DIR, "scripts", "provision-credentials.sh")).then(() => true).catch(() => false);
+
+console.log(`\n=== Keycard Template Eval ===`);
+console.log(`Template: ${templateArg}`);
 console.log(`Language: ${language}`);
+console.log(`Mode:     ${isBrokered ? "brokered (agent provisions from SPEC.md)" : "basic (harness pre-provisions)"}`);
+console.log(`Run ID:   ${RUN_ID}\n`);
 
 let zoneId: string | undefined;
 let serverProcess: ReturnType<typeof execFile> | undefined;
-
 let provisioned: Awaited<ReturnType<typeof provision>> | undefined;
 
 async function cleanup() {
@@ -78,55 +94,91 @@ async function cleanup() {
 
 process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
 
-console.log(`\n=== Keycard Template Eval ===`);
-console.log(`Template: ${templateArg}\nRun ID:   ${RUN_ID}\n`);
-
-// 1. Create eval zone
-console.log("1. Creating eval zone...");
+// 1. Create / reuse eval zone
+console.log("1. Resolving eval zone...");
 const { zone, token, ephemeral } = await getOrCreateEvalZone(RUN_ID);
 zoneId = zone.id;
 console.log(`   Zone: ${zone.id} (${zone.issuerUrl})`);
 
-// 2. Provision resources + write config files
-console.log("\n2. Provisioning resources...");
-await cleanupStaleProvisonings(zone.id, token);
-provisioned = await provision({
-  zoneId: zone.id,
-  zoneIssuerUrl: zone.issuerUrl,
-  runId: RUN_ID,
-  token,
-  templateDir: TEMPLATE_DIR,
-});
+// 2. Provision / configure
+await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
 
-// 3. Agent: verify config + install + build
-console.log("\n3. Running agent (verify config + build)...");
-const agentResult = await runBuildAgent({
-  templateDir: TEMPLATE_DIR,
-  zoneIssuerUrl: zone.issuerUrl,
-  resourceIdentifier: provisioned.resourceIdentifier,
-  language,
-});
+if (isBrokered) {
+  // Agent provisions ALL primitives from SPEC.md (mirrors the skill flow)
+  console.log("\n2. Running provisioning agent (full SPEC.md flow)...");
+  const orgId = required("EVAL_ORG_ID");
 
-console.log(agentResult.output.split("\n").slice(-5).join("\n"));
+  const agentResult = await runProvisioningAgent({
+    templateDir: TEMPLATE_DIR,
+    zoneId: zone.id,
+    zoneIssuerUrl: zone.issuerUrl,
+    orgId,
+    language,
+    keycardEndpoint: required("CI_KEYCARD_ENDPOINT"),
+    keycardClientId: required("CI_KEYCARD_CLIENT_ID"),
+    keycardClientSecret: required("CI_KEYCARD_CLIENT_SECRET"),
+  });
 
-if (!agentResult.success) {
-  console.error("   Build failed");
-  await cleanup();
-  process.exit(1);
+  console.log(agentResult.output.split("\n").slice(-10).join("\n"));
+  if (!agentResult.success) {
+    console.error("   Provisioning agent failed");
+    await cleanup();
+    process.exit(1);
+  }
+  console.log("   Provisioning complete");
+} else {
+  // Harness pre-provisions basic app + resource, agent verifies config + builds
+  console.log("\n2. Provisioning resources...");
+  await cleanupStaleProvisonings(zone.id, token);
+  provisioned = await provision({
+    zoneId: zone.id,
+    zoneIssuerUrl: zone.issuerUrl,
+    runId: RUN_ID,
+    token,
+    templateDir: TEMPLATE_DIR,
+  });
+
+  console.log("\n3. Running build agent (verify config + build)...");
+  const agentResult = await runBuildAgent({
+    templateDir: TEMPLATE_DIR,
+    zoneIssuerUrl: zone.issuerUrl,
+    resourceIdentifier: provisioned.resourceIdentifier,
+    language,
+  });
+
+  console.log(agentResult.output.split("\n").slice(-5).join("\n"));
+  if (!agentResult.success) {
+    console.error("   Build failed");
+    await cleanup();
+    process.exit(1);
+  }
+  console.log("   Build succeeded");
 }
-console.log("   Build succeeded");
 
-// 4. Start server — kill any stale process on port 8000 first
-console.log("\n4. Starting server...");
+// 3. Start server
+console.log("\n3. Starting server...");
 await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
 await new Promise((r) => setTimeout(r, 500));
 
-const [serverCmd, serverArgs] = language === "python"
-  ? ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]]
-  : ["node", ["--env-file-if-exists=.env", "dist/server.js"]];
+let serverCmd: string;
+let serverArgs: string[];
 
-// Inject service account credentials so brokered-credentials templates can start.
-// discoverApplicationCredential picks these up; templates that don't need them ignore them.
+if (isBrokered) {
+  // Brokered templates need keycard run to broker vault credentials into the process.
+  // The agent wrote keycard.toml with [[credentials.default]] entries pointing at vault
+  // resources it created. keycard run fetches those and injects KEYCARD_CLIENT_ID/SECRET.
+  serverCmd = "keycard";
+  serverArgs = language === "python"
+    ? ["run", "--", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    : ["run", "--", "node", "--env-file-if-exists=.env", "dist/server.js"];
+} else {
+  serverCmd = language === "python" ? "uv" : "node";
+  serverArgs = language === "python"
+    ? ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    : ["--env-file-if-exists=.env", "dist/server.js"];
+}
+
+// Inject service account credentials so keycard run can authenticate to fetch vault resources.
 const serverEnv = {
   ...process.env,
   KEYCARD_CLIENT_ID: process.env.CI_KEYCARD_CLIENT_ID ?? "",
@@ -142,18 +194,17 @@ serverProcess.stderr?.on("data", (d: Buffer) => process.stderr.write(`[server] $
 serverProcess.stdout?.on("data", (d: Buffer) => process.stdout.write(`[server] ${d}`));
 serverProcess.unref();
 
-// Wait for server ready
-for (let i = 0; i < 10; i++) {
+for (let i = 0; i < 15; i++) {
   await new Promise((r) => setTimeout(r, 1000));
   try {
     const resp = await fetch(`${SERVER_URL}/healthz`);
     if (resp.ok) { console.log("   Server ready"); break; }
   } catch { /* not yet */ }
-  if (i === 9) throw new Error("Server did not start in time");
+  if (i === 14) throw new Error("Server did not start in time");
 }
 
-// 5. Register user agent via DCR
-console.log("\n5. Registering user agent via DCR...");
+// 4. DCR: register a public client for the browser OAuth flow
+console.log("\n4. Registering user agent via DCR...");
 const dcrResp = await fetch(`${zone.issuerUrl}/oauth/2/registration`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -169,11 +220,25 @@ if (!dcrResp.ok) throw new Error(`DCR failed: ${dcrResp.status} ${await dcrResp.
 const { client_id: clientId } = await dcrResp.json() as { client_id: string };
 console.log(`   Client ID: ${clientId}`);
 
-// 6. Browser OAuth
-console.log("\n6. Running browser OAuth flow...");
+// Determine the resource identifier for the browser OAuth request.
+// Basic templates: use what provision.ts set. Brokered: read from .env.
+const resourceIdentifier = provisioned?.resourceIdentifier ?? (() => {
+  const envRaw = fs.readFile(path.join(TEMPLATE_DIR, ".env"), "utf8").then((c) => {
+    const match = c.match(/^KEYCARD_RESOURCE_ID=(.+)$/m);
+    return match?.[1] ?? `http://localhost:8000/mcp`;
+  }).catch(() => `http://localhost:8000/mcp`);
+  return envRaw;
+})();
+
+const resolvedResourceIdentifier = typeof resourceIdentifier === "string"
+  ? resourceIdentifier
+  : await resourceIdentifier;
+
+// 5. Browser OAuth flow (includes Linear consent for brokered templates)
+console.log("\n5. Running browser OAuth flow...");
 const auth = await authenticateViaOAuth({
   zoneIssuerUrl: zone.issuerUrl,
-  resourceIdentifier: provisioned.resourceIdentifier,
+  resourceIdentifier: resolvedResourceIdentifier,
   clientId,
   testUserEmail: required("EVAL_TEST_USER_EMAIL"),
   testUserPassword: required("EVAL_TEST_USER_PASSWORD"),
@@ -181,9 +246,12 @@ const auth = await authenticateViaOAuth({
 });
 console.log("   OAuth complete");
 
-// 7. Verify
-console.log("\n7. Verifying server...");
-const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken });
+// 6. Verify
+console.log("\n6. Verifying server...");
+const verifyOpts = { serverUrl: SERVER_URL, accessToken: auth.accessToken };
+const result = isBrokered
+  ? await verifyBrokeredTools(verifyOpts)
+  : await verifyServer(verifyOpts);
 
 console.log("\n=== Results ===");
 for (const c of result.checks) {

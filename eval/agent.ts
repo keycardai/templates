@@ -1,12 +1,16 @@
 /**
- * Runs a Claude agent to verify the template config and build the server.
+ * Two eval agent modes:
  *
- * The harness has already provisioned Keycard resources and written
- * .env + keycard.toml. The agent's job: read the SPEC.md, confirm the
- * config looks correct, then npm install + npm run build.
+ * runBuildAgent — basic templates (express, python-mcp).
+ *   Harness has already provisioned resources. Agent verifies config
+ *   and runs install + build.
  *
- * This tests: does the agent understand the config requirements well
- * enough to validate them, and can it produce a working build?
+ * runProvisioningAgent — brokered-credentials templates.
+ *   Agent provisions ALL Keycard primitives from SPEC.md (Linear provider,
+ *   applications, resources, dependency wiring, vault credentials), writes
+ *   .env and keycard.toml, then installs and builds.
+ *   This mirrors the actual `keycard-template-app` skill flow documented at
+ *   https://docs.keycard.ai/guides/access-apis-on-behalf-of-users.md
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -22,6 +26,111 @@ export interface AgentResult {
   output: string;
 }
 
+const TOOLS: Anthropic.Tool[] = [
+  {
+    name: "bash",
+    description: "Run a shell command in the template directory. Use this for keycard agent api calls, npm/uv install, builds, etc.",
+    input_schema: {
+      type: "object" as const,
+      properties: { command: { type: "string" } },
+      required: ["command"],
+    },
+  },
+  {
+    name: "write_file",
+    description: "Write or overwrite a file. Paths are relative to the template directory.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    name: "read_file",
+    description: "Read a file. Paths are relative to the template directory.",
+    input_schema: {
+      type: "object" as const,
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+  },
+];
+
+async function runAgentLoop(
+  client: Anthropic,
+  systemPrompt: string,
+  task: string,
+  templateDir: string,
+  extraEnv: Record<string, string>,
+  maxTurns: number,
+  successSignal: string,
+  failureSignal: string,
+): Promise<AgentResult> {
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: task }];
+  let output = "";
+
+  for (let turn = 0; turn < maxTurns; turn++) {
+    const response = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      system: systemPrompt,
+      tools: TOOLS,
+      messages,
+    });
+
+    const assistantContent: Anthropic.ContentBlock[] = [];
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+    for (const block of response.content) {
+      assistantContent.push(block);
+
+      if (block.type === "text") {
+        output += block.text + "\n";
+        if (block.text.includes(successSignal)) return { success: true, output };
+        if (block.text.includes(failureSignal)) return { success: false, output };
+      }
+
+      if (block.type === "tool_use") {
+        let result = "";
+        try {
+          if (block.name === "bash") {
+            const { command } = block.input as { command: string };
+            const { stdout, stderr } = await execFileAsync("bash", ["-c", command], {
+              cwd: templateDir,
+              timeout: 120_000,
+              env: { ...process.env, ...extraEnv },
+            });
+            result = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
+          } else if (block.name === "write_file") {
+            const { path: filePath, content } = block.input as { path: string; content: string };
+            const resolved = path.resolve(templateDir, filePath);
+            await fs.writeFile(resolved, content, "utf8");
+            result = `Written: ${resolved}`;
+          } else if (block.name === "read_file") {
+            const { path: filePath } = block.input as { path: string };
+            const resolved = path.resolve(templateDir, filePath);
+            result = await fs.readFile(resolved, "utf8");
+          }
+        } catch (err) {
+          result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        output += `[tool:${block.name}] ${result.slice(0, 800)}\n`;
+        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
+      }
+    }
+
+    messages.push({ role: "assistant", content: assistantContent });
+    if (response.stop_reason === "end_turn" && toolResults.length === 0) break;
+    if (toolResults.length > 0) messages.push({ role: "user", content: toolResults });
+  }
+
+  return { success: false, output: output + "\n[max turns reached]" };
+}
+
+/** Basic templates: harness has already provisioned, agent verifies config + builds. */
 export async function runBuildAgent(opts: {
   templateDir: string;
   zoneIssuerUrl: string;
@@ -29,9 +138,7 @@ export async function runBuildAgent(opts: {
   language?: "python" | "typescript";
 }): Promise<AgentResult> {
   const client = new Anthropic();
-  const specPath = path.join(opts.templateDir, "SPEC.md");
-  const specContent = await fs.readFile(specPath, "utf8");
-
+  const specContent = await fs.readFile(path.join(opts.templateDir, "SPEC.md"), "utf8");
   const envContent = await fs.readFile(path.join(opts.templateDir, ".env"), "utf8").catch(() => "(not found)");
   const tomlContent = await fs.readFile(path.join(opts.templateDir, "keycard.toml"), "utf8").catch(() => "(not found)");
 
@@ -48,91 +155,83 @@ Resource identifier: ${opts.resourceIdentifier}
 Working directory: ${opts.templateDir}
 
 Your task:
-1. Read the SPEC.md (provided below) and verify the .env and keycard.toml look correct for this provisioned zone
-2. Fix any config issues you find
+1. Read the SPEC.md and verify .env and keycard.toml look correct for this provisioned zone
+2. Fix any config issues
 3. ${opts.language === "python" ? "Run: uv sync" : "Run: npm install"}
-4. ${opts.language === "python" ? "Verify the server can start (uv run python -c \"import main\" or similar)" : "Run: npm run build"}
-5. If successful, print exactly: BUILD_COMPLETE:SUCCESS
-6. If something fails, print exactly: BUILD_COMPLETE:FAILURE and explain why`;
+4. ${opts.language === "python" ? "Run: uv run python -c \"import main\"" : "Run: npm run build"}
+5. Print exactly: BUILD_COMPLETE:SUCCESS or BUILD_COMPLETE:FAILURE`;
 
-  const task = `SPEC.md:\n\n${specContent}\n\nVerify config, fix if needed, then build.`;
+  return runAgentLoop(
+    client,
+    systemPrompt,
+    `SPEC.md:\n\n${specContent}\n\nVerify config, fix if needed, then build.`,
+    opts.templateDir,
+    {},
+    15,
+    "BUILD_COMPLETE:SUCCESS",
+    "BUILD_COMPLETE:FAILURE",
+  );
+}
 
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: task }];
-  const tools: Anthropic.Tool[] = [
-    {
-      name: "bash",
-      description: "Run a shell command in the template directory",
-      input_schema: {
-        type: "object" as const,
-        properties: { command: { type: "string" } },
-        required: ["command"],
-      },
-    },
-    {
-      name: "write_file",
-      description: "Write or overwrite a file",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          path: { type: "string" },
-          content: { type: "string" },
-        },
-        required: ["path", "content"],
-      },
-    },
-  ];
+/**
+ * Brokered-credentials templates: agent provisions ALL Keycard primitives from
+ * SPEC.md then configures and builds. This is the exact flow a user goes through
+ * with the keycard-template-app skill.
+ */
+export async function runProvisioningAgent(opts: {
+  templateDir: string;
+  zoneId: string;
+  zoneIssuerUrl: string;
+  orgId: string;
+  language: "python" | "typescript";
+  keycardEndpoint: string;
+  keycardClientId: string;
+  keycardClientSecret: string;
+}): Promise<AgentResult> {
+  const client = new Anthropic();
+  const specContent = await fs.readFile(path.join(opts.templateDir, "SPEC.md"), "utf8");
 
-  let output = "";
+  // Environment the agent's bash commands run in.
+  // KEYCARD_CLIENT_ID/SECRET let `keycard agent api` authenticate as the CI service account.
+  const extraEnv: Record<string, string> = {
+    KEYCARD_CLIENT_ID: opts.keycardClientId,
+    KEYCARD_CLIENT_SECRET: opts.keycardClientSecret,
+    KEYCARD_API_ENDPOINT: opts.keycardEndpoint,
+    ZONE_ID: opts.zoneId,
+    ORG_ID: opts.orgId,
+  };
 
-  for (let turn = 0; turn < 15; turn++) {
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      system: systemPrompt,
-      tools,
-      messages,
-    });
+  const systemPrompt = `You are an automated CI eval agent testing a Keycard MCP template.
 
-    const assistantContent: Anthropic.ContentBlock[] = [];
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+Your job is to provision all required Keycard resources by following the SPEC.md exactly, then configure and build the template. This mirrors the flow a user goes through with the keycard-template-app skill.
 
-    for (const block of response.content) {
-      assistantContent.push(block);
+Context:
+  Zone ID:     ${opts.zoneId}
+  Org ID:      ${opts.orgId}
+  Issuer URL:  ${opts.zoneIssuerUrl}
+  Template:    ${opts.templateDir}
 
-      if (block.type === "text") {
-        output += block.text + "\n";
-        if (block.text.includes("BUILD_COMPLETE:SUCCESS")) return { success: true, output };
-        if (block.text.includes("BUILD_COMPLETE:FAILURE")) return { success: false, output };
-      }
+Rules:
+- Use \`keycard agent api\` for all Keycard Management API calls. Auth is already configured via KEYCARD_CLIENT_ID/SECRET in the environment. Always pass --org ${opts.orgId} on every keycard agent api call.
+- Follow the SPEC.md sections in order: §1 (provision primitives), §2 (write config files), §4 (install + verify).
+- For §1g (vault credentials), run: bash scripts/provision-credentials.sh with the correct flags.
+- Do NOT start the server — the harness does that after you signal success.
+- Do NOT run keycard run.
+- KEYCARD_URL for .env is: ${opts.zoneIssuerUrl}
+- When writing keycard.toml: use the exact format from SPEC.md §2 (only [org].id, [zone].id, and [[credentials.default]] blocks — no schema_version, [project], or [server]).
 
-      if (block.type === "tool_use") {
-        let result = "";
-        try {
-          if (block.name === "bash") {
-            const { command } = block.input as { command: string };
-            const { stdout, stderr } = await execFileAsync("bash", ["-c", command], {
-              cwd: opts.templateDir,
-              timeout: 60_000,
-            });
-            result = stdout + (stderr ? `\nSTDERR: ${stderr}` : "");
-          } else if (block.name === "write_file") {
-            const { path: filePath, content } = block.input as { path: string; content: string };
-            const resolved = path.resolve(opts.templateDir, filePath);
-            await fs.writeFile(resolved, content, "utf8");
-            result = `Written: ${resolved}`;
-          }
-        } catch (err) {
-          result = `Error: ${err instanceof Error ? err.message : String(err)}`;
-        }
-        output += `[tool:${block.name}] ${result.slice(0, 500)}\n`;
-        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
-      }
-    }
+Signal completion by printing exactly one of:
+  PROVISION_COMPLETE:SUCCESS
+  PROVISION_COMPLETE:FAILURE: <reason>`;
 
-    messages.push({ role: "assistant", content: assistantContent });
-    if (response.stop_reason === "end_turn" && toolResults.length === 0) break;
-    if (toolResults.length > 0) messages.push({ role: "user", content: toolResults });
-  }
-
-  return { success: false, output: output + "\n[max turns reached]" };
+  return runAgentLoop(
+    client,
+    systemPrompt,
+    `SPEC.md:\n\n${specContent}\n\nProvision all primitives, configure the template, install dependencies, and verify the build.`,
+    opts.templateDir,
+    extraEnv,
+    35,
+    "PROVISION_COMPLETE:SUCCESS",
+    "PROVISION_COMPLETE:FAILURE",
+  );
 }
