@@ -3,6 +3,7 @@ set -euo pipefail
 
 PORT="${PORT:-8000}"
 BASE="http://localhost:$PORT"
+export AGENT_BASE_URL="$BASE"
 
 node dist/index.js &
 PID=$!
