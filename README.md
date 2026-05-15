@@ -8,25 +8,34 @@ You are encouraged to use, modify, and extend this code.
 
 ```bash
 git clone --depth=1 https://github.com/keycardai/templates
-cp -R templates/mcp-server-typescript-express my-mcp-server
-cd my-mcp-server
+cp -R templates/<template-name> my-project
+cd my-project
 # follow the template's README.md from here
 ```
 
-Each template runs with whatever the native toolchain expects (`npm install && npm run start` for Node, `uv sync && uv run` for Python, `go run .` for Go, etc.). There is no Keycard-specific build step.
+Each template runs with whatever the native toolchain expects (`npm install && npm run start` for Node, `uv sync && uv run` for Python, etc.). There is no Keycard-specific build step.
 
 ## How to provision Keycard for a template
 
-Every template ships a [`SPEC.md`](./mcp-server-typescript-express/SPEC.md) describing the Keycard resources that **must** be provisioned for the project to work the Resource entry, the minimum Cedar policy, what the `[credentials]` block should look like, and what the agent must *not* do. Read it before running anything against a real keycard environment.
+Every template ships a `SPEC.md` describing the Keycard resources that **must** be provisioned for the project to work — the Application, Resource, credential provider, what the `[credentials]` block should look like, and what the agent must *not* do. Read it before running anything against a real Keycard environment.
 
-Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the source of truth for provisioning. The template files themselves intentionally do not encode keycard state.
+Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the source of truth for provisioning. The template files themselves intentionally do not encode Keycard state.
 
 ## Available templates
 
 | Template | Kind | Language | Framework |
 |---|---|---|---|
-| [`mcp-server-typescript-express`](./mcp-server-typescript-express) | mcp-server | TypeScript | Express 5 |
-| [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | mcp-server (proxy) | TypeScript | Express 5 |
+| [`mcp-server-typescript-express`](./mcp-server-typescript-express) | MCP server | TypeScript | Express 5 |
+| [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | FastMCP |
+| [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
+| [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
+| [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |
+
+**MCP server** — a Keycard-protected MCP server exposing tools to Claude.
+
+**MCP proxy** — proxies an upstream OAuth-protected MCP server (Linear) using Keycard-brokered credentials. No API keys stored anywhere; credentials are minted per request via RFC 8693.
+
+**Agent** — an autonomous agent with its own workload identity, not dependent on a user session.
 
 ## Contributing
 
