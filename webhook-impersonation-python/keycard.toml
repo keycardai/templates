@@ -1,0 +1,17 @@
+[org]
+id = "<org-id>"
+
+[zone]
+id = "<zone-id>"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_ID"
+resource = "urn:webhook-impersonation-python:client_id"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_SECRET"
+resource = "urn:webhook-impersonation-python:client_secret"
+
+[[credentials.default]]
+env_var = "WEBHOOK_SECRET"
+resource = "urn:webhook-impersonation-python:webhook_secret"
