@@ -1,9 +1,9 @@
 """Per-tool scope enforcement for MCP tools.
 
-Uses the Starlette auth state already populated by KeycardAuthBackend
-(via keycardai-mcp's AuthProvider). Reads request.auth.scopes from the
-MCP RequestContext — the same mechanism as keycardai.starlette.requires()
-but adapted for MCP tool handlers.
+Reads scopes from the JWT stashed on `request.state.keycardai_auth_info` by
+keycardai-mcp's BearerAuthMiddleware. That middleware already verifies the
+token cryptographically, so we decode the claims without re-verification to
+check the `scope` claim.
 """
 
 from __future__ import annotations
@@ -11,13 +11,27 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any, Callable
 
-from starlette.authentication import has_required_scope
+import jwt
 
 from .result import Error, Result
 
 SCOPE_DELEGATE = "snowflake:delegate"
 SCOPE_IMPERSONATE = "snowflake:impersonate"
 SCOPE_AGENT_IDENTITY = "snowflake:agent-identity"
+
+
+def _extract_scopes(request) -> list[str]:
+    info = getattr(request.state, "keycardai_auth_info", None)
+    if not info:
+        return []
+    token = info.get("access_token")
+    if not token:
+        return []
+    claims = jwt.decode(token, options={"verify_signature": False})
+    scope_claim = claims.get("scope") or claims.get("scp") or ""
+    if isinstance(scope_claim, list):
+        return scope_claim
+    return scope_claim.split()
 
 
 def require_scope(scope: str) -> Callable:
@@ -48,19 +62,22 @@ def require_scope(scope: str) -> Callable:
 
             try:
                 request = ctx.request_context.request
-                if not has_required_scope(request, [scope]):
-                    return Result.failure(
-                        Error.INSUFFICIENT_SCOPE,
-                        f"Insufficient scope: requires '{scope}'",
-                        details={
-                            "required_scope": scope,
-                            "hint": "Request a token with this scope from your authorization server",
-                        },
-                    ).to_json()
+                scopes = _extract_scopes(request)
             except AttributeError:
                 return Result.failure(
                     Error.INTERNAL,
                     "Unable to access auth state from request context",
+                ).to_json()
+
+            if scope not in scopes:
+                return Result.failure(
+                    Error.INSUFFICIENT_SCOPE,
+                    f"Insufficient scope: requires '{scope}'",
+                    details={
+                        "required_scope": scope,
+                        "granted_scopes": scopes,
+                        "hint": "Request a token with this scope from your authorization server",
+                    },
                 ).to_json()
 
             return await func(*args, **kwargs)

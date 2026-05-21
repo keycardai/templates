@@ -90,7 +90,7 @@ Resolve the zone's STS credential provider and carry forward as `<sts-provider-i
 | `provider_id` | `identifier` (matches `sub` claim) |
 |---|---|
 | `<vercel-oidc-provider-id>` | `owner:<vercel-team-slug>:project:<vercel-project>:environment:production` |
-| `<fly-oidc-provider-id>` | `<fly-org>:<fly-app>:` |
+| `<fly-oidc-provider-id>` | `<fly-org>:<fly-app>:*` |
 
 Both credentials are bound to `<application-id>`. The application credential type is `token` (not `workload-identity`), with a `subject` field matching the platform's OIDC `sub` claim format. Consult the `keycard-deploy-app` skill's provider-specific reference documents for the exact payload schema.
 
@@ -100,15 +100,21 @@ Agent API resources (one per deployment, plus local dev). The `identifier` must 
 
 | `application_id` | `identifier` | `credential_provider_id` | Carry forward as |
 |---|---|---|---|
-| `<application-id>` | `https://<vercel-project>.vercel.app/mcp` | `<default-provider-id>` | `<vercel-mcp-resource-id>` |
-| `<application-id>` | `https://<fly-app>.fly.dev/mcp` | `<default-provider-id>` | `<fly-mcp-resource-id>` |
-| `<application-id>` | `http://localhost:<port>/mcp` | `<default-provider-id>` | `<local-mcp-resource-id>` |
+| `<application-id>` | `https://<vercel-project>.vercel.app/mcp` | `<sts-provider-id>` | `<vercel-mcp-resource-id>` |
+| `<application-id>` | `https://<fly-app>.fly.dev/mcp` | `<sts-provider-id>` | `<fly-mcp-resource-id>` |
+| `<application-id>` | `http://localhost:<port>/mcp` | `<sts-provider-id>` | `<local-mcp-resource-id>` |
 
-Snowflake WIF resource:
+Snowflake WIF resource (application-scoped, uses the zone STS provider so Keycard can mint WIF tokens):
+
+| `application_id` | `identifier` | `credential_provider_id` | Carry forward as |
+|---|---|---|---|
+| `<application-id>` | `snowflakecomputing.com` | `<sts-provider-id>` | `<snowflake-resource-id>` |
+
+Snowflake OAuth resource (unbound, uses the Snowflake OAuth provider — required for the `delegate` flow's on-behalf-of token exchange. Attached to the application via §1e dependency, not via `application_id`):
 
 | `identifier` | `credential_provider_id` | Carry forward as |
 |---|---|---|
-| `snowflakecomputing.com` | `<sts-provider-id>` | `<snowflake-resource-id>` |
+| `https://<snowflake-account>.snowflakecomputing.com` | `<snowflake-oauth-provider-id>` | `<snowflake-oauth-resource-id>` |
 
 Vault resources (for local dev fallback):
 
@@ -123,7 +129,8 @@ Created by `scripts/provision-credentials.sh` — verify rather than re-create.
 
 | From application | To resource | Resulting access |
 |---|---|---|
-| `<application-id>` | `<snowflake-resource-id>` | Application may obtain Snowflake WIF tokens. |
+| `<application-id>` | `<snowflake-resource-id>` | Application may obtain Snowflake WIF tokens (used by `agent-identity` and `impersonate`). |
+| `<application-id>` | `<snowflake-oauth-resource-id>` | Application may exchange caller tokens for Snowflake OAuth sessions (used by `delegate`). The dependency MUST set `scopes = ["session:role:<snowflake-role>"]` (e.g. `session:role:KEYCARD_AGENT_ADMIN`) so the exchanged token activates that role. |
 | `<application-id>` | `<anthropic-resource-id>` | Application may fetch Anthropic key at runtime. |
 
 ### 1f. Scope reference (no resource-level configuration needed)
@@ -158,7 +165,7 @@ CREATE OR REPLACE SECURITY INTEGRATION kc_cross_cloud_oauth
   OAUTH_REDIRECT_URI = '<keycard-url>/oauth/2/redirect'
   OAUTH_ISSUE_REFRESH_TOKENS = TRUE
   OAUTH_REFRESH_TOKEN_VALIDITY = 86400
-  PRE_AUTHORIZED_ROLES_LIST = (KEYCARD_AGENT_READ)
+  PRE_AUTHORIZED_ROLES_LIST = (KEYCARD_AGENT_ADMIN)
   BLOCKED_ROLES_LIST = ('SYSADMIN');
 ```
 
@@ -191,7 +198,8 @@ Using the values from §1g-B, create a Snowflake OAuth provider in the zone via 
 
 | Field | Value |
 |---|---|
-| `identifier` | `<sf-oauth-issuer>` |
+| `identifier` | `snowflake-oauth` |
+| `name` | `snowflake-oauth` |
 | `protocols.oauth2.issuer` | `<sf-oauth-issuer>` |
 | `protocols.oauth2.authorization_endpoint` | `<sf-oauth-authorization-endpoint>` |
 | `protocols.oauth2.token_endpoint` | `<sf-oauth-token-endpoint>` |
@@ -233,21 +241,21 @@ CREATE USER KEYCARD_CROSS_CLOUD_AGENT
   TYPE = SERVICE;
 
 -- Create a role for the agent (or reuse an existing one)
-CREATE ROLE IF NOT EXISTS KEYCARD_AGENT_READ;
-GRANT ROLE KEYCARD_AGENT_READ TO USER KEYCARD_CROSS_CLOUD_AGENT;
+CREATE ROLE IF NOT EXISTS KEYCARD_AGENT_ADMIN;
+GRANT ROLE KEYCARD_AGENT_ADMIN TO USER KEYCARD_CROSS_CLOUD_AGENT;
 
 -- Grant access to the target warehouse, database, and schema.
 -- These grants control what the agent discovers dynamically via SHOW GRANTS TO ROLE.
-GRANT USAGE  ON WAREHOUSE <snowflake-warehouse>                    TO ROLE KEYCARD_AGENT_READ;
-GRANT USAGE  ON DATABASE   <snowflake-database>                    TO ROLE KEYCARD_AGENT_READ;
-GRANT USAGE  ON SCHEMA     <snowflake-database>.<snowflake-schema> TO ROLE KEYCARD_AGENT_READ;
-GRANT SELECT ON ALL    TABLES IN SCHEMA <snowflake-database>.<snowflake-schema> TO ROLE KEYCARD_AGENT_READ;
-GRANT SELECT ON FUTURE TABLES IN SCHEMA <snowflake-database>.<snowflake-schema> TO ROLE KEYCARD_AGENT_READ;
+GRANT USAGE  ON WAREHOUSE <snowflake-warehouse>                    TO ROLE KEYCARD_AGENT_ADMIN;
+GRANT USAGE  ON DATABASE   <snowflake-database>                    TO ROLE KEYCARD_AGENT_ADMIN;
+GRANT USAGE  ON SCHEMA     <snowflake-database>.<snowflake-schema> TO ROLE KEYCARD_AGENT_ADMIN;
+GRANT SELECT ON ALL    TABLES IN SCHEMA <snowflake-database>.<snowflake-schema> TO ROLE KEYCARD_AGENT_ADMIN;
+GRANT SELECT ON FUTURE TABLES IN SCHEMA <snowflake-database>.<snowflake-schema> TO ROLE KEYCARD_AGENT_ADMIN;
 ```
 
 The WIF user is used for `agent-identity` and `impersonate` flows. `delegate` uses the caller's exchanged token (via the OAuth integration above) which maps to their own Snowflake user.
 
-**Dynamic discovery:** The agent does not require `SNOWFLAKE_DATABASE` or `SNOWFLAKE_SCHEMA` to be configured. On connect it runs `SHOW GRANTS TO ROLE KEYCARD_AGENT_READ` and discovers which databases/schemas have `USAGE` granted. The GRANT statements above are what control visibility — without `GRANT USAGE ON DATABASE`, the database won't appear in discovery; without `GRANT SELECT`, `INFORMATION_SCHEMA.TABLES` returns 0 rows for that schema.
+**Dynamic discovery:** The agent does not require `SNOWFLAKE_DATABASE` or `SNOWFLAKE_SCHEMA` to be configured. On connect it runs `SHOW GRANTS TO ROLE KEYCARD_AGENT_ADMIN` and discovers which databases/schemas have `USAGE` granted. The GRANT statements above are what control visibility — without `GRANT USAGE ON DATABASE`, the database won't appear in discovery; without `GRANT SELECT`, `INFORMATION_SCHEMA.TABLES` returns 0 rows for that schema.
 
 ### 1i. Demo policy set
 
@@ -277,7 +285,7 @@ keycard agent api "/zones/<zone-id>/policy-sets?filter[active]=true" --org "<org
 keycard agent api "/zones/<zone-id>/policy-sets/<active-policy-set-id>/versions/<active-version-id>" --org "<org-id>"
 ```
 
-3. Carry forward **every** entry in the manifest as `<existing-policy-entries>` (a list of `{policy_id, policy_version_id}` pairs). There may be more than two — the managed set typically includes policies for user access, vault access, and other zone-level permits beyond just `default-app-delegation` and `default-app-direct-access`.
+3. Carry forward **every** entry in the manifest as `<existing-policy-entries>` (a list of `{policy_id, policy_version_id}` pairs). The managed set in a freshly-provisioned zone typically contains three platform policies: `default-user-grants`, `default-app-delegation`, and `default-app-direct-access`. **`default-user-grants` MUST be preserved** — dropping it breaks `keycard run` vault credential exchange for the demo user.
 
 #### Create the two custom scope policies
 
@@ -335,15 +343,15 @@ SERVER_PORT=<port>
 SERVER_URL=http://localhost:<port>/mcp
 SNOWFLAKE_ACCOUNT=<snowflake-account>
 SNOWFLAKE_WAREHOUSE=<snowflake-warehouse>
+SNOWFLAKE_DATABASE=<snowflake-database>
+SNOWFLAKE_SCHEMA=<snowflake-schema>
 ANTHROPIC_RESOURCE=https://api.anthropic.com
 SNOWFLAKE_RESOURCE=snowflakecomputing.com
 ```
 
-Optional — narrow default discovery scope (agent discovers all granted resources dynamically by default):
+Optional — agent uses the auto-activated role if unset:
 
 ```
-SNOWFLAKE_DATABASE=<snowflake-database>
-SNOWFLAKE_SCHEMA=<snowflake-schema>
 SNOWFLAKE_ROLE=<snowflake-role>
 ```
 
@@ -377,8 +385,8 @@ resource = "urn:<name>:client_secret"
 | `SNOWFLAKE_WAREHOUSE` | `<snowflake-warehouse>` | Yes |
 | `ANTHROPIC_RESOURCE` | `https://api.anthropic.com` | Yes |
 | `SNOWFLAKE_RESOURCE` | `snowflakecomputing.com` | Yes |
-| `SNOWFLAKE_DATABASE` | Target database (agent discovers dynamically if unset) | No |
-| `SNOWFLAKE_SCHEMA` | Target schema (agent discovers dynamically if unset) | No |
+| `SNOWFLAKE_DATABASE` | `<snowflake-database>` | Yes |
+| `SNOWFLAKE_SCHEMA` | `<snowflake-schema>` | Yes |
 | `SNOWFLAKE_ROLE` | Snowflake role to USE (agent uses auto-activated role if unset) | No |
 
 ## 3. Agent verification
@@ -387,22 +395,20 @@ resource = "urn:<name>:client_secret"
 uv sync
 ```
 
-Verify dependencies and resources:
+Verify by identifier — fetch the app dependencies and the active policy set, then confirm every required entity is present by name. Do not pin counts; the agent should adapt if the zone has extra unrelated entries.
 
-```bash
-keycard agent api "/zones/<zone-id>/applications/<application-id>/dependencies" --org "<org-id>" \
-  | jq -e '.items | length == 2' >/dev/null
+Required app dependencies (by resource `identifier`):
 
-keycard agent api "/zones/<zone-id>/resources" --org "<org-id>" \
-  | jq -e '.items[] | select(.identifier == "snowflakecomputing.com")'
-```
+- `snowflakecomputing.com` (WIF, used by `agent-identity` / `impersonate`)
+- `https://<snowflake-account>.snowflakecomputing.com` (OAuth, used by `delegate`)
+- `https://api.anthropic.com`
 
-Verify the active policy set contains four policies:
+Required policies in the active policy-set version manifest (by policy `name`):
 
-```bash
-keycard agent api "/zones/<zone-id>/policy-sets?filter[active]=true" --org "<org-id>" \
-  | jq -e '.items | length == 1'
-```
+- platform: `default-user-grants`, `default-app-delegation`, `default-app-direct-access`
+- customer: `demo-scope-delegate`, `demo-scope-agent-identity`
+
+If any required entry is missing, fix provisioning and re-check. Extra entries are fine.
 
 ### Smoke test — local startup
 
