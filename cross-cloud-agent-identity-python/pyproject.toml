@@ -1,0 +1,29 @@
+[project]
+name = "cross-cloud-agent-identity-python"
+version = "0.1.0"
+description = "Cross-cloud agent identity demo: delegation, impersonation, and agent-identity via MCP with scope-based authorization"
+requires-python = ">=3.12"
+dependencies = [
+    "keycardai-mcp>=0.22.0,<0.23",
+    "keycardai-oauth>=0.12.0",
+    "keycardai-starlette>=0.2.0",
+    "anthropic>=0.40.0",
+    "snowflake-connector-python>=3.0.0",
+    "httpx>=0.27.0",
+    "uvicorn>=0.29.0",
+    "starlette>=0.27.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+server = "agent.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent"]
+
+[tool.vercel]
+entrypoint = "api.agent:app"
