@@ -1,0 +1,13 @@
+[org]
+id = "yk0x6qx19edgfy0ftyxz6gaktm"
+
+[zone]
+id = "50rpot0037ualp8yb7h6f315ee"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_ID"
+resource = "urn:databricks-agent:client_id"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_SECRET"
+resource = "urn:databricks-agent:client_secret"
