@@ -216,14 +216,13 @@ Write `.env` in the project root from `.env.example`:
 ```
 KEYCARD_URL=https://<zone-id>.keycard.cloud
 MCP_SERVER_URL=<server-url>
-PORT=<port>
 DATABRICKS_HOST=<databricks-host>
 ENFORCE_TOOL_SCOPES=true
 DATABRICKS_WAREHOUSE_ID=<warehouse-id>
 DATABRICKS_GENIE_SPACE_ID=<genie-space-id>
 ```
 
-`DATABRICKS_HOST` is the workspace host only (no API path) — every tool appends its own `/api/2.x/...` route. `ENFORCE_TOOL_SCOPES` selects how access is authorized: `true` makes the server verify per-tool scopes, `false` lets the delegation policy authorize the exchange instead. `DATABRICKS_WAREHOUSE_ID` and `DATABRICKS_GENIE_SPACE_ID` are optional defaults the SQL/Genie tools fall back to when the caller omits them.
+`MCP_SERVER_URL` is the single source of truth for the listen port too: `main.py` parses the port from this URL and binds to it, so the advertised URL and bind port always agree (a mismatch breaks MCP auth with an invalid audience). `DATABRICKS_HOST` is the workspace host only (no API path) — every tool appends its own `/api/2.x/...` route. `ENFORCE_TOOL_SCOPES` selects how access is authorized: `true` makes the server verify per-tool scopes, `false` lets the delegation policy authorize the exchange instead. `DATABRICKS_WAREHOUSE_ID` and `DATABRICKS_GENIE_SPACE_ID` are optional defaults the SQL/Genie tools fall back to when the caller omits them.
 
 `main.py` loads `.env` via `python-dotenv`, so these are picked up at startup. `.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — they are brokered at runtime by `keycard run`.
 

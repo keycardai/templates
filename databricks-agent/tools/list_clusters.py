@@ -13,6 +13,9 @@ DATABRICKS_HOST = os.environ.get(
     "DATABRICKS_HOST", "https://<your-workspace>.cloud.databricks.com"
 ).rstrip("/")
 
+# Databricks REST endpoints used by this module.
+CLUSTERS_LIST_URL = f"{DATABRICKS_HOST}/api/2.0/clusters/list"
+
 
 async def _exchange_token_with_scope(
     auth_provider: AuthProvider, resource: str, scope: str
@@ -78,7 +81,7 @@ def register_list_clusters_tool(mcp: FastMCP, auth_provider: AuthProvider) -> No
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{DATABRICKS_HOST}/api/2.0/clusters/list",
+                CLUSTERS_LIST_URL,
                 headers={"Authorization": f"Bearer {token}"},
             )
 

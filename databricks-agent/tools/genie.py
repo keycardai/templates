@@ -25,6 +25,22 @@ DATABRICKS_HOST = os.environ.get(
     "DATABRICKS_HOST", "https://<your-workspace>.cloud.databricks.com"
 ).rstrip("/")
 
+# Databricks Genie REST endpoints used by this module. Parameterized endpoints
+# expose `.format(...)` placeholders for the path segments they need.
+GENIE_SPACES_URL = f"{DATABRICKS_HOST}/api/2.0/genie/spaces"
+GENIE_START_CONVERSATION_URL = (
+    f"{DATABRICKS_HOST}/api/2.0/genie/spaces/{{space_id}}/start-conversation"
+)
+GENIE_MESSAGE_URL = (
+    f"{DATABRICKS_HOST}/api/2.0/genie/spaces/{{space_id}}"
+    "/conversations/{conversation_id}/messages/{message_id}"
+)
+GENIE_QUERY_RESULT_URL = (
+    f"{DATABRICKS_HOST}/api/2.0/genie/spaces/{{space_id}}"
+    "/conversations/{conversation_id}/messages/{message_id}"
+    "/attachments/{attachment_id}/query-result"
+)
+
 # Default Genie space for conversation tools when the caller omits one.
 DEFAULT_GENIE_SPACE_ID = os.environ.get("DATABRICKS_GENIE_SPACE_ID", "")
 
@@ -74,7 +90,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{DATABRICKS_HOST}/api/2.0/genie/spaces",
+                GENIE_SPACES_URL,
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code != 200:
@@ -112,7 +128,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                f"{DATABRICKS_HOST}/api/2.0/genie/spaces/{space}/start-conversation",
+                GENIE_START_CONVERSATION_URL.format(space_id=space),
                 headers={"Authorization": f"Bearer {token}"},
                 json={"content": content},
             )
@@ -154,8 +170,11 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{DATABRICKS_HOST}/api/2.0/genie/spaces/{space}"
-                f"/conversations/{conversation_id}/messages/{message_id}",
+                GENIE_MESSAGE_URL.format(
+                    space_id=space,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code != 200:
@@ -196,9 +215,12 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{DATABRICKS_HOST}/api/2.0/genie/spaces/{space}"
-                f"/conversations/{conversation_id}/messages/{message_id}"
-                f"/attachments/{attachment_id}/query-result",
+                GENIE_QUERY_RESULT_URL.format(
+                    space_id=space,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    attachment_id=attachment_id,
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code != 200:

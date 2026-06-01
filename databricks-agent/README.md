@@ -45,7 +45,7 @@ Follow `SPEC.md` to provision the required Keycard resources (Databricks provide
 
    ```bash
    cp .env.example .env
-   # Fill in KEYCARD_URL, MCP_SERVER_URL, PORT, DATABRICKS_HOST, ENFORCE_TOOL_SCOPES
+   # Fill in KEYCARD_URL, MCP_SERVER_URL, DATABRICKS_HOST, ENFORCE_TOOL_SCOPES
    # and optionally DATABRICKS_WAREHOUSE_ID / DATABRICKS_GENIE_SPACE_ID
    ```
 
@@ -66,8 +66,7 @@ keycard run -- uv run python main.py
 | Variable | Default | Purpose |
 |---|---|---|
 | `KEYCARD_URL` | _(required)_ | Your zone's OIDC issuer URL (`https://<zone-id>.keycard.cloud`) |
-| `MCP_SERVER_URL` | `http://localhost:8000/` | Base URL the MCP client uses to reach this server. Must end with a trailing slash. |
-| `PORT` | `8000` | Local HTTP port the server listens on |
+| `MCP_SERVER_URL` | `http://localhost:8000/` | Base URL the MCP client uses to reach this server, and the single source of truth for the bind port (parsed from this URL). Must end with a trailing slash. The advertised URL and bind port must agree, or MCP auth fails with an invalid audience. |
 | `DATABRICKS_HOST` | `https://<your-workspace>.cloud.databricks.com` | Databricks workspace host **only** (no API path); each tool appends its own route |
 | `ENFORCE_TOOL_SCOPES` | `true` | `true` = the server verifies per-tool scopes; `false` = the delegation policy authorizes the exchange instead |
 | `DATABRICKS_WAREHOUSE_ID` | _(unset)_ | Optional default warehouse for `execute_statement` |

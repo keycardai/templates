@@ -17,22 +17,9 @@ Run with:
 
 import logging
 import os
+from urllib.parse import urlparse
 
 from dotenv import find_dotenv, load_dotenv
-
-load_dotenv(find_dotenv(usecwd=True))
-
-KEYCARD_URL = os.environ.get("KEYCARD_URL")
-SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/")
-PORT = int(os.environ.get("PORT", "8000"))
-SERVER_NAME = "databricks-agent"
-
-if not KEYCARD_URL:
-    raise RuntimeError(
-        "KEYCARD_URL is required. "
-        "Set it in .env or run via `keycard run -- uv run python main.py`."
-    )
-
 from fastmcp import FastMCP
 from keycardai.fastmcp import AuthProvider
 
@@ -40,6 +27,21 @@ from tools.genie import register_genie_tools
 from tools.list_clusters import register_list_clusters_tool
 from tools.scope import scope_enforcement_enabled
 from tools.sql_warehouse import register_sql_tools
+
+load_dotenv(find_dotenv(usecwd=True))
+
+KEYCARD_URL = os.environ.get("KEYCARD_URL")
+# Single source of truth: the advertised server URL also dictates the bind port.
+# These must agree, otherwise MCP auth fails with an invalid audience.
+SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/")
+PORT = urlparse(SERVER_URL).port or 8000
+SERVER_NAME = "databricks-agent"
+
+if not KEYCARD_URL:
+    raise RuntimeError(
+        "KEYCARD_URL is required. "
+        "Set it in .env or run via `keycard run -- uv run python main.py`."
+    )
 
 auth_provider = AuthProvider(
     zone_url=KEYCARD_URL,

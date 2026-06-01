@@ -23,6 +23,12 @@ DATABRICKS_HOST = os.environ.get(
     "DATABRICKS_HOST", "https://<your-workspace>.cloud.databricks.com"
 ).rstrip("/")
 
+# Databricks SQL REST endpoints used by this module. Parameterized endpoints
+# expose `.format(...)` placeholders for the path segments they need.
+WAREHOUSES_URL = f"{DATABRICKS_HOST}/api/2.0/sql/warehouses"
+STATEMENTS_URL = f"{DATABRICKS_HOST}/api/2.0/sql/statements"
+STATEMENT_URL = f"{DATABRICKS_HOST}/api/2.0/sql/statements/{{statement_id}}"
+
 # Default warehouse for `execute_statement` when the caller omits one.
 DEFAULT_WAREHOUSE_ID = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
 
@@ -59,7 +65,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{DATABRICKS_HOST}/api/2.0/sql/warehouses",
+                WAREHOUSES_URL,
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code != 200:
@@ -120,7 +126,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                f"{DATABRICKS_HOST}/api/2.0/sql/statements",
+                STATEMENTS_URL,
                 headers={"Authorization": f"Bearer {token}"},
                 json=body,
             )
@@ -149,7 +155,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{DATABRICKS_HOST}/api/2.0/sql/statements/{statement_id}",
+                STATEMENT_URL.format(statement_id=statement_id),
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code != 200:

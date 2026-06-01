@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${PORT:-8000}"
-BASE="http://localhost:$PORT"
+# MCP_SERVER_URL is the single source of truth; main.py binds to its port.
+export MCP_SERVER_URL="${MCP_SERVER_URL:-http://localhost:8000/}"
+BASE="${MCP_SERVER_URL%/}"
 
 # A KEYCARD_URL is required for the server to boot. CI can point this at any
 # reachable zone issuer; the smoke test only checks that OAuth metadata is served.
 : "${KEYCARD_URL:?KEYCARD_URL must be set for ci-verify}"
-export MCP_SERVER_URL="${MCP_SERVER_URL:-http://localhost:$PORT/}"
 
 uv run python main.py &
 PID=$!
