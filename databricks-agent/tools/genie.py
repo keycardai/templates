@@ -77,7 +77,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_SPACES_READ)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_SPACES_READ)
     async def list_genie_spaces(ctx: Context) -> dict:
         """List the Genie spaces available in the Databricks workspace.
 
@@ -102,7 +102,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_CONVERSE)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_CONVERSE)
     async def start_genie_conversation(
         ctx: Context,
         content: str,
@@ -141,7 +141,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_READ)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_READ)
     async def get_genie_message(
         ctx: Context,
         conversation_id: str,
@@ -186,7 +186,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_READ)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_READ)
     async def get_genie_query_result(
         ctx: Context,
         conversation_id: str,

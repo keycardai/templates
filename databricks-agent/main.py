@@ -23,12 +23,15 @@ from dotenv import find_dotenv, load_dotenv
 from fastmcp import FastMCP
 from keycardai.fastmcp import AuthProvider
 
-from tools.genie import register_genie_tools
-from tools.list_clusters import register_list_clusters_tool
-from tools.scope import scope_enforcement_enabled
-from tools.sql_warehouse import register_sql_tools
-
+# Load .env BEFORE importing the tool modules: each tool reads DATABRICKS_HOST
+# at import time, so the environment must be populated first. Otherwise the host
+# falls back to its placeholder and token exchange fails with invalid_target.
 load_dotenv(find_dotenv(usecwd=True))
+
+from tools.genie import register_genie_tools  # noqa: E402
+from tools.list_clusters import register_list_clusters_tool  # noqa: E402
+from tools.scope import scope_enforcement_enabled  # noqa: E402
+from tools.sql_warehouse import register_sql_tools  # noqa: E402
 
 KEYCARD_URL = os.environ.get("KEYCARD_URL")
 # Single source of truth: the advertised server URL also dictates the bind port.

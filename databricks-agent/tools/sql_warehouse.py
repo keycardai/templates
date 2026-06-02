@@ -52,7 +52,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_SQL_WAREHOUSES_READ)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_SQL_WAREHOUSES_READ)
     async def list_warehouses(ctx: Context) -> dict:
         """List the SQL warehouses in the configured Databricks workspace.
 
@@ -77,7 +77,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_SQL_EXECUTE)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_SQL_EXECUTE)
     async def execute_statement(
         ctx: Context,
         statement: str,
@@ -139,7 +139,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_SQL_READ)
-    @auth_provider.grant(DATABRICKS_HOST)
+    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_SQL_READ)
     async def get_statement(ctx: Context, statement_id: str) -> dict:
         """Fetch the status and result of a previously submitted SQL statement.
 
