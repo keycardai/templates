@@ -13,6 +13,7 @@ from fastmcp import Context, FastMCP
 from keycardai.fastmcp import AccessContext, AuthProvider
 
 from .scope import (
+    DATABRICKS_SQL_RESOURCE,
     SCOPE_SQL_EXECUTE,
     SCOPE_SQL_READ,
     SCOPE_SQL_WAREHOUSES_READ,
@@ -44,7 +45,7 @@ async def _databricks_token(ctx: Context) -> tuple[str | None, dict | None]:
             "error": "Token exchange failed",
             "details": access_context.get_errors(),
         }
-    return access_context.access(DATABRICKS_HOST).access_token, None
+    return access_context.access(DATABRICKS_SQL_RESOURCE).access_token, None
 
 
 def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
@@ -52,7 +53,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_SQL_WAREHOUSES_READ)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_SQL_WAREHOUSES_READ)
+    @auth_provider.grant(DATABRICKS_SQL_RESOURCE)
     async def list_warehouses(ctx: Context) -> dict:
         """List the SQL warehouses in the configured Databricks workspace.
 
@@ -77,7 +78,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_SQL_EXECUTE)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_SQL_EXECUTE)
+    @auth_provider.grant(DATABRICKS_SQL_RESOURCE)
     async def execute_statement(
         ctx: Context,
         statement: str,
@@ -139,7 +140,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_SQL_READ)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_SQL_READ)
+    @auth_provider.grant(DATABRICKS_SQL_RESOURCE)
     async def get_statement(ctx: Context, statement_id: str) -> dict:
         """Fetch the status and result of a previously submitted SQL statement.
 

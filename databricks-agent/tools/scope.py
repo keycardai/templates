@@ -24,6 +24,20 @@ from fastmcp.server.dependencies import get_access_token
 
 from keycardai.oauth.utils.jwt import extract_scopes, get_claims
 
+DATABRICKS_HOST = os.environ.get(
+    "DATABRICKS_HOST", "https://<your-workspace>.cloud.databricks.com"
+).rstrip("/")
+
+# Databricks scope-resources. Each maps (at the Keycard backend) to the upstream
+# Databricks OAuth scope it requests, so the scope a tool gets is selected by
+# which resource it exchanges against — not by an in-code `request_scopes`:
+# - `DATABRICKS_HOST`          -> scope `all-apis`
+# - `DATABRICKS_SQL_RESOURCE`  -> scope `sql`
+# - `DATABRICKS_GENIE_RESOURCE`-> scope `dashboards.genie`
+# All three mint a workspace-audience token that works against `<host>/api/...`.
+DATABRICKS_SQL_RESOURCE = f"{DATABRICKS_HOST}/sql"
+DATABRICKS_GENIE_RESOURCE = f"{DATABRICKS_HOST}/genie"
+
 # Per-tool scopes. Each MCP tool requires exactly one of these; Keycard's PDP
 # decides at issuance which of them a given user may obtain.
 SCOPE_CLUSTERS_READ = "databricks:clusters:read"

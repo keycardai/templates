@@ -32,7 +32,7 @@ async def _databricks_token(ctx: Context) -> tuple[str | None, dict | None]:
 def register_list_clusters_tool(mcp: FastMCP, auth_provider: AuthProvider) -> None:
     @mcp.tool()
     @require_scope(SCOPE_CLUSTERS_READ)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_CLUSTERS_READ)
+    @auth_provider.grant(DATABRICKS_HOST)
     async def list_clusters(ctx: Context) -> dict:
         """List all clusters in the configured Databricks workspace.
 

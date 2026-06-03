@@ -15,6 +15,7 @@ from fastmcp import Context, FastMCP
 from keycardai.fastmcp import AccessContext, AuthProvider
 
 from .scope import (
+    DATABRICKS_GENIE_RESOURCE,
     SCOPE_GENIE_CONVERSE,
     SCOPE_GENIE_READ,
     SCOPE_GENIE_SPACES_READ,
@@ -56,7 +57,7 @@ async def _databricks_token(ctx: Context) -> tuple[str | None, dict | None]:
             "error": "Token exchange failed",
             "details": access_context.get_errors(),
         }
-    return access_context.access(DATABRICKS_HOST).access_token, None
+    return access_context.access(DATABRICKS_GENIE_RESOURCE).access_token, None
 
 
 def _resolve_space(space_id: str | None) -> tuple[str | None, dict | None]:
@@ -77,7 +78,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_SPACES_READ)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_SPACES_READ)
+    @auth_provider.grant(DATABRICKS_GENIE_RESOURCE)
     async def list_genie_spaces(ctx: Context) -> dict:
         """List the Genie spaces available in the Databricks workspace.
 
@@ -102,7 +103,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_CONVERSE)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_CONVERSE)
+    @auth_provider.grant(DATABRICKS_GENIE_RESOURCE)
     async def start_genie_conversation(
         ctx: Context,
         content: str,
@@ -141,7 +142,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_READ)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_READ)
+    @auth_provider.grant(DATABRICKS_GENIE_RESOURCE)
     async def get_genie_message(
         ctx: Context,
         conversation_id: str,
@@ -186,7 +187,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
 
     @mcp.tool()
     @require_scope(SCOPE_GENIE_READ)
-    @auth_provider.grant(DATABRICKS_HOST, request_scopes=SCOPE_GENIE_READ)
+    @auth_provider.grant(DATABRICKS_GENIE_RESOURCE)
     async def get_genie_query_result(
         ctx: Context,
         conversation_id: str,

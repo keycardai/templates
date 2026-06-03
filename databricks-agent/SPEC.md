@@ -7,7 +7,7 @@ An MCP server exposing per-tool-scoped tools. When a tool runs, the `@grant` dec
 The server authorizes access in one of two ways, selected by the `ENFORCE_TOOL_SCOPES` env flag:
 
 - **`ENFORCE_TOOL_SCOPES=true` — scope-at-issuance + server verification.** The client requests specific per-tool scopes (e.g. `databricks:sql:execute`). Keycard's PDP evaluates Cedar against `context.scopes` and issues only the scopes the user's policy permits. Each tool then verifies its required scope is present before running, returning `insufficient_scope` otherwise.
-- **`ENFORCE_TOOL_SCOPES=false` — policy-at-exchange / delegation.** The client requests no scopes and the server-side check is bypassed. Authorization happens at token-exchange time inside `@grant`: Keycard's delegation policy permits the on-behalf exchange only when the Databricks resource is wired as a dependency of this application. A denied exchange surfaces as a token-exchange error from the tool.
+- **`ENFORCE_TOOL_SCOPES=false` — policy-at-exchange / delegation.** The client requests no scopes and the server-side check is bypassed. Authorization happens at token-exchange time inside `@grant`: Keycard's delegation policy permits the on-behalf exchange only when the tool's Databricks scope-resource is wired as a dependency of this application. A denied exchange surfaces as a token-exchange error from the tool.
 
 Pick this template to see Keycard's per-tool scope authorization and delegation control side-by-side against a plain REST API, or as a starting point for calling any OAuth-protected HTTP API on a user's behalf.
 
@@ -30,7 +30,7 @@ Introduce each concept **once**, the first time it appears during narration. Use
 | 1 | Zone | Step 3 (resolve context) | Your private Keycard environment that holds users, apps, and policies and issues credentials. | https://docs.keycard.ai/platform/concepts/zones/ |
 | 2 | Organization | Step 3 (resolve context) | The account that owns one or more zones — usually your company or team. | https://docs.keycard.ai/platform/concepts/zones/ |
 | 3 | OAuth provider | §1a (Databricks provider) | A credential provider that brokers OAuth tokens for a third-party service — here it mints tokens Databricks accepts. | https://docs.keycard.ai/platform/concepts/providers/ |
-| 4 | Resource | §1b (Databricks resource) | The protected API your application calls — its identifier must match the API host exactly so Keycard's STS knows which tokens to issue. | https://docs.keycard.ai/platform/concepts/resources/ |
+| 4 | Resource | §1b (Databricks scope-resources) | The protected API your application calls — here modeled as three scope-resources (the host plus `/sql` and `/genie`), each mapped to a different Databricks scope so Keycard's STS knows which scoped token to issue. | https://docs.keycard.ai/platform/concepts/resources/ |
 | 5 | Application | §1c (server app) | A software actor registered with Keycard — this server gets one so Keycard knows who is asking for credentials. | https://docs.keycard.ai/platform/concepts/applications/ |
 | 6 | Dependency | §1d (wiring) | A declared relationship that controls which resources an application can access — enforces access without writing policies directly. | https://docs.keycard.ai/platform/concepts/applications/#dependencies |
 | 7 | STS provider | §1e (server resource) | The credential source built into every zone that mints OAuth access tokens for resources within the zone. | https://docs.keycard.ai/platform/concepts/providers/ |
@@ -62,16 +62,21 @@ A provider that can mint OAuth tokens accepted by `<databricks-host>`. Carry the
 | `type` | `oauth` |
 | `identifier` | `<databricks-host>` |
 
+The provider (and the Databricks OAuth app it points at) MUST permit the upstream scopes this template requests: `sql`, `dashboards.genie`, and `all-apis`. Databricks enforces that a requested scope is a subset of the scopes configured on the app, so all three must be enabled there.
+
 If the active Keycard build does not accept an OAuth provider for Databricks verbatim, consult the API reference and adjust. If it still fails, tell the user provisioning could not configure the Databricks provider and to create it in `https://console.keycard.ai → Providers` (pointing at the Databricks workspace OAuth server), then retry.
 
-### 1b. Databricks resource
+### 1b. Databricks scope-resources
 
-The protected API the server calls. The identifier MUST be `<databricks-host>` exactly — Keycard's STS rejects token requests whose `resource` does not match. Carry forward as `<databricks-resource-id>`.
+The protected API the server calls, modeled as **three** resources that all use the Databricks provider but map to different upstream Databricks scopes. The scope a tool gets is selected by which resource it exchanges against; every one mints a workspace-audience token that works against `<databricks-host>/api/...` (the path suffix only selects the scope). Carry the IDs forward.
 
-| Field | Value |
-|---|---|
-| `identifier` | `<databricks-host>` |
-| `credential_provider_id` | `<databricks-provider-id>` |
+| Identifier | Databricks scope | Used by | Carry forward |
+|---|---|---|---|
+| `<databricks-host>` | `all-apis` | `list_clusters` | `<databricks-resource-id>` |
+| `<databricks-host>/sql` | `sql` | SQL Warehouse tools | `<databricks-sql-resource-id>` |
+| `<databricks-host>/genie` | `dashboards.genie` | Genie tools | `<databricks-genie-resource-id>` |
+
+Each resource sets `credential_provider_id = <databricks-provider-id>` and is configured with its Databricks scope. The host resource (`all-apis`) must match `<databricks-host>` exactly. The `/sql` and `/genie` resources extend that host with a path segment so Keycard can map each to its own scope.
 
 ### 1c. Server application
 
@@ -82,11 +87,11 @@ The application THIS server identifies as when it talks to Keycard's STS. Its `c
 | `identifier` | `<server-url>` |
 | `consent` | `implicit` |
 
-### 1d. Wire Databricks as a dependency of the server application
+### 1d. Wire the Databricks resources as dependencies of the server application
 
-**Intent.** Additively grant the server application access to the Databricks resource, leaving other records untouched. This dependency is also the **authorization control for the exchange-time path** (`ENFORCE_TOOL_SCOPES=false`): the delegation policy in §1h permits the on-behalf token exchange only when this dependency exists.
+**Intent.** Additively grant the server application access to **all three** Databricks scope-resources from §1b, leaving other records untouched. These dependencies are also the **authorization control for the exchange-time path** (`ENFORCE_TOOL_SCOPES=false`): the delegation policy in §1h permits the on-behalf token exchange only when the matching dependency exists.
 
-**How to achieve it.** Dependencies live on the **application**. `PUT /zones/<zone-id>/applications/<server-application-id>/dependencies/<databricks-resource-id>` with an empty JSON body, then GET the dependencies list and confirm the Databricks resource appears in `items`. If it does not, consult the API reference and retry; if still absent, tell the user to connect the Databricks resource as a dependency of `<name>` in `https://console.keycard.ai → Applications`.
+**How to achieve it.** Dependencies live on the **application**. For each of `<databricks-resource-id>`, `<databricks-sql-resource-id>`, and `<databricks-genie-resource-id>`, `PUT /zones/<zone-id>/applications/<server-application-id>/dependencies/<resource-id>` with an empty JSON body, then GET the dependencies list and confirm all three resources appear in `items`. If any is missing, consult the API reference and retry; if still absent, tell the user to connect the Databricks resources as dependencies of `<name>` in `https://console.keycard.ai → Applications`.
 
 ### 1e. Server MCP resource
 
@@ -116,19 +121,23 @@ bash scripts/provision-credentials.sh \
 
 The script issues a `password`-type application credential, creates vault resources at `urn:<name>:client_id` and `urn:<name>:client_secret`, attaches the secrets, and wipes the in-memory credential. On failure it prints a remediation message; the correct fallback is to tell the user provisioning failed, ask them to issue credentials in `https://console.keycard.ai → Applications → <name> → Credentials` and store them in vault resources at those two URNs themselves, and to reach Keycard support if stuck. The agent MUST NOT run the underlying `application-credentials` call itself — that would expose the secret in the tool-call transcript.
 
-### 1g. Scope reference (no resource-level configuration needed)
+### 1g. Scope reference (two layers)
 
-Each MCP tool requires exactly one scope. These strings appear in the per-tool scope-grant Cedar policies (§1h) and in the server's `@require_scope` checks. They do **not** need to be registered on any resource — Cedar references them as free-form strings in the `context.scopes` set, and Keycard's authorization server includes a scope on an issued token only when a matching Cedar permit exists. **Do not create scope definitions on any resource.**
+Authorization works in two distinct layers; keep them separate.
 
-| Scope | Tool |
-|---|---|
-| `databricks:clusters:read` | `list_clusters` |
-| `databricks:sql:warehouses:read` | `list_warehouses` |
-| `databricks:sql:execute` | `execute_statement` |
-| `databricks:sql:read` | `get_statement` |
-| `databricks:genie:spaces:read` | `list_genie_spaces` |
-| `databricks:genie:converse` | `start_genie_conversation` |
-| `databricks:genie:read` | `get_genie_message`, `get_genie_query_result` |
+**Layer 1 — MCP gating scopes.** Each MCP tool requires exactly one `databricks:*` gating scope. These strings appear in the per-tool scope-grant Cedar policies (§1h) and in the server's `@require_scope` checks; they gate *which tool* a caller may invoke and are the only place fine-grained distinctions (e.g. `sql:read` vs `sql:execute`) exist. They do **not** need to be registered on any resource — Cedar references them as free-form strings in the `context.scopes` set, and Keycard's authorization server includes a scope on an issued token only when a matching Cedar permit exists. **Do not create scope definitions on any resource.**
+
+**Layer 2 — upstream Databricks scope.** Selected by which §1b scope-resource the tool exchanges against; the resource's configured scope is what the brokered Databricks token carries. Databricks only distinguishes per-service scopes (`sql`, `dashboards.genie`, `all-apis`), so the four SQL/Genie gating scopes collapse onto two upstream scopes.
+
+| MCP gating scope (Layer 1) | Tool | Exchange resource (Layer 2) | Databricks scope |
+|---|---|---|---|
+| `databricks:clusters:read` | `list_clusters` | `<databricks-host>` | `all-apis` |
+| `databricks:sql:warehouses:read` | `list_warehouses` | `<databricks-host>/sql` | `sql` |
+| `databricks:sql:execute` | `execute_statement` | `<databricks-host>/sql` | `sql` |
+| `databricks:sql:read` | `get_statement` | `<databricks-host>/sql` | `sql` |
+| `databricks:genie:spaces:read` | `list_genie_spaces` | `<databricks-host>/genie` | `dashboards.genie` |
+| `databricks:genie:converse` | `start_genie_conversation` | `<databricks-host>/genie` | `dashboards.genie` |
+| `databricks:genie:read` | `get_genie_message`, `get_genie_query_result` | `<databricks-host>/genie` | `dashboards.genie` |
 
 ### 1h. Authorization policy set (Cedar, schema `2026-03-16`)
 
@@ -205,7 +214,7 @@ Create a policy set named `databricks-demo-access` with `scope_type: "zone"`, th
 | Per-tool scope grants | the four `demo-scope-*` customer policy versions |
 | Dependency-gated delegation | customer `demo-app-delegation-by-dependency` → `<delegation-policy-version-id>` |
 
-Activate the new policy-set version (PATCH with `active: true`). Verify against the Console audit log during the smoke phase: a permitted scope appears on the issued token; an omitted scope does not; and with the dependency present the on-behalf exchange to `<databricks-host>` is permitted.
+Activate the new policy-set version (PATCH with `active: true`). Verify against the Console audit log during the smoke phase: a permitted scope appears on the issued token; an omitted scope does not; and with the dependencies present the on-behalf exchanges to the three Databricks scope-resources (`<databricks-host>`, `<databricks-host>/sql`, `<databricks-host>/genie`) are permitted.
 
 ## 2. Configuration the agent MUST write
 
@@ -302,7 +311,7 @@ If `claude` is not on PATH, tell the user to add the server (`url` = `<server-ur
 
 ### Carried IDs for the recap
 
-After §1 and §4 the agent holds: `<zone-id>`, `<databricks-provider-id>`, `<databricks-resource-id>`, `<server-application-id>`, `<server-resource-id>`, `<sts-provider-id>`, `<vault-provider-id>`, `<demo-user-id>`, the policy-set version IDs, and the verified vault URNs (`urn:<name>:client_id`, `urn:<name>:client_secret`). Point the user at `https://console.keycard.ai` to look any of them up.
+After §1 and §4 the agent holds: `<zone-id>`, `<databricks-provider-id>`, `<databricks-resource-id>`, `<databricks-sql-resource-id>`, `<databricks-genie-resource-id>`, `<server-application-id>`, `<server-resource-id>`, `<sts-provider-id>`, `<vault-provider-id>`, `<demo-user-id>`, the policy-set version IDs, and the verified vault URNs (`urn:<name>:client_id`, `urn:<name>:client_secret`). Point the user at `https://console.keycard.ai` to look any of them up.
 
 ## 7. What to say to the user (per-step narration)
 

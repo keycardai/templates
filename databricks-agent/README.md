@@ -5,22 +5,27 @@ A Keycard-protected MCP server exposing scope-gated tools across two Databricks 
 The server enforces authorization in one of two ways, toggled by the `ENFORCE_TOOL_SCOPES` env flag:
 
 - **`ENFORCE_TOOL_SCOPES=true` — scope-at-issuance + server verification.** The client requests specific per-tool scopes. Keycard's PDP issues only the scopes the user's Cedar policy permits, and each tool verifies its required scope before running (returns `insufficient_scope` otherwise).
-- **`ENFORCE_TOOL_SCOPES=false` — policy-at-exchange / delegation.** The client requests no scopes and the server-side check is bypassed. Authorization happens at token-exchange time: Keycard's delegation policy permits the on-behalf exchange only when the Databricks resource is wired as a dependency of this application.
+- **`ENFORCE_TOOL_SCOPES=false` — policy-at-exchange / delegation.** The client requests no scopes and the server-side check is bypassed. Authorization happens at token-exchange time: Keycard's delegation policy permits the on-behalf exchange only when the tool's Databricks scope-resource is wired as a dependency of this application.
 
 ## Tools and scopes
 
-Each tool requires exactly one scope.
+Authorization works in two layers:
 
-| Tool | Databricks endpoint | Scope |
-|---|---|---|
-| `list_clusters` | `GET /api/2.0/clusters/list` | `databricks:clusters:read` |
-| `list_warehouses` | `GET /api/2.0/sql/warehouses` | `databricks:sql:warehouses:read` |
-| `execute_statement` | `POST /api/2.0/sql/statements` | `databricks:sql:execute` |
-| `get_statement` | `GET /api/2.0/sql/statements/{id}` | `databricks:sql:read` |
-| `list_genie_spaces` | `GET /api/2.0/genie/spaces` | `databricks:genie:spaces:read` |
-| `start_genie_conversation` | `POST /api/2.0/genie/spaces/{id}/start-conversation` | `databricks:genie:converse` |
-| `get_genie_message` | `GET /api/2.0/genie/spaces/{id}/conversations/{cid}/messages/{mid}` | `databricks:genie:read` |
-| `get_genie_query_result` | `GET .../messages/{mid}/attachments/{aid}/query-result` | `databricks:genie:read` |
+- **MCP gating scope** (`databricks:*`) — a free-form string verified by `@require_scope` and gated by Cedar at issuance. It decides *which tool* a caller may invoke. Fine-grained distinctions (e.g. `sql:read` vs `sql:execute`) live only here.
+- **Upstream Databricks scope** — selected by *which Keycard resource* the tool exchanges against. Each resource is mapped (at the Keycard backend) to the real Databricks OAuth scope it requests, so the brokered token is narrowed to that scope. Databricks itself only distinguishes per-service scopes (`sql`, `dashboards.genie`, `all-apis`).
+
+| Tool | Databricks endpoint | MCP gating scope | Exchange resource | Databricks scope |
+|---|---|---|---|---|
+| `list_clusters` | `GET /api/2.0/clusters/list` | `databricks:clusters:read` | `{DATABRICKS_HOST}` | `all-apis` |
+| `list_warehouses` | `GET /api/2.0/sql/warehouses` | `databricks:sql:warehouses:read` | `{DATABRICKS_HOST}/sql` | `sql` |
+| `execute_statement` | `POST /api/2.0/sql/statements` | `databricks:sql:execute` | `{DATABRICKS_HOST}/sql` | `sql` |
+| `get_statement` | `GET /api/2.0/sql/statements/{id}` | `databricks:sql:read` | `{DATABRICKS_HOST}/sql` | `sql` |
+| `list_genie_spaces` | `GET /api/2.0/genie/spaces` | `databricks:genie:spaces:read` | `{DATABRICKS_HOST}/genie` | `dashboards.genie` |
+| `start_genie_conversation` | `POST /api/2.0/genie/spaces/{id}/start-conversation` | `databricks:genie:converse` | `{DATABRICKS_HOST}/genie` | `dashboards.genie` |
+| `get_genie_message` | `GET /api/2.0/genie/spaces/{id}/conversations/{cid}/messages/{mid}` | `databricks:genie:read` | `{DATABRICKS_HOST}/genie` | `dashboards.genie` |
+| `get_genie_query_result` | `GET .../messages/{mid}/attachments/{aid}/query-result` | `databricks:genie:read` | `{DATABRICKS_HOST}/genie` | `dashboards.genie` |
+
+All three exchange resources mint a workspace-audience token that works against `{DATABRICKS_HOST}/api/...`; the path suffix only selects the scope.
 
 The SQL and Genie APIs are asynchronous: `execute_statement` returns inline for small queries (within `wait_timeout`, default 30s) or a `statement_id` to poll with `get_statement`; `start_genie_conversation` returns `conversation_id` + `message_id` to poll with `get_genie_message`, then `get_genie_query_result` fetches the SQL behind an answer.
 
@@ -81,9 +86,9 @@ Client → [Keycard bearer token] → server → [token exchange] → [Databrick
 ```
 
 1. The client authenticates to the server with a Keycard bearer token.
-2. When `ENFORCE_TOOL_SCOPES=true`, `@require_scope` checks the token carries the tool's scope before anything else.
-3. `@auth_provider.grant(DATABRICKS_HOST)` exchanges the caller token for a Databricks-scoped OAuth token via the zone's STS. When `ENFORCE_TOOL_SCOPES=false`, Keycard's delegation policy authorizes (or denies) this exchange based on the app's dependency on the Databricks resource.
-4. The tool reads the exchanged token from `ctx.get_state("keycardai")` and calls the Databricks REST endpoint with it as a Bearer token.
+2. When `ENFORCE_TOOL_SCOPES=true`, `@require_scope` checks the token carries the tool's gating scope before anything else.
+3. `@auth_provider.grant(<resource>)` exchanges the caller token for a Databricks OAuth token via the zone's STS, where `<resource>` is the tool's scope-resource (`{DATABRICKS_HOST}/sql`, `{DATABRICKS_HOST}/genie`, or `{DATABRICKS_HOST}` for `all-apis`). The resource determines which Databricks scope the brokered token carries. When `ENFORCE_TOOL_SCOPES=false`, Keycard's delegation policy authorizes (or denies) this exchange based on the app's dependency on that resource.
+4. The tool reads the exchanged token for the same resource from `ctx.get_state("keycardai")` and calls the Databricks REST endpoint with it as a Bearer token.
 5. The brokered token is scoped to the call — no Databricks tokens are cached or stored.
 
 ## Demo
@@ -120,5 +125,5 @@ mcp-client --server-url http://localhost:8000/mcp \
 
 ## Extending
 
-- **Add more Databricks endpoints** — add tools to `tools/` modeled on the SQL/Genie tools; reuse `@require_scope(...)` + `@auth_provider.grant(DATABRICKS_HOST)` and call other `/api/2.x/...` routes.
-- **Add a scope** — define it in `tools/scope.py` (`SUPPORTED_SCOPES`), tag the tool with `@require_scope(...)`, and grant it to users via a Cedar permit (see `SPEC.md §1h`).
+- **Add more Databricks endpoints** — add tools to `tools/` modeled on the SQL/Genie tools; reuse `@require_scope(...)` + `@auth_provider.grant(<scope-resource>)` (one of `DATABRICKS_HOST`, `DATABRICKS_SQL_RESOURCE`, `DATABRICKS_GENIE_RESOURCE`) and call other `/api/2.x/...` routes.
+- **Add a scope** — to gate a tool, define the MCP scope in `tools/scope.py` (`SUPPORTED_SCOPES`), tag the tool with `@require_scope(...)`, and grant it to users via a Cedar permit (see `SPEC.md §1h`). To request a *new upstream Databricks scope*, add a scope-resource constant in `tools/scope.py`, register the matching resource at the Keycard backend mapped to that Databricks scope, and exchange against it.
