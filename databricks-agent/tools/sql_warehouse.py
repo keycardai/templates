@@ -10,8 +10,9 @@ import os
 import httpx
 from fastmcp import Context, FastMCP
 
-from keycardai.fastmcp import AccessContext, AuthProvider
+from keycardai.fastmcp import AuthProvider
 
+from .authorize import databricks_token
 from .scope import (
     DATABRICKS_SQL_RESOURCE,
     SCOPE_SQL_EXECUTE,
@@ -34,20 +35,6 @@ STATEMENT_URL = f"{DATABRICKS_HOST}/api/2.0/sql/statements/{{statement_id}}"
 DEFAULT_WAREHOUSE_ID = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
 
 
-async def _databricks_token(ctx: Context) -> tuple[str | None, dict | None]:
-    """Read the brokered Databricks token from the access context.
-
-    Returns (token, error). Exactly one is non-None.
-    """
-    access_context: AccessContext = await ctx.get_state("keycardai")
-    if access_context.has_errors():
-        return None, {
-            "error": "Token exchange failed",
-            "details": access_context.get_errors(),
-        }
-    return access_context.access(DATABRICKS_SQL_RESOURCE).access_token, None
-
-
 def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
     """Register the SQL Warehouse tools on the MCP server."""
 
@@ -60,7 +47,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
         Calls GET {DATABRICKS_HOST}/api/2.0/sql/warehouses.
         Requires scope: databricks:sql:warehouses:read
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_SQL_RESOURCE)
         if error:
             return error
 
@@ -101,7 +88,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
             schema: Optional default schema for the statement.
             wait_timeout: How long to wait inline before returning a statement_id.
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_SQL_RESOURCE)
         if error:
             return error
 
@@ -150,7 +137,7 @@ def register_sql_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
         Args:
             statement_id: The ID returned by execute_statement.
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_SQL_RESOURCE)
         if error:
             return error
 

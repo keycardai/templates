@@ -28,9 +28,10 @@ from keycardai.fastmcp import AuthProvider
 # falls back to its placeholder and token exchange fails with invalid_target.
 load_dotenv(find_dotenv(usecwd=True))
 
+from tools.authorize import register_authorization_flow  # noqa: E402
 from tools.genie import register_genie_tools  # noqa: E402
 from tools.list_clusters import register_list_clusters_tool  # noqa: E402
-from tools.scope import scope_enforcement_enabled  # noqa: E402
+from tools.scope import authorization_flow_enabled, scope_enforcement_enabled  # noqa: E402
 from tools.sql_warehouse import register_sql_tools  # noqa: E402
 
 KEYCARD_URL = os.environ.get("KEYCARD_URL")
@@ -56,10 +57,15 @@ mcp = FastMCP(SERVER_NAME, auth=auth_provider.get_remote_auth_provider())
 register_list_clusters_tool(mcp, auth_provider)
 register_sql_tools(mcp, auth_provider)
 register_genie_tools(mcp, auth_provider)
+register_authorization_flow(mcp, auth_provider)
 
 logging.getLogger(SERVER_NAME).info(
     "Per-tool scope enforcement: %s",
     "ENABLED" if scope_enforcement_enabled() else "DISABLED",
+)
+logging.getLogger(SERVER_NAME).info(
+    "On-demand authorization flow: %s",
+    "ENABLED" if authorization_flow_enabled() else "DISABLED",
 )
 
 

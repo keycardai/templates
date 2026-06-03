@@ -12,8 +12,9 @@ import os
 import httpx
 from fastmcp import Context, FastMCP
 
-from keycardai.fastmcp import AccessContext, AuthProvider
+from keycardai.fastmcp import AuthProvider
 
+from .authorize import databricks_token
 from .scope import (
     DATABRICKS_GENIE_RESOURCE,
     SCOPE_GENIE_CONVERSE,
@@ -46,20 +47,6 @@ GENIE_QUERY_RESULT_URL = (
 DEFAULT_GENIE_SPACE_ID = os.environ.get("DATABRICKS_GENIE_SPACE_ID", "")
 
 
-async def _databricks_token(ctx: Context) -> tuple[str | None, dict | None]:
-    """Read the brokered Databricks token from the access context.
-
-    Returns (token, error). Exactly one is non-None.
-    """
-    access_context: AccessContext = await ctx.get_state("keycardai")
-    if access_context.has_errors():
-        return None, {
-            "error": "Token exchange failed",
-            "details": access_context.get_errors(),
-        }
-    return access_context.access(DATABRICKS_GENIE_RESOURCE).access_token, None
-
-
 def _resolve_space(space_id: str | None) -> tuple[str | None, dict | None]:
     resolved = space_id or DEFAULT_GENIE_SPACE_ID
     if not resolved:
@@ -85,7 +72,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
         Calls GET {DATABRICKS_HOST}/api/2.0/genie/spaces.
         Requires scope: databricks:genie:spaces:read
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_GENIE_RESOURCE)
         if error:
             return error
 
@@ -120,7 +107,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
             content: The natural-language question to ask Genie.
             space_id: Genie space to use (defaults to DATABRICKS_GENIE_SPACE_ID).
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_GENIE_RESOURCE)
         if error:
             return error
         space, space_error = _resolve_space(space_id)
@@ -162,7 +149,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
             message_id: Message returned by start_genie_conversation.
             space_id: Genie space to use (defaults to DATABRICKS_GENIE_SPACE_ID).
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_GENIE_RESOURCE)
         if error:
             return error
         space, space_error = _resolve_space(space_id)
@@ -207,7 +194,7 @@ def register_genie_tools(mcp: FastMCP, auth_provider: AuthProvider) -> None:
             attachment_id: Attachment ID from the completed message's `attachments`.
             space_id: Genie space to use (defaults to DATABRICKS_GENIE_SPACE_ID).
         """
-        token, error = await _databricks_token(ctx)
+        token, error = await databricks_token(ctx, DATABRICKS_GENIE_RESOURCE)
         if error:
             return error
         space, space_error = _resolve_space(space_id)

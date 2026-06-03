@@ -74,6 +74,7 @@ keycard run -- uv run python main.py
 | `MCP_SERVER_URL` | `http://localhost:8000/` | Base URL the MCP client uses to reach this server, and the single source of truth for the bind port (parsed from this URL). Must end with a trailing slash. The advertised URL and bind port must agree, or MCP auth fails with an invalid audience. |
 | `DATABRICKS_HOST` | `https://<your-workspace>.cloud.databricks.com` | Databricks workspace host **only** (no API path); each tool appends its own route |
 | `ENFORCE_TOOL_SCOPES` | `true` | `true` = the server verifies per-tool scopes; `false` = the delegation policy authorizes the exchange instead |
+| `ENABLE_AUTHORIZATION_FLOW` | `false` | `true` = a tool whose token exchange lacks a delegated grant returns `authorization_required` and exposes the `authorize` tool + `/oauth/callback` route (see below); `false` = the raw token-exchange error is returned |
 | `DATABRICKS_WAREHOUSE_ID` | _(unset)_ | Optional default warehouse for `execute_statement` |
 | `DATABRICKS_GENIE_SPACE_ID` | _(unset)_ | Optional default Genie space for the Genie tools |
 
@@ -90,6 +91,21 @@ Client → [Keycard bearer token] → server → [token exchange] → [Databrick
 3. `@auth_provider.grant(<resource>)` exchanges the caller token for a Databricks OAuth token via the zone's STS, where `<resource>` is the tool's scope-resource (`{DATABRICKS_HOST}/sql`, `{DATABRICKS_HOST}/genie`, or `{DATABRICKS_HOST}` for `all-apis`). The resource determines which Databricks scope the brokered token carries. When `ENFORCE_TOOL_SCOPES=false`, Keycard's delegation policy authorizes (or denies) this exchange based on the app's dependency on that resource.
 4. The tool reads the exchanged token for the same resource from `ctx.get_state("keycardai")` and calls the Databricks REST endpoint with it as a Bearer token.
 5. The brokered token is scoped to the call — no Databricks tokens are cached or stored.
+
+## On-demand authorization (`ENABLE_AUTHORIZATION_FLOW`)
+
+By default a tool whose token exchange fails because the user has no delegated grant for the resource just returns the raw token-exchange error. Set `ENABLE_AUTHORIZATION_FLOW=true` to instead drive the user through a server-side OAuth authorization-code flow, so they can grant access to one resource at a time without leaving the conversation:
+
+1. The tool returns a structured `authorization_required` error naming the missing resource and telling the caller to run the `authorize` tool.
+2. `authorize(resource=...)` mints a Keycard `/authorize` link (authorization code + PKCE, RFC 8707 `resource` indicator) for that single resource and returns the `authorization_url`. It uses the server's own confidential client (`KEYCARD_CLIENT_ID`/`KEYCARD_CLIENT_SECRET`, brokered by `keycard run`) — no new client is registered.
+3. The user opens the link, signs in, and approves. Keycard stores the delegated `(user, resource)` grant and redirects to this server's `/oauth/callback`, which completes the code exchange and shows a confirmation page.
+4. The user retries the original tool; the `@grant` token exchange now succeeds.
+
+```
+tool → authorization_required → authorize(resource) → /authorize link → consent → /oauth/callback → retry tool ✓
+```
+
+The redirect URI is the fixed `<MCP_SERVER_URL>oauth/callback` (e.g. `http://localhost:8000/oauth/callback`), hosted on the running MCP server. For local use the browser and server share the host, so `localhost` is reachable. Before enabling the flag, register that exact URL as an allowed `redirect_uri` on the server's application in Keycard and permit the `authorization_code` grant; the zone must also allow on-demand user authorization of the Databricks resources (already wired as the app's dependencies). Pending flows are tracked in-process and keyed by an OAuth `state` value, so this assumes a single server process.
 
 ## Demo
 

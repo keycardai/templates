@@ -69,6 +69,22 @@ def scope_enforcement_enabled() -> bool:
     )
 
 
+def authorization_flow_enabled() -> bool:
+    """Return True when the on-demand authorization-code flow is active.
+
+    When enabled, a tool whose token exchange fails for lack of a delegated
+    grant returns an `authorization_required` error pointing at the `authorize`
+    tool, which mints a Keycard `/authorize` link. Disabled by default, so the
+    server behaves exactly as before unless explicitly opted in.
+    """
+    return os.getenv("ENABLE_AUTHORIZATION_FLOW", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def _granted_scopes() -> list[str]:
     """Read the granted scopes from the verified caller token."""
     access_token = get_access_token()
