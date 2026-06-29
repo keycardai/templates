@@ -22,7 +22,7 @@ jobs:
             echo "templates=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
           else
             dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
-              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; \) -print \
+              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; -o -exec test -f '{}/go.mod' \; \) -print \
               | sed 's|^\./||' | sort | jq -R . | jq -sc .)
             echo "templates=$dirs" >> "$GITHUB_OUTPUT"
           fi
@@ -52,6 +52,12 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: "eval/package-lock.json"
+
+      # Available for Go templates: the harness runs `go run .` to start the
+      # server and the build agent runs `go build`. No-op for other languages.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
 
       - name: Install eval dependencies
         working-directory: eval
