@@ -130,9 +130,10 @@ export async function authenticateViaOAuth(opts: {
     ]);
 
     if (!postPasswordOutcome) {
+      await dumpPage(page, "post-password-stall");
       throw new Error(
         `OAuth flow stalled after password submission — unexpected page: ${page.url()}\n` +
-        `Run with EVAL_HEADLESS=false to inspect the browser state.`,
+        `See dumped HTML above. Run with EVAL_HEADLESS=false to inspect the browser state.`,
       );
     }
 
