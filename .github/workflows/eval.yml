@@ -40,6 +40,8 @@ jobs:
       CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
       EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
       EVAL_TEST_USER_PASSWORD: ${{ secrets.EVAL_TEST_USER_PASSWORD }}
+      EVAL_ZONE_ID: ${{ secrets.EVAL_ZONE_ID }}
+      EVAL_ZONE_ISSUER_URL: ${{ secrets.EVAL_ZONE_ISSUER_URL }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       EVAL_HEADLESS: "true"
     steps:
