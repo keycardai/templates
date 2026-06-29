@@ -40,6 +40,8 @@ jobs:
       CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
       EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
       EVAL_TEST_USER_PASSWORD: ${{ secrets.EVAL_TEST_USER_PASSWORD }}
+      EVAL_ZONE_ID: ${{ secrets.EVAL_ZONE_ID }}
+      EVAL_ZONE_ISSUER_URL: ${{ secrets.EVAL_ZONE_ISSUER_URL }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       EVAL_HEADLESS: "true"
     steps:
@@ -55,7 +57,11 @@ jobs:
         working-directory: eval
         run: npm install
 
+      # Run from eval/ so npx resolves the pinned playwright in eval/node_modules
+      # and installs the matching browser build. Running at the repo root pulls a
+      # transient playwright whose browser build differs from the one the eval uses.
       - name: Install Playwright browser
+        working-directory: eval
         run: npx playwright install chromium --with-deps
 
       - name: Run eval

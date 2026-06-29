@@ -4,7 +4,7 @@
  * from the redirect, and exchange it for an access token.
  */
 
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 import * as http from "node:http";
 import * as crypto from "node:crypto";
 
@@ -19,6 +19,19 @@ function generatePkce(): { verifier: string; challenge: string } {
   const verifier = base64url(crypto.randomBytes(48));
   const challenge = base64url(crypto.createHash("sha256").update(verifier).digest());
   return { verifier, challenge };
+}
+
+/**
+ * Log the current page URL, title, and HTML so a headless CI failure can be
+ * diagnosed from the run log (there is no browser window to inspect in CI).
+ */
+async function dumpPage(page: Page, label: string): Promise<void> {
+  const url = page.url();
+  const title = await page.title().catch(() => "(unavailable)");
+  const html = await page.content().catch(() => "(unavailable)");
+  console.error(`[eval:${label}] url=${url}`);
+  console.error(`[eval:${label}] title=${title}`);
+  console.error(`[eval:${label}] html (first 6000 chars):\n${html.slice(0, 6000)}`);
 }
 
 /** Start a local HTTP server on CALLBACK_PORT, return the first code it receives. */
@@ -79,10 +92,18 @@ export async function authenticateViaOAuth(opts: {
     const passwordInput = page.locator('input[name="password"]');
 
     // Wait for whichever shows up first
-    await Promise.race([
-      identifierInput.waitFor({ timeout: 15_000 }),
-      passwordInput.waitFor({ timeout: 15_000 }),
-    ]);
+    try {
+      await Promise.race([
+        identifierInput.waitFor({ timeout: 15_000 }),
+        passwordInput.waitFor({ timeout: 15_000 }),
+      ]);
+    } catch {
+      await dumpPage(page, "login-form-missing");
+      throw new Error(
+        `Login form did not render at ${page.url()} ` +
+        `(expected input[name="identifier"] or input[name="password"]). See dumped HTML above.`,
+      );
+    }
 
     if (await identifierInput.isVisible()) {
       await page.fill('input[name="identifier"]', opts.testUserEmail);
@@ -109,9 +130,10 @@ export async function authenticateViaOAuth(opts: {
     ]);
 
     if (!postPasswordOutcome) {
+      await dumpPage(page, "post-password-stall");
       throw new Error(
         `OAuth flow stalled after password submission — unexpected page: ${page.url()}\n` +
-        `Run with EVAL_HEADLESS=false to inspect the browser state.`,
+        `See dumped HTML above. Run with EVAL_HEADLESS=false to inspect the browser state.`,
       );
     }
 

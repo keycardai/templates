@@ -54,10 +54,13 @@ export async function getOrCreateEvalZone(runId: string): Promise<{
 }> {
   const token = await getToken();
 
-  // Read persistent zone from keycard.toml [zone].id — avoids email verification each run
-  const persistentId = await getZoneIdFromToml();
+  // Prefer a persistent eval zone: the test user is already signed up there, so the
+  // browser flow logs in directly instead of hitting sign-up/verify each run. The zone
+  // comes from EVAL_ZONE_ID + EVAL_ZONE_ISSUER_URL (CI secrets), with keycard.toml
+  // [zone].id as a local fallback.
+  const persistentId = process.env.EVAL_ZONE_ID || (await getZoneIdFromToml());
   if (persistentId && persistentId !== "<eval-zone-id>") {
-    const issuerUrl = `https://${persistentId}.keycard.cloud`;
+    const issuerUrl = process.env.EVAL_ZONE_ISSUER_URL || `https://${persistentId}.keycard.cloud`;
     return {
       zone: { id: persistentId, issuerUrl, stsProviderUrl: `${issuerUrl}/oauth/2/token` },
       token,
