@@ -71,6 +71,20 @@ export async function teardownProvisioning(provisioned: ProvisionedZone, token: 
   ]);
 }
 
+/** Find an existing resource by its identifier (identifiers are unique per zone). */
+async function findResourceIdByIdentifier(
+  zoneId: string,
+  token: string,
+  identifier: string,
+): Promise<string | undefined> {
+  const resp = await fetch(`${endpoint()}/zones/${zoneId}/resources`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) return undefined;
+  const { items } = (await resp.json()) as { items?: Array<{ id: string; identifier: string }> };
+  return items?.find((r) => r.identifier === identifier)?.id;
+}
+
 /** Find the keycard-sts provider on the zone. */
 async function getStsProviderId(zoneId: string, token: string): Promise<string> {
   const resp = await fetch(`${endpoint()}/zones/${zoneId}/providers`, {
@@ -110,7 +124,18 @@ export async function provision(opts: {
   const { id: applicationId } = await appResp.json() as { id: string };
   console.log(`   Application: ${applicationId}`);
 
-  // 3. Create Resource
+  // 3. Create Resource. Identifiers are unique per zone, and a persistent zone may
+  // carry one over from a prior run that a name-prefix cleanup did not catch, so
+  // remove any existing resource with this identifier first.
+  const staleResourceId = await findResourceIdByIdentifier(zoneId, token, resourceIdentifier);
+  if (staleResourceId) {
+    await fetch(`${endpoint()}/zones/${zoneId}/resources/${staleResourceId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    console.log(`   Removed stale resource ${staleResourceId} (${resourceIdentifier})`);
+  }
+
   const resResp = await fetch(`${endpoint()}/zones/${zoneId}/resources`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
