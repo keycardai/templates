@@ -55,7 +55,11 @@ jobs:
         working-directory: eval
         run: npm install
 
+      # Run from eval/ so npx resolves the pinned playwright in eval/node_modules
+      # and installs the matching browser build. Running at the repo root pulls a
+      # transient playwright whose browser build differs from the one the eval uses.
       - name: Install Playwright browser
+        working-directory: eval
         run: npx playwright install chromium --with-deps
 
       - name: Run eval
