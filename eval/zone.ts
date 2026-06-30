@@ -68,6 +68,16 @@ export async function getOrCreateEvalZone(runId: string): Promise<{
     };
   }
 
+  // Refuse to create a throwaway zone implicitly: that is how abandoned eval-<runId>
+  // zones accumulate. Require a persistent zone unless ephemeral creation is opted into.
+  if (process.env.EVAL_ALLOW_EPHEMERAL !== "true") {
+    throw new Error(
+      "No persistent eval zone configured. Set EVAL_ZONE_ID + EVAL_ZONE_ISSUER_URL " +
+      "(or keycard.toml [zone].id), or set EVAL_ALLOW_EPHEMERAL=true to create a throwaway " +
+      "zone (it is torn down after the run).",
+    );
+  }
+
   const resp = await fetch(`${endpoint()}/zones`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
