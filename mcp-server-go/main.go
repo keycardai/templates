@@ -16,6 +16,7 @@ import (
 	"os"
 
 	keycardmcp "github.com/keycardai/credentials-go/mcp"
+	"github.com/keycardai/credentials-go/oauth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -43,8 +44,15 @@ func main() {
 	)
 
 	// 2. The verifier trusts only tokens issued by this Keycard zone and resolves their
-	// signing keys from the zone's JWKS.
-	verifier, err := keycardmcp.NewZoneTokenVerifier(keycardURL)
+	// signing keys from the zone's JWKS. Binding the audience to this resource (the
+	// registered /mcp endpoint URL, KEYCARD_RESOURCE_ID) makes the verifier reject tokens
+	// minted for any other resource; the metadata handler advertises the matching
+	// path-inserted resource so clients request exactly this audience.
+	var verifierOpts []oauth.JWTVerifierOption
+	if resourceID := os.Getenv("KEYCARD_RESOURCE_ID"); resourceID != "" {
+		verifierOpts = append(verifierOpts, oauth.WithAudiences(resourceID))
+	}
+	verifier, err := keycardmcp.NewZoneTokenVerifier(keycardURL, verifierOpts...)
 	if err != nil {
 		log.Fatalf("building token verifier: %v", err)
 	}
