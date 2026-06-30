@@ -16,6 +16,7 @@ jobs:
     outputs:
       typescript: ${{ steps.find.outputs.typescript }}
       python: ${{ steps.find.outputs.python }}
+      go: ${{ steps.find.outputs.go }}
     steps:
       - uses: actions/checkout@v4
       - id: find
@@ -25,9 +26,15 @@ jobs:
             if [ -f "${{ inputs.template }}/package.json" ]; then
               echo "typescript=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
               echo "python=[]" >> "$GITHUB_OUTPUT"
+              echo "go=[]" >> "$GITHUB_OUTPUT"
+            elif [ -f "${{ inputs.template }}/go.mod" ]; then
+              echo "typescript=[]" >> "$GITHUB_OUTPUT"
+              echo "python=[]" >> "$GITHUB_OUTPUT"
+              echo "go=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
             else
               echo "typescript=[]" >> "$GITHUB_OUTPUT"
               echo "python=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+              echo "go=[]" >> "$GITHUB_OUTPUT"
             fi
           else
             ts=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
@@ -37,8 +44,12 @@ jobs:
               -exec test -f '{}/pyproject.toml' \; \
               ! -exec test -f '{}/package.json' \; -print \
               | sed 's|^\./||' | sort | jq -R . | jq -sc .)
+            go=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
+              -exec test -f '{}/go.mod' \; -print \
+              | sed 's|^\./||' | sort | jq -R . | jq -sc .)
             echo "typescript=$ts" >> "$GITHUB_OUTPUT"
             echo "python=$py" >> "$GITHUB_OUTPUT"
+            echo "go=$go" >> "$GITHUB_OUTPUT"
           fi
 
   verify-typescript:
@@ -129,6 +140,65 @@ jobs:
       - name: Install dependencies
         working-directory: ${{ matrix.template }}
         run: uv sync
+
+      - name: Create ephemeral zone
+        id: zone
+        run: |
+          ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
+          TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
+            -d "grant_type=client_credentials" \
+            -d "client_id=${CI_KEYCARD_CLIENT_ID}" \
+            -d "client_secret=${CI_KEYCARD_CLIENT_SECRET}" \
+            | jq -r '.access_token')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then echo "Failed to obtain access token"; exit 1; fi
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          sleep 5
+          ZONE=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/zones" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"${ZONE_NAME}\"}")
+          echo "ZONE_ID=$(echo "$ZONE" | jq -r '.id')" >> "$GITHUB_OUTPUT"
+          echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
+
+      - name: Start server and verify
+        working-directory: ${{ matrix.template }}
+        env:
+          PORT: "8000"
+          KEYCARD_URL: ${{ steps.zone.outputs.KEYCARD_URL }}
+          KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+        run: bash scripts/ci-verify.sh
+
+      - name: Delete ephemeral zone
+        if: always()
+        run: |
+          [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
+            curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
+              -H "Authorization: Bearer $TOKEN" && echo "Zone deleted" || true
+
+  verify-go:
+    needs: discover
+    if: needs.discover.outputs.go != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.discover.outputs.go) }}
+    env:
+      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: "${{ matrix.template }}/go.sum"
+
+      - name: Build
+        working-directory: ${{ matrix.template }}
+        run: go build ./...
 
       - name: Create ephemeral zone
         id: zone

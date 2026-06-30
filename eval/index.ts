@@ -52,9 +52,10 @@ const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname
 const SERVER_URL = "http://localhost:8000";
 const RUN_ID = `${Date.now()}`;
 
-// Detect template language from the presence of package.json vs pyproject.toml
+// Detect template language from the presence of its build manifest
 const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
-const language: "python" | "typescript" = isPython ? "python" : "typescript";
+const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true).catch(() => false);
+const language: "python" | "typescript" | "go" = isPython ? "python" : isGo ? "go" : "typescript";
 console.log(`Language: ${language}`);
 
 let zoneId: string | undefined;
@@ -133,16 +134,24 @@ try {
   await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
   await new Promise((r) => setTimeout(r, 500));
 
-  const [serverCmd, serverArgs] = language === "python"
-    ? ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]]
-    : ["node", ["--env-file-if-exists=.env", "dist/server.js"]];
+  const serverByLanguage: Record<typeof language, [string, string[]]> = {
+    python: ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]],
+    go: ["go", ["run", "."]],
+    typescript: ["node", ["--env-file-if-exists=.env", "dist/server.js"]],
+  };
+  const [serverCmd, serverArgs] = serverByLanguage[language];
 
   // Inject service account credentials so brokered-credentials templates can start.
   // discoverApplicationCredential picks these up; templates that don't need them ignore them.
+  // The node and python servers read the provisioned .env; the Go server has no .env loader,
+  // so the provisioned config is passed through the process environment for parity.
   const serverEnv = {
     ...process.env,
     KEYCARD_CLIENT_ID: process.env.CI_KEYCARD_CLIENT_ID ?? "",
     KEYCARD_CLIENT_SECRET: process.env.CI_KEYCARD_CLIENT_SECRET ?? "",
+    KEYCARD_URL: zone.issuerUrl,
+    KEYCARD_RESOURCE_ID: provisioned.resourceIdentifier,
+    PORT: "8000",
   };
 
   serverProcess = execFile(serverCmd, serverArgs, {

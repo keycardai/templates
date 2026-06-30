@@ -1,0 +1,6 @@
+# Built binary
+/mcp-server-go
+*.exe
+
+# Local environment
+.env
