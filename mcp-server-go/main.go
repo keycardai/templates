@@ -78,8 +78,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
-func helloHandler(_ context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[helloInput]) (*mcp.CallToolResultFor[any], error) {
-	return &mcp.CallToolResultFor[any]{
-		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Hello, %s!", params.Arguments.Name)}},
-	}, nil
+func helloHandler(_ context.Context, _ *mcp.CallToolRequest, in helloInput) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Hello, %s!", in.Name)}},
+	}, nil, nil
 }

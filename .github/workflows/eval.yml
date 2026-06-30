@@ -57,7 +57,7 @@ jobs:
       # server and the build agent runs `go build`. No-op for other languages.
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.25"
 
       - name: Install eval dependencies
         working-directory: eval
