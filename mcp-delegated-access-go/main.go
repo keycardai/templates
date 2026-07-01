@@ -109,6 +109,11 @@ func main() {
 		if accessErr != nil {
 			resp["brokered"] = false
 			resp["error"] = accessErr.Error()
+			if detail := ac.GetResourceError(resourceID); detail != nil {
+				resp["error_code"] = detail.Code
+				resp["error_description"] = detail.Description
+				resp["raw_error"] = detail.RawError
+			}
 		} else {
 			resp["brokered"] = true
 			resp["resource"] = resourceID
