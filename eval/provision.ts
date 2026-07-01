@@ -121,7 +121,10 @@ export async function provision(opts: {
   const appResp = await fetch(`${endpoint()}/zones/${zoneId}/applications`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: `eval-app-${runId}`, identifier: `eval-app-${runId}` }),
+    // consent: "implicit" pre-authorizes the app so a delegated token exchange does not
+    // require an interactive user-consent step (otherwise the exchange fails with
+    // insufficient_authorization / "User consent is required").
+    body: JSON.stringify({ name: `eval-app-${runId}`, identifier: `eval-app-${runId}`, consent: "implicit" }),
   });
   if (!appResp.ok) throw new Error(`Create application failed: ${appResp.status} ${await appResp.text()}`);
   const { id: applicationId } = await appResp.json() as { id: string };
