@@ -1,0 +1,6 @@
+# Built binary
+/mcp-delegated-access-go
+*.exe
+
+# Local environment
+.env

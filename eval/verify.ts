@@ -4,6 +4,7 @@
  * - .well-known endpoints return valid JSON
  * - An unauthenticated POST /mcp returns 401 with WWW-Authenticate
  * - An authenticated POST /mcp returns non-401 (auth passed)
+ * - If the template exposes /broker, it brokers a delegated token (token exchange)
  */
 
 export interface VerifyResult {
@@ -83,6 +84,23 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
       throw new Error(`Token was rejected (got 401). WWW-Authenticate: ${wwwAuth}`);
     }
     // Any non-401 means auth passed. 400 (bad JSON-RPC) is acceptable.
+  }, checks);
+
+  // Templates that broker delegated access expose /broker: bearer auth verifies the user,
+  // then the server exchanges that token for a resource-scoped one via its application
+  // credential. Skipped for templates without the endpoint (404/405), so this is a no-op
+  // for the base server template.
+  await check("broker exchanges the user's token for a delegated token", async () => {
+    const resp = await fetch(`${base}/broker`, {
+      headers: { Authorization: `Bearer ${opts.accessToken}` },
+    });
+    if (resp.status === 404 || resp.status === 405) return; // template does not broker; skip
+    if (resp.status === 401) throw new Error(`Broker rejected the token (401)`);
+    if (!resp.ok) throw new Error(`Broker returned ${resp.status}`);
+    const body = await resp.json();
+    if (body.brokered !== true) {
+      throw new Error(`Token exchange did not succeed: ${JSON.stringify(body)}`);
+    }
   }, checks);
 
   return {
