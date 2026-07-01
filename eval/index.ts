@@ -147,8 +147,11 @@ try {
   // so the provisioned config is passed through the process environment for parity.
   const serverEnv = {
     ...process.env,
-    KEYCARD_CLIENT_ID: process.env.CI_KEYCARD_CLIENT_ID ?? "",
-    KEYCARD_CLIENT_SECRET: process.env.CI_KEYCARD_CLIENT_SECRET ?? "",
+    // The application credential minted for the provisioned app, so a broker template
+    // authenticates its token exchange as the application that owns the resource (not the
+    // CI service account, which the zone rejects as invalid_client for that exchange).
+    KEYCARD_CLIENT_ID: provisioned.applicationClientId,
+    KEYCARD_CLIENT_SECRET: provisioned.applicationClientSecret,
     KEYCARD_URL: zone.issuerUrl,
     KEYCARD_RESOURCE_ID: provisioned.resourceIdentifier,
     PORT: "8000",

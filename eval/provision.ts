@@ -17,6 +17,9 @@ export interface ProvisionedZone {
   zoneId: string;
   zoneIssuerUrl: string;
   applicationId: string;
+  /** Client credential minted for the application, so a broker can authenticate its exchange. */
+  applicationClientId: string;
+  applicationClientSecret: string;
   resourceId: string;
   resourceIdentifier: string;
 }
@@ -118,11 +121,32 @@ export async function provision(opts: {
   const appResp = await fetch(`${endpoint()}/zones/${zoneId}/applications`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: `eval-app-${runId}`, identifier: `eval-app-${runId}` }),
+    // consent: "implicit" pre-authorizes the app so a delegated token exchange does not
+    // require an interactive user-consent step (otherwise the exchange fails with
+    // insufficient_authorization / "User consent is required").
+    body: JSON.stringify({ name: `eval-app-${runId}`, identifier: `eval-app-${runId}`, consent: "implicit" }),
   });
   if (!appResp.ok) throw new Error(`Create application failed: ${appResp.status} ${await appResp.text()}`);
   const { id: applicationId } = await appResp.json() as { id: string };
   console.log(`   Application: ${applicationId}`);
+
+  // 2b. Mint a client credential for the application so a template that brokers delegated
+  // access can authenticate its token exchange as this application (the secret is only
+  // returned on creation). Templates that do not broker simply ignore it.
+  const credResp = await fetch(`${endpoint()}/zones/${zoneId}/application-credentials`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ application_id: applicationId, type: "password" }),
+  });
+  if (!credResp.ok) {
+    throw new Error(`Create application credential failed: ${credResp.status} ${await credResp.text()}`);
+  }
+  const { identifier: applicationClientId, password: applicationClientSecret } =
+    (await credResp.json()) as { identifier?: string; password?: string };
+  if (!applicationClientId || !applicationClientSecret) {
+    throw new Error("Application credential response missing identifier/password");
+  }
+  console.log(`   Application credential: ${applicationClientId}`);
 
   // 3. Create Resource. Identifiers are unique per zone, and a persistent zone may
   // carry one over from a prior run that a name-prefix cleanup did not catch, so
@@ -144,6 +168,9 @@ export async function provision(opts: {
       identifier: resourceIdentifier,
       credential_provider_id: stsProviderId,
       scopes_supported: ["mcp:tools"],
+      // Link the resource to the application so the application is authorized to broker
+      // (exchange the user's token for) this resource.
+      application_id: applicationId,
     }),
   });
   if (!resResp.ok) throw new Error(`Create resource failed: ${resResp.status} ${await resResp.text()}`);
@@ -164,5 +191,13 @@ export async function provision(opts: {
   await fs.writeFile(path.join(templateDir, "keycard.toml"), tomlContent, "utf8");
   console.log(`   Wrote keycard.toml`);
 
-  return { zoneId, zoneIssuerUrl, applicationId, resourceId, resourceIdentifier };
+  return {
+    zoneId,
+    zoneIssuerUrl,
+    applicationId,
+    applicationClientId,
+    applicationClientSecret,
+    resourceId,
+    resourceIdentifier,
+  };
 }
