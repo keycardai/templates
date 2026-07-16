@@ -30,6 +30,7 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
 | [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
 | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |
+| [`databricks-agent`](./databricks-agent) | MCP server | Python | FastMCP |
 
 **MCP server** — a Keycard-protected MCP server exposing tools to Claude.
 
