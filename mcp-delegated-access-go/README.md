@@ -2,7 +2,7 @@
 
 A Keycard-protected MCP server that also brokers **delegated access**: it exchanges the caller's verified token for a resource-scoped token using its own application credential (RFC 8693 token exchange), so the server can act on the user's behalf against a downstream resource.
 
-Built on [`github.com/keycardai/credentials-go`](https://pkg.go.dev/github.com/keycardai/credentials-go), the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk), and Go's standard `net/http` over the Streamable HTTP transport. It extends `mcp-server-go` with an `AuthProvider` and a `/broker` endpoint.
+Built on [`github.com/keycardai/go-sdk`](https://pkg.go.dev/github.com/keycardai/go-sdk), the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk), and Go's standard `net/http` over the Streamable HTTP transport. It extends `mcp-server-go` with an `AuthProvider` and a `/broker` endpoint.
 
 ## Run it
 

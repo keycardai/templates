@@ -1,6 +1,6 @@
 # mcp-server-go
 
-A minimal MCP server, integrated with Keycard identity, authentication and authorization, using [`github.com/keycardai/credentials-go`](https://pkg.go.dev/github.com/keycardai/credentials-go), the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk), and Go's standard `net/http` over the Streamable HTTP transport.
+A minimal MCP server, integrated with Keycard identity, authentication and authorization, using [`github.com/keycardai/go-sdk`](https://pkg.go.dev/github.com/keycardai/go-sdk), the official [`modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk), and Go's standard `net/http` over the Streamable HTTP transport.
 
 This template is a plain Go module. There is no scaffolding step — copy the directory, set `KEYCARD_URL`, and run.
 

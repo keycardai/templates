@@ -1,6 +1,6 @@
 // Command mcp-server-go is a minimal Keycard-protected MCP server: net/http plus the
 // official modelcontextprotocol/go-sdk for the MCP transport, with Keycard providing the
-// OAuth metadata endpoints and bearer-token middleware via github.com/keycardai/credentials-go.
+// OAuth metadata endpoints and bearer-token middleware via github.com/keycardai/go-sdk.
 //
 // It exposes one tool, "hello". The point is the protocol plumbing around it: the
 // .well-known OAuth metadata, the bearer middleware that validates Keycard-minted JWTs,
@@ -15,8 +15,8 @@ import (
 	"net/http"
 	"os"
 
-	keycardmcp "github.com/keycardai/credentials-go/mcp"
-	"github.com/keycardai/credentials-go/oauth"
+	keycardmcp "github.com/keycardai/go-sdk/mcp"
+	"github.com/keycardai/go-sdk/oauth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
