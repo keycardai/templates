@@ -15,7 +15,7 @@ Python equivalent of [`mcp-server-typescript-express`](../mcp-server-typescript-
 ```bash
 uv sync
 cp .env.example .env
-# Fill in KEYCARD_ZONE_URL from Keycard Console → Zone Settings
+# Fill in KEYCARD_URL from Keycard Console → Zone Settings
 ```
 
 ## Run
@@ -34,8 +34,7 @@ keycard run -- uv run uvicorn main:app --port 8000
 
 | Variable | Description | Default |
 |---|---|---|
-| `KEYCARD_ZONE_URL` | Zone issuer URL, e.g. `https://<id>.keycard.cloud` | required |
-| `KEYCARD_ZONE_ID` | Zone ID (alternative to `KEYCARD_ZONE_URL`) | — |
+| `KEYCARD_URL` | Zone issuer URL, e.g. `https://<id>.keycard.cloud` | required |
 | `MCP_SERVER_URL` | Base URL this server is reachable at | `http://localhost:8000/` |
 | `PORT` | HTTP port | `8000` |
 
