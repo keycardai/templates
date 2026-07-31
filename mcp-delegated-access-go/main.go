@@ -19,8 +19,8 @@ import (
 	"net/http"
 	"os"
 
-	keycardmcp "github.com/keycardai/credentials-go/mcp"
-	"github.com/keycardai/credentials-go/oauth"
+	keycardmcp "github.com/keycardai/go-sdk/mcp"
+	"github.com/keycardai/go-sdk/oauth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

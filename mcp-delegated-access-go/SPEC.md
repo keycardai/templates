@@ -10,7 +10,7 @@ This template is a plain Go `net/http` MCP server built on `mcp-server-go`, addi
 
 ## 0a. What this template is
 
-A working MCP server built on Go's standard `net/http` and the official MCP Go SDK (`github.com/modelcontextprotocol/go-sdk`), protected by Keycard's OAuth 2.1 flow via `github.com/keycardai/credentials-go`. It ships the `hello` tool plus a `/broker` endpoint that demonstrates **delegated access**: after bearer auth verifies the caller, the server's `AuthProvider` exchanges that token for a token scoped to its own resource (RFC 8693 token exchange), authenticated with the server's `ClientSecret` application credential, and reports the brokered result. Beyond the base OAuth plumbing (metadata endpoints, bearer middleware, Streamable HTTP), this shows how a server acts on the user's behalf against a downstream resource.
+A working MCP server built on Go's standard `net/http` and the official MCP Go SDK (`github.com/modelcontextprotocol/go-sdk`), protected by Keycard's OAuth 2.1 flow via `github.com/keycardai/go-sdk`. It ships the `hello` tool plus a `/broker` endpoint that demonstrates **delegated access**: after bearer auth verifies the caller, the server's `AuthProvider` exchanges that token for a token scoped to its own resource (RFC 8693 token exchange), authenticated with the server's `ClientSecret` application credential, and reports the brokered result. Beyond the base OAuth plumbing (metadata endpoints, bearer middleware, Streamable HTTP), this shows how a server acts on the user's behalf against a downstream resource.
 
 Pick this template when your MCP server needs to call a downstream API or resource on the user's behalf, not just verify tokens.
 
@@ -230,7 +230,7 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 ## 8. Where to extend
 
 - **Add a tool.** Define an input struct and a handler `func(ctx, *mcp.ServerSession, *mcp.CallToolParamsFor[In]) (*mcp.CallToolResultFor[any], error)`, then register it with `mcp.AddTool(server, &mcp.Tool{Name, Description}, handler)` in `main.go` — alongside `hello`. Tools are gated by the `mcp:tools` scope the bearer middleware enforces.
-- **Change the server.** `main.go` is the whole net/http app. The OAuth metadata handler (`keycardmcp.AuthMetadataHandler`) and bearer middleware (`keycardmcp.RequireBearerAuth`) come from `github.com/keycardai/credentials-go/mcp` — you only touch those to change scopes or add a second resource.
+- **Change the server.** `main.go` is the whole net/http app. The OAuth metadata handler (`keycardmcp.AuthMetadataHandler`) and bearer middleware (`keycardmcp.RequireBearerAuth`) come from `github.com/keycardai/go-sdk/mcp` — you only touch those to change scopes or add a second resource.
 - **Add downstream credentials.** If a tool needs to call a third-party API, use `keycard-discover-entities` to find the Keycard entity URI and `keycard-upsert-config` to add a credential entry, brokered into the process by `keycard run`.
 
 ## 9. Common gotchas the agent should pre-empt
