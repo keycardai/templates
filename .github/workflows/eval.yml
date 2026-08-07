@@ -32,6 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # All jobs share one eval zone (EVAL_ZONE_ID) and every template
+      # registers the same localhost resource identifier, so parallel jobs
+      # collide: 409 on resource create, and one job's cleanup tears down the
+      # app another job is mid-OAuth with. Serialize.
+      max-parallel: 1
       matrix:
         template: ${{ fromJson(needs.discover.outputs.templates) }}
     env:
