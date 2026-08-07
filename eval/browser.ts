@@ -118,7 +118,7 @@ export async function authenticateViaOAuth(opts: {
 
     // After submitting credentials, wait to see where we land:
     // - /login/signup or /login/verify-email → new user, need to sign up
-    // - consent page (button.btn-primary) → existing user, just approve
+    // - consent page (approve form) → existing user, just approve
     // - callback URL → already authorized (rare)
     const silence = () => null;
     const postPasswordOutcome = await Promise.race([
@@ -126,7 +126,7 @@ export async function authenticateViaOAuth(opts: {
       page.waitForURL("**/login/signup**", { timeout: 45_000 }).then(() => "signup" as const).catch(silence),
       page.waitForURL("**/login/verify-email**", { timeout: 45_000 }).then(() => "verify" as const).catch(silence),
       page.waitForURL("**/login/consent**", { timeout: 45_000 }).then(() => "consent-url" as const).catch(silence),
-      page.waitForSelector(".consent-actions button.btn-primary", { timeout: 45_000 }).then(() => "consent" as const).catch(silence),
+      page.waitForSelector("form:has(input[name='action'][value='approve']) button[type='submit']", { timeout: 45_000 }).then(() => "consent" as const).catch(silence),
     ]);
 
     if (!postPasswordOutcome) {
@@ -149,8 +149,8 @@ export async function authenticateViaOAuth(opts: {
         );
       }
     } else if (postPasswordOutcome === "consent" || postPasswordOutcome === "consent-url") {
-      await page.waitForSelector(".consent-actions button.btn-primary", { timeout: 10_000 });
-      await page.click(".consent-actions button.btn-primary");
+      await page.waitForSelector("form:has(input[name='action'][value='approve']) button[type='submit']", { timeout: 10_000 });
+      await page.click("form:has(input[name='action'][value='approve']) button[type='submit']");
       await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
     }
     // else: postPasswordOutcome === "callback" — already redirected
