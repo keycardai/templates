@@ -3,12 +3,7 @@ name = "mcp-server-python-mcp"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "keycardai-mcp>=0.15.0",
-    # Pinned below mcp 2.0 deliberately. keycardai-mcp 0.26.0 declares an
-    # unbounded "mcp>=1.13.1", so a fresh resolve pulls mcp 2.0.0, which removed
-    # mcp.server.fastmcp and makes keycardai-mcp fail to import. Drop this pin
-    # once a keycardai-mcp release that targets mcp 2.0 is published.
-    "mcp<2.0",
+    "keycardai-mcp>=2,<3",
     "uvicorn>=0.29.0",
     "starlette>=0.27.0",
     "python-dotenv>=1.0.0",

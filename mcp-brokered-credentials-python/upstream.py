@@ -5,7 +5,7 @@ import contextlib
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.server.fastmcp import Context
+from mcp.server.mcpserver import Context
 from keycardai.mcp.server.auth import AuthProvider
 from keycardai.oauth.server import AccessContext, exchange_tokens_for_resources
 

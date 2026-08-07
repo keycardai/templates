@@ -4,7 +4,7 @@ A small MCP **proxy** server that demonstrates Keycard as a credential broker. I
 
 It also demonstrates **vault-brokered application credentials**: the proxy's own Keycard `client_id` / `client_secret` are stored as zone-vault resources and injected into the process by `keycard run`, never written to disk. When deployed to a cloud platform (Fly.io, EKS), the proxy automatically discovers workload-identity credentials from the environment instead — no static secrets needed.
 
-Built on [`@keycardai/mcp`](https://www.npmjs.com/package/@keycardai/mcp), the official `@modelcontextprotocol/sdk`, and Express 5 over the Streamable HTTP transport.
+Built on [`@keycardai/mcp`](https://www.npmjs.com/package/@keycardai/mcp), the official MCP v2 SDK (`@modelcontextprotocol/server`), and Express 5 over the Streamable HTTP transport.
 
 ## How it works
 

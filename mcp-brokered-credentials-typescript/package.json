@@ -10,11 +10,13 @@
     "ci:verify": "bash scripts/ci-verify.sh"
   },
   "dependencies": {
-    "@keycardai/mcp": "^0.12.1",
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@keycardai/mcp": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
     "express": "^5.0.0",
     "safe-regex2": "^5.1.1",
-    "zod": "^3.23.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

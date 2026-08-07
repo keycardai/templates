@@ -1,10 +1,10 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
+  Client,
+  StreamableHTTPClientTransport,
   extractResourceMetadataUrl,
   discoverOAuthProtectedResourceMetadata,
-} from "@modelcontextprotocol/sdk/client/auth.js";
-import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
+} from "@modelcontextprotocol/client";
+import type { FetchLike } from "@modelcontextprotocol/client";
 import type { KeycardTokenProvider } from "./tokenProvider.js";
 
 /**

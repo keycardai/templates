@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { AuthProvider } from "@keycardai/mcp/server/auth/provider";
 import { z } from "zod";
 import { withLinearClient } from "../upstream.js";
@@ -7,23 +7,26 @@ export function registerExecuteTool(
   server: McpServer,
   authProvider: AuthProvider,
 ) {
-  server.tool(
+  server.registerTool(
     "execute",
-    "Execute a tool on the upstream Linear MCP server. Use `search` first to discover available tool names and their input schemas.",
     {
+      description:
+        "Execute a tool on the upstream Linear MCP server. Use `search` first to discover available tool names and their input schemas.",
+      inputSchema: {
       name: z
         .string()
         .min(1)
         .describe("Upstream tool name, exactly as returned by `search`."),
       arguments: z
-        .record(z.unknown())
+        .record(z.string(), z.unknown())
         .optional()
         .describe(
           "Arguments object matching the upstream tool's inputSchema. Omit for no-argument tools.",
         ),
+      },
     },
     async ({ name, arguments: args }, extra) => {
-      const subjectToken = extra.authInfo?.token;
+      const subjectToken = extra.http?.authInfo?.token;
       if (!subjectToken) {
         throw new Error("Missing bearer token on the incoming request.");
       }
