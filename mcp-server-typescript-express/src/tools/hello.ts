@@ -1,11 +1,14 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 export function registerHelloTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     "hello",
-    "Returns a friendly greeting. Useful as a smoke test that the server is reachable and your Keycard policy allows tool calls.",
-    { name: z.string().min(1).describe("Who to greet") },
+    {
+      description:
+        "Returns a friendly greeting. Useful as a smoke test that the server is reachable and your Keycard policy allows tool calls.",
+      inputSchema: { name: z.string().min(1).describe("Who to greet") },
+    },
     async ({ name }) => ({
       content: [
         {

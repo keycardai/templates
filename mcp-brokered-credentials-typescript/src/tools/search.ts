@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { AuthProvider } from "@keycardai/mcp/server/auth/provider";
 import { z } from "zod";
 import safe from "safe-regex2";
@@ -8,19 +8,22 @@ export function registerSearchTool(
   server: McpServer,
   authProvider: AuthProvider,
 ) {
-  server.tool(
+  server.registerTool(
     "search",
-    "Search the upstream Linear MCP server's tool catalog by regex. Returns name, description and input schema for tools whose name or description matches.",
     {
+      description:
+        "Search the upstream Linear MCP server's tool catalog by regex. Returns name, description and input schema for tools whose name or description matches.",
+      inputSchema: {
       pattern: z
         .string()
         .min(1)
         .describe(
           "JavaScript-flavoured regex matched (case-insensitive) against each upstream tool's name and description.",
         ),
+      },
     },
     async ({ pattern }, extra) => {
-      const subjectToken = extra.authInfo?.token;
+      const subjectToken = extra.http?.authInfo?.token;
       if (!subjectToken) {
         throw new Error("Missing bearer token on the incoming request.");
       }

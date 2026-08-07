@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express, { type Request, type Response } from "express";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { mcpAuthMetadataRouter } from "@keycardai/mcp/server/auth/router";
 import { requireBearerAuth } from "@keycardai/mcp/server/auth/middleware/bearerAuth";
 import { AuthProvider } from "@keycardai/mcp/server/auth/provider";
@@ -61,7 +61,7 @@ async function main() {
   // on raw client disconnect, idle timeout, or token expiry. For a long-lived
   // production service, add a TTL sweep or idle-timeout reaper so stale
   // sessions don't accumulate indefinitely.
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const transports = new Map<string, NodeStreamableHTTPServerTransport>();
 
   app.post("/mcp", bearerAuth, async (req: Request, res: Response) => {
     try {
@@ -85,7 +85,7 @@ async function main() {
       }
 
       const server = createMcpServer();
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id: string) => {
           transports.set(id, transport);

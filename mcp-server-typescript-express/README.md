@@ -1,6 +1,6 @@
 # mcp-server-typescript-express
 
-A minimal MCP server, integrated with Keycard identity, authentication and authorization, using [`@keycardai/mcp`](https://www.npmjs.com/package/@keycardai/mcp), the official `@modelcontextprotocol/sdk`, and Express 5 over the Streamable HTTP transport.
+A minimal MCP server, integrated with Keycard identity, authentication and authorization, using [`@keycardai/mcp`](https://www.npmjs.com/package/@keycardai/mcp), the official MCP v2 SDK (`@modelcontextprotocol/server`), and Express 5 over the Streamable HTTP transport.
 
 This template is a plain Node project. There is no scaffolding step — copy the directory, install, and run.
 

@@ -27,7 +27,7 @@ if not KEYCARD_URL:
         "Set it in .env or run via `keycard run -- uvicorn main:app`."
     )
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from keycardai.mcp.server.auth import AuthProvider
 from keycardai.starlette import KeycardAuthBackend, keycard_on_error
 from keycardai.starlette.routers.metadata import auth_metadata_mount
@@ -45,7 +45,7 @@ auth_provider = AuthProvider(
     mcp_server_url=SERVER_URL,
 )
 
-mcp = FastMCP(SERVER_NAME, streamable_http_path="/")
+mcp = MCPServer(SERVER_NAME)
 register_hello_tool(mcp)
 
 
@@ -70,7 +70,7 @@ app = Starlette(
     routes=[
         Route("/healthz", healthz, methods=["GET"]),
         auth_metadata_mount(auth_provider.issuer),
-        Mount("/mcp", app=mcp.streamable_http_app(), middleware=[strict_auth]),
+        Mount("/mcp", app=mcp.streamable_http_app(streamable_http_path="/"), middleware=[strict_auth]),
     ],
     lifespan=lifespan,
 )

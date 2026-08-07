@@ -53,7 +53,7 @@ Create a file in `tools/` following the pattern in `tools/hello.py`: export a `r
 
 ```python
 # tools/my_tool.py
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 def register_my_tool(mcp: FastMCP) -> None:
     @mcp.tool()
