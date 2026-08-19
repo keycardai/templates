@@ -13,7 +13,7 @@ cd my-project
 # follow the template's README.md from here
 ```
 
-Each template runs with whatever the native toolchain expects (`npm install && npm run start` for Node, `uv sync && uv run` for Python, etc.). There is no Keycard-specific build step.
+Each template runs with whatever the native toolchain expects (`npm install && npm run start` for Node, `uv sync && uv run` for Python, `bundle install && bundle exec rackup` for Ruby, etc.). There is no Keycard-specific build step.
 
 ## How to provision Keycard for a template
 
@@ -27,6 +27,7 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 |---|---|---|---|
 | [`mcp-server-typescript-express`](./mcp-server-typescript-express) | MCP server | TypeScript | Express 5 |
 | [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | FastMCP |
+| [`mcp-server-ruby`](./mcp-server-ruby) | MCP server | Ruby | Rack |
 | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
 | [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
 | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |
