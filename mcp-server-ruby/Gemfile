@@ -1,0 +1,9 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gem "keycardai-mcp", "~> 0.1"
+
+gem "mcp", "~> 1.0"
+gem "rackup", "~> 2.2"
+gem "webrick", "~> 1.9"

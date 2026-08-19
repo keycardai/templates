@@ -1,0 +1,6 @@
+# Bundler
+/.bundle/
+/vendor/bundle/
+
+# Local environment
+.env
