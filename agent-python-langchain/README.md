@@ -30,7 +30,7 @@ cp .env.example .env      # fill in the values SPEC.md produced
 Three processes, in this order:
 
 ```bash
-uv run python src/signin.py --serve    # 1. sign-in + consent page, :8765
+uv run python calendar_agent/signin.py --serve    # 1. sign-in + consent page, :8765
 uv run langgraph dev --no-browser      # 2. agent server, :2024
 ```
 
@@ -91,7 +91,7 @@ Three things change, and each removes a secret from `.env`:
 
 ## Notes on the code
 
-`src/calendar_tools.py` is worth reading for two habits that matter in agent
+`calendar_agent/calendar_tools.py` is worth reading for two habits that matter in agent
 tools:
 
 - **Tools own the clock.** They take `days_ahead` rather than an ISO timestamp,

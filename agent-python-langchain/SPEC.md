@@ -190,13 +190,13 @@ ANTHROPIC_API_KEY=<from §0b>
 ANTHROPIC_MODEL=claude-opus-5
 ```
 
-`KEYCARD_SUBJECT_TOKEN` is written by `src/signin.py`; do not set it by hand.
+`KEYCARD_SUBJECT_TOKEN` is written by `calendar_agent/signin.py`; do not set it by hand.
 
 ## 3. Build and run
 
 ```bash
 uv sync
-uv run python src/signin.py --serve      # sign-in + consent page, <signin-port>
+uv run python calendar_agent/signin.py --serve      # sign-in + consent page, <signin-port>
 uv run langgraph dev --no-browser        # agent server, <agent-port>
 ```
 

@@ -16,7 +16,11 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 
-from calendar_tools import CALENDAR_RESOURCE, create_calendar_event, list_calendar_events
+from calendar_agent.calendar_tools import (
+    CALENDAR_RESOURCE,
+    create_calendar_event,
+    list_calendar_events,
+)
 from keycardai.langchain import KeycardGrantMiddleware, KeycardIdentity
 
 load_dotenv()
