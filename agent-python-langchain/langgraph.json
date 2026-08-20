@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./calendar_agent/agent.py:agent"
+  },
+  "env": ".env"
+}

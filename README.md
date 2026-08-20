@@ -31,12 +31,13 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
 | [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
 | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |
+| [`agent-python-langchain`](./agent-python-langchain) | Agent | Python | LangChain |
 
 **MCP server** — a Keycard-protected MCP server exposing tools to Claude.
 
 **MCP proxy** — proxies an upstream OAuth-protected MCP server (Linear) using Keycard-brokered credentials. No API keys stored anywhere; credentials are minted per request via RFC 8693.
 
-**Agent** — an autonomous agent with its own workload identity, not dependent on a user session.
+**Agent** — an autonomous agent with its own workload identity, not dependent on a user session, or a user-facing agent that acts on a signed-in user's behalf with per-tool-call delegated access.
 
 ## Contributing
 
