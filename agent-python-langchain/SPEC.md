@@ -1,4 +1,4 @@
-# SPEC — agent-python-langchain
+# SPEC: agent-python-langchain
 
 A LangChain **agent** whose access to Google Calendar is brokered by Keycard. It
 uses `KeycardGrantMiddleware` from `keycardai-langchain` to exchange the
@@ -61,10 +61,19 @@ Collect the client id and secret into a gitignored env file. **Never echo the
 secret into narration or a transcript**; pass it into request bodies from the
 env file (e.g. via `jq --arg`).
 
-### 0b. ANTHROPIC_API_KEY
+### 0b. Model access
 
-The agent needs an LLM key. Auto-resolve from Keycard resources if the zone
-already has one; otherwise ask the user for it once and write it to `.env`.
+The agent reaches Anthropic on one of two paths, and the code picks by
+environment:
+
+- **Brokered (workload identity federation).** Keycard mints a zone token for
+  the agent application and Anthropic exchanges it for an access token. Needs
+  the provisioning in §1e, and no key is written to `.env`.
+- **API key.** `ANTHROPIC_API_KEY` in `.env`. Auto-resolve from Keycard
+  resources if the zone already has one; otherwise ask the user for it once.
+
+The brokered path requires an Anthropic organization the user administers, so
+fall back to the API key when §1e cannot be completed.
 
 ## 1. Keycard primitives to provision
 
@@ -175,6 +184,67 @@ env -u KEYCARD_SOCKET keycard agent api --org "$ORG" \
   "/zones/$ZONE/applications/$APP_ID/dependencies/$CALENDAR_RESOURCE_ID" -X PUT
 ```
 
+### 1e. Anthropic, brokered through workload identity federation
+
+Only for the brokered model path (§0b). Skip the whole subsection on the API key
+path.
+
+#### Prerequisite in the Anthropic console
+
+The agent MUST NOT attempt this: it needs Anthropic organization admin rights.
+Direct the user to the Anthropic console to add a workload identity federation
+issuer for the zone (issuer URL `https://<zone-id>.<env-domain>`, the same value
+as `KEYCARD_ZONE_URL`) and a federation rule whose subject match is the agent
+application's **identifier** (`langchain-calendar-agent` from §1b), then collect
+four ids from them:
+
+| Value | Where it comes from | `.env` variable |
+|---|---|---|
+| Federation rule id | The rule created on the issuer | `ANTHROPIC_FEDERATION_RULE_ID` |
+| Organization id | Organization settings, a raw UUID | `ANTHROPIC_ORGANIZATION_ID` |
+| Service account id | The service account the rule mints tokens for | `ANTHROPIC_SERVICE_ACCOUNT_ID` |
+| Workspace id | A `wrkspc_`-prefixed id, from a dedicated workspace | `ANTHROPIC_WORKSPACE_ID` |
+
+Two traps in that console flow, both of which produce a rejected exchange rather
+than a clear error:
+
+1. The issuer form's **max token lifetime** defaults to 1 hour. Zone tokens are
+   exactly 24 hours, so a 1 hour limit rejects every token. Set it to 24.
+2. The **Default** workspace has no id and cannot be used with federation. Have
+   the user create a dedicated workspace and take its `wrkspc_` id.
+
+The subject match is the application **identifier**, which is what the zone puts
+in the token's `sub` claim, not the 26-character application id. The token also
+carries a `keycard_app_id` claim holding that 26-character id, which the rule can
+add as an optional exact-match condition to pin the rule to one application even
+if an identifier is later reused.
+
+#### Keycard resource and grant
+
+The Anthropic API is a zone-native resource, so it takes the **Zone Provider**
+like §1c (guard on the identifier first):
+
+```bash
+env -u KEYCARD_SOCKET keycard agent api --org "$ORG" "/zones/$ZONE/resources" -X POST -d '{
+  "name": "Anthropic API",
+  "identifier": "https://api.anthropic.com",
+  "credential_provider_id": "ZONE_PROVIDER_ID",
+  "application_type": "native",
+  "prefix": true
+}'
+```
+
+Then grant it to the agent application as a dependency (204, idempotent):
+
+```bash
+env -u KEYCARD_SOCKET keycard agent api --org "$ORG" \
+  "/zones/$ZONE/applications/$APP_ID/dependencies/$ANTHROPIC_RESOURCE_ID" -X PUT
+```
+
+The agent then acquires model credentials under its own identity
+(`Access.as_self()`, client credentials), so the model call is audited as the
+application rather than as a user.
+
 ## 2. Files to write
 
 `.env`, from the values produced above:
@@ -186,9 +256,23 @@ KEYCARD_AGENT_RESOURCE=http://localhost:<agent-port>
 KEYCARD_CLIENT_ID=langchain-calendar-agent
 KEYCARD_CLIENT_SECRET=<from §1b, once>
 KEYCARD_AUTHORIZATION_PAGE=http://localhost:<signin-port>/
-ANTHROPIC_API_KEY=<from §0b>
+ANTHROPIC_API_KEY=<from §0b, API key path only>
 ANTHROPIC_MODEL=claude-opus-5
 ```
+
+On the brokered model path, omit `ANTHROPIC_API_KEY` and write the four ids from
+§1e instead:
+
+```
+ANTHROPIC_FEDERATION_RULE_ID=<from §1e>
+ANTHROPIC_ORGANIZATION_ID=<from §1e>
+ANTHROPIC_SERVICE_ACCOUNT_ID=<from §1e>
+ANTHROPIC_WORKSPACE_ID=<from §1e>
+```
+
+All four are required together: with any of them missing the agent reads
+`ANTHROPIC_API_KEY`. `ANTHROPIC_RESOURCE` defaults to `https://api.anthropic.com`
+and only needs setting for a non-default Anthropic deployment.
 
 `KEYCARD_SUBJECT_TOKEN` is written by `calendar_agent/signin.py`; do not set it by hand.
 
@@ -223,6 +307,11 @@ in-chat sign-in demonstrable.
    the application and the user, and a token-exchange event naming the Google
    Calendar resource.
 
+6. **Brokered model access** (brokered path only): with no `ANTHROPIC_API_KEY`
+   in `.env`, send any run and expect a model reply. In the audit log, find a
+   `credentials:issue` event for `https://api.anthropic.com` whose actor is the
+   agent application alone, with no user in the chain.
+
 If step 2 does not pause, `KEYCARD_SUBJECT_TOKEN` is already set: clear it and
 restart the agent server.
 
@@ -237,6 +326,11 @@ restart the agent server.
 - Do not set `consent` to `implicit` on the agent application to avoid the
   consent screen.
 - Do not hand-write `KEYCARD_SUBJECT_TOKEN`.
+- Do not create the Anthropic federation issuer, rule, or workspace. They need
+  Anthropic organization admin rights: direct the user to the console and read
+  the four ids from the env file.
+- Do not set both `ANTHROPIC_API_KEY` and the four federation ids: the key path
+  is the fallback, and keeping the key defeats the point of the brokered path.
 
 ## 6. Handoff
 
@@ -246,6 +340,7 @@ Tell the user:
 - That sign-in and consent happen in the chat, and that the write will pause
   separately from the read if only read has been granted.
 - Where to see the delegation chain in the console audit log.
-- That `KEYCARD_CLIENT_SECRET` and `ANTHROPIC_API_KEY` are the two static
-  secrets, and both can be removed in production (workload identity, and
-  Anthropic via WIF).
+- Which model path is in use. On the API key path, that
+  `KEYCARD_CLIENT_SECRET` and `ANTHROPIC_API_KEY` are the two static secrets and
+  both can be removed (workload identity for the agent, §1e for Anthropic). On
+  the brokered path, that `KEYCARD_CLIENT_SECRET` is the only one left.

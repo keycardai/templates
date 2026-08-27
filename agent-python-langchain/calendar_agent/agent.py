@@ -3,9 +3,13 @@
 Serves the calendar agent over HTTP with checkpointing, which is what makes
 the interrupt-consent-resume flow work in the chat UI and over curl alike.
 
-Identity: each run should carry a KeycardIdentity context (the chat UI and
-SDK pass it per run). Until per-caller sign-in lands, KEYCARD_SUBJECT_TOKEN
-serves as the fallback identity for runs that carry none.
+Identity: each run carries a `KeycardIdentity` context built by an `Access`
+factory, e.g. `Access.on_behalf_of(caller_token)` (the chat UI and SDK pass it
+per run). KEYCARD_SUBJECT_TOKEN is the fallback identity for runs that carry
+none.
+
+Model access is brokered too when the Anthropic federation ids are set; see
+`calendar_agent/anthropic_wif.py`.
 """
 
 from __future__ import annotations
@@ -14,14 +18,14 @@ import os
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain_anthropic import ChatAnthropic
 
+from calendar_agent.anthropic_wif import build_model
 from calendar_agent.calendar_tools import (
     CALENDAR_RESOURCE,
     create_calendar_event,
     list_calendar_events,
 )
-from keycardai.langchain import KeycardGrantMiddleware, KeycardIdentity
+from keycardai.langchain import Access, KeycardGrantMiddleware, KeycardIdentity
 
 load_dotenv()
 
@@ -43,7 +47,7 @@ def _current_identity() -> KeycardIdentity | None:
     """
     load_dotenv(override=True)
     token = os.environ.get("KEYCARD_SUBJECT_TOKEN")
-    return KeycardIdentity(subject_token=token) if token else None
+    return Access.on_behalf_of(token) if token else None
 
 
 keycard = KeycardGrantMiddleware(
@@ -57,7 +61,8 @@ keycard = KeycardGrantMiddleware(
 )
 
 agent = create_agent(
-    model=ChatAnthropic(
+    model=build_model(
+        keycard,
         model=os.environ.get("ANTHROPIC_MODEL", "claude-opus-5"),
         max_tokens=4096,
     ),
