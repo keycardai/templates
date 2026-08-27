@@ -10,8 +10,15 @@ BASE="http://localhost:$PORT"
 # The CI workflow provides KEYCARD_URL (ephemeral zone issuer) and the CI
 # service-account client credentials under the same names the agent reads.
 export KEYCARD_ZONE_URL="${KEYCARD_ZONE_URL:-${KEYCARD_URL:?KEYCARD_URL or KEYCARD_ZONE_URL required}}"
-# ChatAnthropic validates a key exists at graph import; no request is made.
+# The model runs on the API key path here: CI has no Anthropic federation rule
+# and no Anthropic organization, so the four ANTHROPIC_*_ID variables are unset
+# and the placeholder key is what the graph imports with. No request is made.
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-ci-placeholder-never-called}"
+
+# Guards on both model paths and on the private langchain-anthropic client
+# construction the WIF bridge overrides. These run without network access.
+echo "==> unit guards"
+uv run pytest -q
 
 uv run langgraph dev --port "$PORT" --no-browser &
 PID=$!
