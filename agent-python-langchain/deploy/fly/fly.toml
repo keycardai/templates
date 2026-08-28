@@ -1,0 +1,28 @@
+# Deploy with `fly deploy --ha=false`: a single machine. The Keycard credential
+# for this app is bound to one machine's OIDC subject (`<org>:<app>:<machine>`),
+# so a second machine would need a credential of its own. See the README.
+
+app = "langchain-calendar-agent"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+# Public identifiers only: zone URL, client id, the deployed base URL, and the
+# Anthropic federation ids. No secrets belong here or in `fly secrets` — the
+# agent authenticates with the machine's OIDC token.
+[env]
+  KEYCARD_ZONE_URL = "https://<zone-id>.keycard.cloud"
+  KEYCARD_CLIENT_ID = "langchain-calendar-agent"
+  KEYCARD_AGENT_RESOURCE = "https://<app-name>.fly.dev"
+  ANTHROPIC_FEDERATION_RULE_ID = "<federation-rule-id>"
+  ANTHROPIC_ORGANIZATION_ID = "<organization-id>"
+  ANTHROPIC_SERVICE_ACCOUNT_ID = "<service-account-id>"
+  ANTHROPIC_WORKSPACE_ID = "<workspace-id>"

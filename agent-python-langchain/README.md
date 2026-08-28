@@ -105,6 +105,88 @@ Three things change, and each removes a secret from `.env`:
    path, and SPEC.md §1e covers the provisioning. See
    https://docs.keycard.ai/admin/configure-provider-apis/anthropic/
 
+## Deploy to Fly with workload identity
+
+`deploy/fly/` takes the first of those three to production: on Fly the agent
+authenticates with the machine's own OIDC token, so `KEYCARD_CLIENT_SECRET`
+never leaves your laptop. `calendar_agent/agent.py` picks that path when
+`FLY_APP_NAME` is set, which Fly sets for you; locally nothing changes.
+
+```bash
+fly apps create <name> --org <org-slug>
+fly deploy --ha=false --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile
+```
+
+`--ha=false` deploys one machine, which matters for the credential below. Edit
+the `[env]` block in `deploy/fly/fly.toml` first: it carries your zone URL,
+client id, deployed base URL and the four Anthropic ids, and nothing secret.
+
+**Create the Fly provider in the zone.** Both the identifier and the oauth2
+issuer are `https://oidc.fly.io/<org-slug>` — Fly issues per organization.
+
+```bash
+env -u KEYCARD_SOCKET keycard agent api --org "$ORG" "/zones/$ZONE/credential-providers" -X POST -d '{
+  "name": "Fly.io",
+  "identifier": "https://oidc.fly.io/<org-slug>",
+  "protocols": {"oauth2": {"issuer": "https://oidc.fly.io/<org-slug>"}}
+}'
+```
+
+**Read the machine's OIDC subject.** Ask the Machines API over the machine's
+own socket at `/.fly/api`, with the app venv's python so nothing extra has to
+be installed on the machine — it mints the same token `FlyTokenSource` uses,
+then base64-decodes the JWT payload and prints `sub`:
+
+```bash
+fly ssh console -a <name> -C "/app/.venv/bin/python -c 'import base64,json,httpx;t=httpx.post(\"http://localhost/v1/tokens/oidc\",json={},transport=httpx.HTTPTransport(uds=\"/.fly/api\")).text.strip();p=t.split(\".\")[1];print(json.loads(base64.urlsafe_b64decode(p+\"=\"*(-len(p)%4)))[\"sub\"])'"
+```
+
+The subject reads `<org>:<app>:<machine-name>`, e.g.
+`my-org:langchain-calendar-agent:1857xxxxxxx678`.
+
+**Create the token credential** for the agent application, with that exact
+subject:
+
+```bash
+env -u KEYCARD_SOCKET keycard agent api --org "$ORG" "/zones/$ZONE/application-credentials" -X POST -d '{
+  "application_id": "APP_ID",
+  "type": "token",
+  "provider_id": "FLY_PROVIDER_ID",
+  "subject": "<org>:<app>:<machine-name>"
+}'
+```
+
+The credential's identifier is set to the subject automatically, and the STS
+resolves the incoming assertion by that identifier — you do not name it
+yourself.
+
+**Point Keycard at the deployed agent.** Register the deployed URL as a
+resource owned by the agent application, exactly as SPEC.md §1c does for
+`http://localhost:2024` but with `https://<name>.fly.dev`, and add
+`https://<name>.fly.dev/callback` to the sign-in client's `redirect_uris`.
+
+**Verify.** `fly secrets list -a <name>` is empty, and the agent still answers
+a run with real calendar events.
+
+### Gotchas
+
+- **The OAuth `client_id` is the credential's identifier**, for any flow — not
+  the application's identifier and not its 26-character id. Two credentials on
+  one application are two client ids.
+- **The Fly subject embeds the machine name.** Destroy and recreate the
+  machine and the assertion no longer matches: auth fails until the
+  credential's subject is updated. Past one machine, give each machine its own
+  credential (subject prefix matching is ECO-333).
+- **Only the token source and the subject format are Fly-specific.** The
+  zone-side checklist — provider, credential, agent-owned resource, callback
+  URL — is the same everywhere; swap the token source for your platform:
+
+  | Platform | Token source |
+  |---|---|
+  | Fly Machines | `FlyTokenSource` |
+  | Kubernetes, EKS, AKS | `FileTokenSource` |
+  | GKE, Cloud Run | `GCPMetadataTokenSource` |
+
 ## Notes on the code
 
 `calendar_agent/calendar_tools.py` is worth reading for two habits that matter in agent

@@ -10,6 +10,9 @@ none.
 
 Model access is brokered too when the Anthropic federation ids are set; see
 `calendar_agent/anthropic_wif.py`.
+
+The agent's own credential follows the platform: the machine's OIDC token on
+Fly, a client secret locally.
 """
 
 from __future__ import annotations
@@ -26,6 +29,12 @@ from calendar_agent.calendar_tools import (
     list_calendar_events,
 )
 from keycardai.langchain import Access, KeycardGrantMiddleware, KeycardIdentity
+from keycardai.oauth.server import (
+    ApplicationCredential,
+    ClientSecret,
+    FlyTokenSource,
+    WorkloadIdentity,
+)
 
 load_dotenv()
 
@@ -36,6 +45,22 @@ def _authorization_url(failed_resources: list[str]) -> str:
     params = "&".join(f"resource={r}" for r in failed_resources)
     separator = "&" if "?" in AUTHORIZATION_PAGE else "?"
     return f"{AUTHORIZATION_PAGE}{separator}{params}" if params else AUTHORIZATION_PAGE
+
+
+def _application_credential() -> ApplicationCredential | None:
+    """How the agent authenticates to the zone, chosen by platform.
+
+    On Fly (`FLY_APP_NAME` is set by the platform) the assertion is the
+    machine's own OIDC token, so the deployment holds no client secret. Locally
+    it is the client id and secret from `.env`.
+    """
+    client_id = os.environ.get("KEYCARD_CLIENT_ID")
+    if os.environ.get("FLY_APP_NAME"):
+        return WorkloadIdentity(FlyTokenSource(), client_id=client_id)
+    client_secret = os.environ.get("KEYCARD_CLIENT_SECRET")
+    if client_id and client_secret:
+        return ClientSecret((client_id, client_secret))
+    return None
 
 
 def _current_identity() -> KeycardIdentity | None:
@@ -53,8 +78,7 @@ def _current_identity() -> KeycardIdentity | None:
 keycard = KeycardGrantMiddleware(
     zone_url=os.environ.get("KEYCARD_ZONE_URL", "https://unconfigured.keycard.cloud"),
     resources=[CALENDAR_RESOURCE],
-    client_id=os.environ.get("KEYCARD_CLIENT_ID"),
-    client_secret=os.environ.get("KEYCARD_CLIENT_SECRET"),
+    application_credential=_application_credential(),
     authorization_url=_authorization_url,
     sign_in_url=AUTHORIZATION_PAGE,
     fallback_identity=_current_identity,
