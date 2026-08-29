@@ -114,15 +114,16 @@ never leaves your laptop. `calendar_agent/agent.py` picks that path when
 
 ```bash
 fly apps create <name> --org <org-slug>
-fly deploy --ha=false --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile
+fly deploy . --ha=false --config deploy/fly/fly.toml --dockerfile deploy/fly/Dockerfile
 ```
 
-`--ha=false` deploys one machine, which matters for the credential below. Edit
-the `[env]` block in `deploy/fly/fly.toml` first: it carries your zone URL,
-client id, deployed base URL and the four Anthropic ids, and nothing secret.
+`--ha=false` deploys one machine, which matters for the credential below.
+Edit `deploy/fly/fly.toml` first: set `app` to the `<name>` you created, and
+fill the `[env]` block. It carries your zone URL, client id, deployed base
+URL and the four Anthropic ids, and nothing secret.
 
 **Create the Fly provider in the zone.** Both the identifier and the oauth2
-issuer are `https://oidc.fly.io/<org-slug>` — Fly issues per organization.
+issuer are `https://oidc.fly.io/<org-slug>`; Fly issues per organization.
 
 ```bash
 env -u KEYCARD_SOCKET keycard agent api --org "$ORG" "/zones/$ZONE/credential-providers" -X POST -d '{
@@ -134,11 +135,11 @@ env -u KEYCARD_SOCKET keycard agent api --org "$ORG" "/zones/$ZONE/credential-pr
 
 **Read the machine's OIDC subject.** Ask the Machines API over the machine's
 own socket at `/.fly/api`, with the app venv's python so nothing extra has to
-be installed on the machine — it mints the same token `FlyTokenSource` uses,
+be installed on the machine. It mints the same token `FlyTokenSource` uses,
 then base64-decodes the JWT payload and prints `sub`:
 
 ```bash
-fly ssh console -a <name> -C "/app/.venv/bin/python -c 'import base64,json,httpx;t=httpx.post(\"http://localhost/v1/tokens/oidc\",json={},transport=httpx.HTTPTransport(uds=\"/.fly/api\")).text.strip();p=t.split(\".\")[1];print(json.loads(base64.urlsafe_b64decode(p+\"=\"*(-len(p)%4)))[\"sub\"])'"
+fly ssh console -a <name> -C "/app/.venv/bin/python -c 'import base64,json,httpx;t=httpx.Client(transport=httpx.HTTPTransport(uds=\"/.fly/api\")).post(\"http://localhost/v1/tokens/oidc\",json={}).text.strip();p=t.split(\".\")[1];print(json.loads(base64.urlsafe_b64decode(p+\"=\"*(-len(p)%4)))[\"sub\"])'"
 ```
 
 The subject reads `<org>:<app>:<machine-name>`, e.g.
@@ -157,7 +158,7 @@ env -u KEYCARD_SOCKET keycard agent api --org "$ORG" "/zones/$ZONE/application-c
 ```
 
 The credential's identifier is set to the subject automatically, and the STS
-resolves the incoming assertion by that identifier — you do not name it
+resolves the incoming assertion by that identifier; you do not name it
 yourself.
 
 **Point Keycard at the deployed agent.** Register the deployed URL as a
@@ -170,16 +171,19 @@ a run with real calendar events.
 
 ### Gotchas
 
-- **The OAuth `client_id` is the credential's identifier**, for any flow — not
-  the application's identifier and not its 26-character id. Two credentials on
-  one application are two client ids.
+- **The OAuth `client_id` is the credential's identifier** in every flow that
+  resolves the client by id: not the application's identifier and not its
+  26-character id. Two credentials on one application are two client ids.
+  The Fly path is the one exception: `type: "token"` credentials are
+  resolved by the assertion's subject, so the `KEYCARD_CLIENT_ID` in
+  `fly.toml` is sent along but never selects the credential.
 - **The Fly subject embeds the machine name.** Destroy and recreate the
   machine and the assertion no longer matches: auth fails until the
   credential's subject is updated. Past one machine, give each machine its own
   credential (subject prefix matching is ECO-333).
 - **Only the token source and the subject format are Fly-specific.** The
-  zone-side checklist — provider, credential, agent-owned resource, callback
-  URL — is the same everywhere; swap the token source for your platform:
+  zone-side checklist (provider, credential, agent-owned resource, callback
+  URL) is the same everywhere; swap the token source for your platform:
 
   | Platform | Token source |
   |---|---|

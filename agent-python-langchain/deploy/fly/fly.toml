@@ -2,6 +2,7 @@
 # for this app is bound to one machine's OIDC subject (`<org>:<app>:<machine>`),
 # so a second machine would need a credential of its own. See the README.
 
+# Must match the <name> you gave `fly apps create`.
 app = "langchain-calendar-agent"
 primary_region = "iad"
 
@@ -16,7 +17,7 @@ primary_region = "iad"
   min_machines_running = 1
 
 # Public identifiers only: zone URL, client id, the deployed base URL, and the
-# Anthropic federation ids. No secrets belong here or in `fly secrets` — the
+# Anthropic federation ids. No secrets belong here or in `fly secrets`: the
 # agent authenticates with the machine's OIDC token.
 [env]
   KEYCARD_ZONE_URL = "https://<zone-id>.keycard.cloud"
