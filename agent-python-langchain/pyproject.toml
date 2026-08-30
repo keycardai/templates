@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "keycardai-langchain>=0.4.0",
+    "keycardai-oauth>=0.24.0",
     "anthropic>=1.2.0",
     "langchain>=1.0",
     "langchain-anthropic>=1.6",

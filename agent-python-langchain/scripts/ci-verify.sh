@@ -37,3 +37,6 @@ echo "==> graph 'agent' is registered"
 curl -sf -X POST "$BASE/assistants/search" \
   -H "Content-Type: application/json" \
   -d '{"limit": 10}' | jq -e '.[] | select(.graph_id == "agent") | .graph_id'
+
+echo "==> deploy/fly/Dockerfile builds"
+docker build -q -f deploy/fly/Dockerfile -t agent-python-langchain-fly-ci .
