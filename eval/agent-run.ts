@@ -124,7 +124,19 @@ export async function runAgentEval(opts: {
       anthropicModel,
     });
 
-    console.log("\n4. Running agent (verify config + build)...");
+    // The langgraph dependency tree takes minutes to resolve on a cold uv
+    // cache, which starves the build agent's per-command timeout and turn
+    // budget. Warm it deterministically first; the agent's own uv commands
+    // then hit the cache and finish in seconds.
+    console.log("\n4. Pre-warming the template's uv environment...");
+    await execFileAsync("uv", ["sync"], {
+      cwd: opts.templateDir,
+      timeout: 600_000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    console.log("   uv sync complete");
+
+    console.log("\n5. Running agent (verify config + build)...");
     const build = await runBuildAgent({
       templateDir: opts.templateDir,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
@@ -136,11 +148,11 @@ export async function runAgentEval(opts: {
     if (!build.success) throw new Error("Build failed: the agent could not build the template");
     console.log("   Build succeeded");
 
-    // 5. Sign the user in without a browser. signin.py would write this same
+    // Sign the user in without a browser. signin.py would write this same
     // variable after an interactive flow; impersonation mints the equivalent
     // token directly, authorized by the application credential and the zone's
     // impersonation policy.
-    console.log("\n5. Minting a user token by impersonation (no browser)...");
+    console.log("\n6. Minting a user token by impersonation (no browser)...");
     const identity = await impersonateUser({
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       clientId: provisioned.applicationClientId,
@@ -155,7 +167,7 @@ export async function runAgentEval(opts: {
       "utf8",
     );
 
-    console.log("\n6. Starting the agent server...");
+    console.log("\n7. Starting the agent server...");
     agentProcess = spawn(
       "uv",
       ["run", "langgraph", "dev", "--port", String(agentPort), "--no-browser"],
@@ -179,7 +191,7 @@ export async function runAgentEval(opts: {
     if (!ready) throw new Error("langgraph dev did not become ready in time");
     console.log("   Agent ready");
 
-    console.log("\n7. Verifying the agent...");
+    console.log("\n8. Verifying the agent...");
     const result = await verifyAgent({
       agentUrl,
       stub,
