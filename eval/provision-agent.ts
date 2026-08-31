@@ -36,7 +36,7 @@ async function getZoneProviderId(zoneId: string, token: string): Promise<string>
   if (!resp.ok) throw new Error(`List providers failed: ${resp.status} ${await resp.text()}`);
   const { items } = (await resp.json()) as { items: Array<{ id: string; name: string; type?: string }> };
   const zoneProvider = items.find(
-    (p) => p.type === "keycard-zone" || p.name?.toLowerCase() === "zone provider",
+    (p) => p.type === "keycard-sts" || p.name?.toLowerCase() === "zone provider",
   );
   if (!zoneProvider) {
     throw new Error(`No Zone Provider found. Providers: ${JSON.stringify(items.map((p) => p.name))}`);
@@ -157,6 +157,21 @@ export async function provisionAgent(opts: {
     throw new Error(`Add dependency failed: ${depResp.status} ${await depResp.text()}`);
   }
   console.log("   Dependency: application -> calendar resource");
+
+  // The impersonation mint targets the agent resource, and the zone's managed
+  // policies only permit impersonation of a resource registered as a
+  // dependency of the application (default-app-direct-access). Without this,
+  // the substitute-user exchange is denied.
+  const agentDepResp = await fetch(
+    `${keycardEndpoint()}/zones/${zoneId}/applications/${applicationId}/dependencies/${agentResourceId}`,
+    { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!agentDepResp.ok) {
+    throw new Error(
+      `Add agent dependency failed: ${agentDepResp.status} ${await agentDepResp.text()}`,
+    );
+  }
+  console.log("   Dependency: application -> agent resource (impersonation permit)");
 
   // KEYCARD_SUBJECT_TOKEN is deliberately absent here: index.ts appends the
   // impersonated token once the zone has minted it, exactly where signin.py

@@ -93,6 +93,13 @@ export async function runAgentEval(opts: {
     ephemeral = evalZone.ephemeral;
     zoneId = evalZone.zone.id;
     console.log(`   Zone: ${evalZone.zone.id} (${evalZone.zone.issuerUrl})`);
+    if (ephemeral) {
+      throw new Error(
+        "The agent template needs the persistent eval zone: impersonation targets " +
+          "EVAL_TEST_USER_EMAIL, which must already exist as a zone user, and a fresh " +
+          "ephemeral zone has no users. Set EVAL_ZONE_ID and EVAL_ZONE_ISSUER_URL.",
+      );
+    }
 
     console.log("\n2. Starting local calendar stub...");
     await execFileAsync("bash", ["-c", `lsof -ti :${stubPort} :${agentPort} | xargs kill -9 2>/dev/null; true`]);

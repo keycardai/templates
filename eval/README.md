@@ -115,6 +115,8 @@ must exist in the eval zone; the password is unused on this path.
 | `EVAL_TEST_USER_EMAIL` | both | Browser sign-in for servers, impersonation target for agents |
 | `EVAL_TEST_USER_PASSWORD` | servers | Browser sign-in only |
 | `EVAL_HEADLESS` | servers | Set to `false` to watch the browser |
+| `EVAL_ZONE_ID`, `EVAL_ZONE_ISSUER_URL` | both | The persistent eval zone. Required for agent templates: impersonation needs a zone user that already exists |
+| `EVAL_ALLOW_EPHEMERAL` | servers | Create a throwaway zone instead. Agent templates refuse it, since a fresh zone has no users to impersonate |
 | `EVAL_AGENT_PORT` | agents | Port for `langgraph dev`, default `2024` |
 | `EVAL_STUB_PORT` | agents | Port for the stub calendar, default `8901` |
 | `EVAL_AGENT_MODEL` | agents | Model for the agent's own turn, default `claude-sonnet-4-6` |
