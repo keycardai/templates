@@ -30,11 +30,16 @@ import { verifyAgent } from "./verify-agent.js";
 const execFileAsync = promisify(execFile);
 
 const BUILD_NOTES = [
-  "The calendar resource is a local stub, not Google, and it is already provisioned.",
-  "Do not install any catalog package and do not create Keycard resources.",
-  "Do not edit .env: KEYCARD_RESOURCE deliberately points at the local stub, and",
+  "Provisioning is complete and the config files are final: do not verify .env or",
+  "keycard.toml against the zone and do not change them. KEYCARD_RESOURCE",
+  "deliberately points at a local stub instead of Google, and",
   "KEYCARD_SUBJECT_TOKEN is added by the harness after this step.",
-  "Verify the graph imports (uv run python -c \"import calendar_agent.agent\") rather than importing main.",
+  "SPEC.md describes sign-in, token, and server steps: those all belong to the",
+  "harness, not to you, and they run after this step. Do not run keycard CLI",
+  "commands, do not mint or decode tokens, do not call the zone or any HTTP",
+  "endpoint, and do not start any server.",
+  "Your entire job is two commands: uv sync, then verify the graph imports with",
+  "uv run python -c \"import calendar_agent.agent\". Then print the marker.",
 ].join("\n");
 
 function required(name: string): string {
