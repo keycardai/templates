@@ -18,7 +18,7 @@ export interface VerifyOptions {
   expectedIssuer?: string;
 }
 
-async function check(
+export async function check(
   name: string,
   fn: () => Promise<void>,
   results: VerifyResult["checks"],

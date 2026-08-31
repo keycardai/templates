@@ -27,6 +27,8 @@ export async function runBuildAgent(opts: {
   zoneIssuerUrl: string;
   resourceIdentifier: string;
   language?: "python" | "typescript" | "go";
+  /** Extra constraints for templates whose harness setup differs from SPEC.md. */
+  notes?: string;
 }): Promise<AgentResult> {
   const client = new Anthropic();
   const specPath = path.join(opts.templateDir, "SPEC.md");
@@ -53,7 +55,7 @@ Your task:
 3. ${opts.language === "python" ? "Run: uv sync" : opts.language === "go" ? "Run: go mod download" : "Run: npm install"}
 4. ${opts.language === "python" ? "Verify the server can start (uv run python -c \"import main\" or similar)" : opts.language === "go" ? "Run: go build ./... and confirm it compiles" : "Run: npm run build"}
 5. If successful, print exactly: BUILD_COMPLETE:SUCCESS
-6. If something fails, print exactly: BUILD_COMPLETE:FAILURE and explain why`;
+6. If something fails, print exactly: BUILD_COMPLETE:FAILURE and explain why${opts.notes ? `\n\nHarness constraints (these override the SPEC where they conflict):\n${opts.notes}` : ""}`;
 
   const task = `SPEC.md:\n\n${specContent}\n\nVerify config, fix if needed, then build.`;
 

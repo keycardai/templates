@@ -7,11 +7,13 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-function endpoint() {
+export function keycardEndpoint() {
   const e = process.env.CI_KEYCARD_ENDPOINT;
   if (!e) throw new Error("CI_KEYCARD_ENDPOINT is not set");
   return e;
 }
+
+const endpoint = keycardEndpoint;
 
 export interface ProvisionedZone {
   zoneId: string;
@@ -75,7 +77,7 @@ export async function teardownProvisioning(provisioned: ProvisionedZone, token: 
 }
 
 /** Find an existing resource by its identifier (identifiers are unique per zone). */
-async function findResourceIdByIdentifier(
+export async function findResourceIdByIdentifier(
   zoneId: string,
   token: string,
   identifier: string,

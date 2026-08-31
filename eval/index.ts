@@ -18,6 +18,7 @@ import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./pro
 import { runBuildAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
 import { verifyServer } from "./verify.js";
+import { runAgentEval } from "./agent-run.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,6 +58,17 @@ const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then
 const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true).catch(() => false);
 const language: "python" | "typescript" | "go" = isPython ? "python" : isGo ? "go" : "typescript";
 console.log(`Language: ${language}`);
+
+// Agent templates are outbound-auth: langgraph serves the graph and the
+// interesting assertion is on the call the agent makes, not on a request made
+// to it. langgraph.json is what distinguishes them from the inbound-auth server
+// templates the flow below handles.
+const isAgent = await fs.access(path.join(TEMPLATE_DIR, "langgraph.json")).then(() => true).catch(() => false);
+if (isAgent) {
+  const agentPassed = await runAgentEval({ templateDir: TEMPLATE_DIR, templateName: templateArg, runId: RUN_ID });
+  console.log(agentPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
+  process.exit(agentPassed ? 0 : 1);
+}
 
 let zoneId: string | undefined;
 let serverProcess: ReturnType<typeof execFile> | undefined;
