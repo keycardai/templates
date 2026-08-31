@@ -14,7 +14,37 @@
  * the sign-in page.
  */
 
+import { keycardEndpoint } from "./provision.js";
+
 const SUBSTITUTE_USER_TOKEN_TYPE = "urn:keycard:params:oauth:token-type:substitute-user";
+
+/**
+ * A zone user's `identifier` defaults to their Keycard ID, not their email
+ * (the email is the identifier only when the provider sets
+ * user_identifier_claim), and the substitute-user exchange resolves its
+ * subject against `identifier` exactly. Resolve the email to the real
+ * identifier through the management API before minting.
+ */
+export async function resolveZoneUserIdentifier(
+  zoneId: string,
+  email: string,
+  managementToken: string,
+): Promise<string> {
+  const url = `${keycardEndpoint()}/zones/${zoneId}/users?filter[email]=${encodeURIComponent(email)}`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${managementToken}` } });
+  if (!resp.ok) {
+    throw new Error(`List zone users failed: ${resp.status} ${await resp.text()}`);
+  }
+  const { items } = (await resp.json()) as { items: Array<{ identifier: string; email: string }> };
+  const user = items[0];
+  if (!user) {
+    throw new Error(
+      `No user with email ${email} exists in the eval zone. Sign the test user up once ` +
+        "(EVAL_HEADLESS=false with a server template) before running agent evals.",
+    );
+  }
+  return user.identifier;
+}
 
 export interface ImpersonationResult {
   accessToken: string;

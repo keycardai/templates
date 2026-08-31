@@ -24,7 +24,7 @@ import { cleanupStaleProvisonings } from "./provision.js";
 import { provisionAgent, teardownAgentProvisioning, type ProvisionedAgent } from "./provision-agent.js";
 import { runBuildAgent } from "./agent.js";
 import { startCalendarStub, type CalendarStub } from "./calendar-stub.js";
-import { impersonateUser } from "./impersonate.js";
+import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
 import { verifyAgent } from "./verify-agent.js";
 
 const execFileAsync = promisify(execFile);
@@ -153,11 +153,16 @@ export async function runAgentEval(opts: {
     // token directly, authorized by the application credential and the zone's
     // impersonation policy.
     console.log("\n6. Minting a user token by impersonation (no browser)...");
+    const userIdentifier = await resolveZoneUserIdentifier(
+      evalZone.zone.id,
+      impersonatedUser,
+      token,
+    );
     const identity = await impersonateUser({
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       clientId: provisioned.applicationClientId,
       clientSecret: provisioned.applicationClientSecret,
-      userIdentifier: impersonatedUser,
+      userIdentifier,
       resource: provisioned.agentResourceIdentifier,
     });
     console.log(`   Subject: ${String(identity.claims.sub)} (aud ${JSON.stringify(identity.claims.aud)})`);
