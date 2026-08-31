@@ -137,15 +137,26 @@ export async function runAgentEval(opts: {
     console.log("   uv sync complete");
 
     console.log("\n5. Running agent (verify config + build)...");
-    const build = await runBuildAgent({
+    const buildOptions = {
       templateDir: opts.templateDir,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       resourceIdentifier: provisioned.resourceIdentifier,
-      language: "python",
+      language: "python" as const,
       notes: BUILD_NOTES,
-    });
+    };
+    let build = await runBuildAgent(buildOptions);
+    if (!build.success) {
+      // The build step is a model run and occasionally wanders; one retry
+      // separates a flaky turn from a template that genuinely does not build.
+      console.log("   First build attempt failed; retrying once...");
+      build = await runBuildAgent(buildOptions);
+    }
     console.log(build.output.split("\n").slice(-5).join("\n"));
-    if (!build.success) throw new Error("Build failed: the agent could not build the template");
+    if (!build.success) {
+      console.error("--- build agent output tail ---");
+      console.error(build.output.split("\n").slice(-60).join("\n"));
+      throw new Error("Build failed: the agent could not build the template");
+    }
     console.log("   Build succeeded");
 
     // Sign the user in without a browser. signin.py would write this same
