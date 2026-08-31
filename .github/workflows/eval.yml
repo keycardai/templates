@@ -64,6 +64,12 @@ jobs:
         with:
           go-version: "1.25"
 
+      # Available for Python agent templates: the harness boots them with
+      # `uv run langgraph dev`. No-op for other languages.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install eval dependencies
         working-directory: eval
         run: npm install
