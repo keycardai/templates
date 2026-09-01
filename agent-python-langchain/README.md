@@ -177,10 +177,11 @@ a run with real calendar events.
   The Fly path is the one exception: `type: "token"` credentials are
   resolved by the assertion's subject, so the `KEYCARD_CLIENT_ID` in
   `fly.toml` is sent along but never selects the credential.
-- **The Fly subject embeds the machine name.** Destroy and recreate the
-  machine and the assertion no longer matches: auth fails until the
-  credential's subject is updated. Past one machine, give each machine its own
-  credential (subject prefix matching is ECO-333).
+- **Give the token credential a wildcard subject.** Token credential subjects
+  support a trailing wildcard (svc-iam #456), so `<org>:<app>:*` matches every
+  machine in the app: replacing a machine or scaling out needs no credential
+  changes. Exact subjects still work, and win precedence when both an exact
+  and a wildcard subject exist.
 - **Only the token source and the subject format are Fly-specific.** The
   zone-side checklist (provider, credential, agent-owned resource, callback
   URL) is the same everywhere; swap the token source for your platform:
