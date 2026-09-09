@@ -118,6 +118,24 @@ The agent template needs `uv` on PATH and no vault resources beyond the three
 above. `EVAL_TEST_USER_EMAIL` doubles as the impersonation target, so that user
 must exist in the eval zone; the password is unused on this path.
 
+### Skipping templates
+
+`eval-skip.txt` lists templates the weekly workflow's discover job leaves out
+of the matrix, one directory name per line with `#` comments. It holds
+templates the harness has no flow for yet (`autonomous-agent-snowflake-wif` is
+an A2A agent, which the MCP-server flow cannot start or probe). A named
+`workflow_dispatch` template input bypasses the list, since naming a template
+is operator intent.
+
+### Harness notes for the build agent
+
+`index.ts` keeps a notes map keyed by template name, passed to `runBuildAgent`
+as extra constraints that override `SPEC.md` where the eval's provisioning
+deliberately differs from it. The two `mcp-brokered-credentials-*` templates
+carry notes saying the provisioned zone-native resource and config are correct
+as written, because without them the agent spent every turn reconciling the
+config toward the SPEC's brokered external-provider setup and never built.
+
 ## Environment variables
 
 | Variable | Used by | Meaning |

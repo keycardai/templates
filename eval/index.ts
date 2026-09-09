@@ -53,6 +53,19 @@ const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname
 const SERVER_URL = "http://localhost:8000";
 const RUN_ID = `${Date.now()}`;
 
+// Harness constraints handed to the build agent for templates whose
+// provisioning deliberately differs from SPEC.md. Without them the agent
+// spends its turns "fixing" config that is correct as provisioned.
+const BROKERED_NOTES = [
+  "This eval provisions a zone-native resource backed by the zone provider, not the brokered external-provider setup SPEC.md describes.",
+  "The provisioned .env and keycard.toml are correct as written. Do not restructure them toward the SPEC's brokered configuration.",
+  "Verify the zone URL, client credentials, and resource identifier are present, then install and build.",
+].join("\n");
+const AGENT_NOTES: Record<string, string> = {
+  "mcp-brokered-credentials-python": BROKERED_NOTES,
+  "mcp-brokered-credentials-typescript": BROKERED_NOTES,
+};
+
 // Detect template language from the presence of its build manifest
 const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
 const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true).catch(() => false);
@@ -132,6 +145,7 @@ try {
     zoneIssuerUrl: zone.issuerUrl,
     resourceIdentifier: provisioned.resourceIdentifier,
     language,
+    notes: AGENT_NOTES[templateArg],
   });
 
   console.log(agentResult.output.split("\n").slice(-5).join("\n"));

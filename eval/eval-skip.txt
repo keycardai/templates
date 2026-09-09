@@ -1,0 +1,6 @@
+# Templates the weekly eval discover job leaves out of the matrix.
+# One template directory name per line; # comments and blank lines are ignored.
+# An explicit workflow_dispatch template input bypasses this list.
+
+# A2A agent, not an MCP server: the server flow starts dist/server.js (entrypoint is dist/index.js), never sets the required AGENT_BASE_URL, and probes POST /mcp which it does not serve; needs an A2A eval flow.
+autonomous-agent-snowflake-wif

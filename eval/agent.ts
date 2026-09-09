@@ -86,7 +86,7 @@ Your task:
 
   let output = "";
 
-  for (let turn = 0; turn < 15; turn++) {
+  for (let turn = 0; turn < 25; turn++) {
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
