@@ -44,6 +44,18 @@ second is `SPEC.md` section 1c, and without it every exchange fails with
 `invalid_grant`. Both use the zone's Zone Provider, which is what makes the
 minted calendar credential a zone JWT the stub can verify.
 
+Impersonation needs an explicit permit. Since svc-pdp #220 (ACC-980) the
+managed `default-app-direct-access` policy permits dependency-based access only
+when `context.on_behalf` and `context.impersonate` are both false, and no
+managed policy permits impersonation; a customer policy has to grant it.
+Provisioning therefore ensures the eval zone carries a standing customer policy
+named `eval-impersonation-permit` (`policy.ts`), scoped to applications whose
+identifier matches `eval-app-*`, which is what every run's application is named.
+The policy is looked up by name and only created when missing, then added to
+the zone's active policy set alongside every existing policy (or, if that set is
+platform-owned, in a customer set `eval-policy-set` that carries the same
+content). The provisioning log reports whether the permit was found or created.
+
 The application is created with `consent: "implicit"`. The shipped template
 keeps the default (`required`) because the consent screen is part of the demo,
 but a headless run has no one to click it.

@@ -13,6 +13,12 @@
  *   `invalid_grant`. It is the same invariant an MCP server satisfies by being
  *   the audience of the token it receives.
  *
+ * The impersonation mint also needs an explicit permit. Since svc-pdp #220
+ * (ACC-980) the managed default-app-direct-access policy only covers plain
+ * dependency access (context.on_behalf and context.impersonate both false) and
+ * nothing managed permits impersonation, so provisioning makes sure the zone
+ * carries the standing eval-impersonation-permit customer policy (policy.ts).
+ *
  * Both are zone-native, so both take the Zone Provider. That is also what makes
  * the eval verifiable end to end: the credential minted for the calendar
  * resource is a zone-issued JWT, which the stub can verify against the zone's
@@ -22,6 +28,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { keycardEndpoint, findResourceIdByIdentifier, type ProvisionedZone } from "./provision.js";
+import { ensureEvalImpersonationPermit, EVAL_IMPERSONATION_POLICY_NAME } from "./policy.js";
 
 export interface ProvisionedAgent extends ProvisionedZone {
   /** Identifier of the resource the application owns, the exchange's first audience. */
@@ -158,10 +165,12 @@ export async function provisionAgent(opts: {
   }
   console.log("   Dependency: application -> calendar resource");
 
-  // The impersonation mint targets the agent resource, and the zone's managed
-  // policies only permit impersonation of a resource registered as a
-  // dependency of the application (default-app-direct-access). Without this,
-  // the substitute-user exchange is denied.
+  // The impersonation mint targets the agent resource, so it has to be a
+  // dependency of the application like any other resource the application
+  // reaches. The dependency alone is not the permit: since ACC-980 the managed
+  // default-app-direct-access policy permits dependency access only when
+  // context.on_behalf and context.impersonate are both false, and impersonation
+  // is granted solely by the customer policy ensured below.
   const agentDepResp = await fetch(
     `${keycardEndpoint()}/zones/${zoneId}/applications/${applicationId}/dependencies/${agentResourceId}`,
     { method: "PUT", headers: { Authorization: `Bearer ${token}` } },
@@ -171,7 +180,10 @@ export async function provisionAgent(opts: {
       `Add agent dependency failed: ${agentDepResp.status} ${await agentDepResp.text()}`,
     );
   }
-  console.log("   Dependency: application -> agent resource (impersonation permit)");
+  console.log("   Dependency: application -> agent resource");
+
+  const permit = await ensureEvalImpersonationPermit(zoneId, token);
+  console.log(`   Policy: ${EVAL_IMPERSONATION_POLICY_NAME} (${permit})`);
 
   // KEYCARD_SUBJECT_TOKEN is deliberately absent here: index.ts appends the
   // impersonated token once the zone has minted it, exactly where signin.py
