@@ -18,12 +18,15 @@ jobs:
       - uses: actions/checkout@v4
       - id: find
         run: |
+          # A named dispatch is operator intent, so it bypasses eval/eval-skip.txt;
+          # only the discovered full matrix is filtered.
           if [ -n "${{ inputs.template }}" ]; then
             echo "templates=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
           else
+            skip=$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' eval/eval-skip.txt)
             dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
               \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; -o -exec test -f '{}/go.mod' \; \) -print \
-              | sed 's|^\./||' | sort | jq -R . | jq -sc .)
+              | sed 's|^\./||' | sort | grep -vxF -f <(echo "$skip") | jq -R . | jq -sc .)
             echo "templates=$dirs" >> "$GITHUB_OUTPUT"
           fi
 
