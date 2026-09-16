@@ -26,7 +26,7 @@ export async function runBuildAgent(opts: {
   templateDir: string;
   zoneIssuerUrl: string;
   resourceIdentifier: string;
-  language?: "python" | "typescript" | "go";
+  language?: "python" | "typescript" | "go" | "ruby";
   /** Extra constraints for templates whose harness setup differs from SPEC.md. */
   notes?: string;
 }): Promise<AgentResult> {
@@ -52,8 +52,8 @@ Working directory: ${opts.templateDir}
 Your task:
 1. Read the SPEC.md (provided below) and verify the .env and keycard.toml look correct for this provisioned zone
 2. Fix any config issues you find
-3. ${opts.language === "python" ? "Run: uv sync" : opts.language === "go" ? "Run: go mod download" : "Run: npm install"}
-4. ${opts.language === "python" ? "Verify the server can start (uv run python -c \"import main\" or similar)" : opts.language === "go" ? "Run: go build ./... and confirm it compiles" : "Run: npm run build"}
+3. ${opts.language === "python" ? "Run: uv sync" : opts.language === "go" ? "Run: go mod download" : opts.language === "ruby" ? "Run: bundle install" : "Run: npm install"}
+4. ${opts.language === "python" ? "Verify the server can start (uv run python -c \"import main\" or similar)" : opts.language === "go" ? "Run: go build ./... and confirm it compiles" : opts.language === "ruby" ? "Verify the app loads without binding a port: set -a; . ./.env; set +a; bundle exec ruby -e 'require \"rack\"; Rack::Builder.parse_file(\"config.ru\")' (config.ru aborts at load when KEYCARD_URL is unset, so a syntax check alone is not enough)" : "Run: npm run build"}
 5. If successful, print exactly: BUILD_COMPLETE:SUCCESS
 6. If something fails, print exactly: BUILD_COMPLETE:FAILURE and explain why${opts.notes ? `\n\nHarness constraints (these override the SPEC where they conflict):\n${opts.notes}` : ""}`;
 
