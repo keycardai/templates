@@ -61,15 +61,25 @@ const BROKERED_NOTES = [
   "The provisioned .env and keycard.toml are correct as written. Do not restructure them toward the SPEC's brokered configuration.",
   "Verify the zone URL, client credentials, and resource identifier are present, then install and build.",
 ].join("\n");
+// The Ruby SPEC tells the agent to provision through `keycard agent api` and
+// to abort without a zone-bound keycard.toml, neither of which applies once
+// the harness has provisioned.
+const RUBY_NOTES = [
+  "Provisioning is complete. The provisioned .env and keycard.toml are correct as written. Do not restructure keycard.toml toward the SPEC's [org]/[zone] id shape.",
+  "Do not run keycard CLI commands and do not look for a parent keycard.toml.",
+  "Install with bundle install, then confirm config.ru loads.",
+].join("\n");
 const AGENT_NOTES: Record<string, string> = {
   "mcp-brokered-credentials-python": BROKERED_NOTES,
   "mcp-brokered-credentials-typescript": BROKERED_NOTES,
+  "mcp-server-ruby": RUBY_NOTES,
 };
 
 // Detect template language from the presence of its build manifest
 const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
 const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true).catch(() => false);
-const language: "python" | "typescript" | "go" = isPython ? "python" : isGo ? "go" : "typescript";
+const isRuby = await fs.access(path.join(TEMPLATE_DIR, "Gemfile")).then(() => true).catch(() => false);
+const language: "python" | "typescript" | "go" | "ruby" = isPython ? "python" : isGo ? "go" : isRuby ? "ruby" : "typescript";
 console.log(`Language: ${language}`);
 
 // Agent templates are outbound-auth: langgraph serves the graph and the
@@ -163,14 +173,15 @@ try {
   const serverByLanguage: Record<typeof language, [string, string[]]> = {
     python: ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]],
     go: ["go", ["run", "."]],
+    ruby: ["bundle", ["exec", "rackup", "--host", "0.0.0.0", "--port", "8000"]],
     typescript: ["node", ["--env-file-if-exists=.env", "dist/server.js"]],
   };
   const [serverCmd, serverArgs] = serverByLanguage[language];
 
   // Inject service account credentials so brokered-credentials templates can start.
   // discoverApplicationCredential picks these up; templates that don't need them ignore them.
-  // The node and python servers read the provisioned .env; the Go server has no .env loader,
-  // so the provisioned config is passed through the process environment for parity.
+  // The node and python servers read the provisioned .env; the Go and Ruby servers have no
+  // .env loader, so the provisioned config is passed through the process environment for parity.
   const serverEnv = {
     ...process.env,
     // The application credential minted for the provisioned app, so a broker template

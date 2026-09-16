@@ -25,7 +25,7 @@ jobs:
           else
             skip=$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' eval/eval-skip.txt)
             dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
-              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; -o -exec test -f '{}/go.mod' \; \) -print \
+              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; -o -exec test -f '{}/go.mod' \; -o -exec test -f '{}/Gemfile' \; \) -print \
               | sed 's|^\./||' | sort | grep -vxF -f <(echo "$skip") | jq -R . | jq -sc .)
             echo "templates=$dirs" >> "$GITHUB_OUTPUT"
           fi
@@ -72,6 +72,22 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      # Available for Ruby templates: the harness boots them with
+      # `bundle exec rackup` and the build agent runs `bundle install`.
+      # Guarded because bundler-cache fails on a directory without a Gemfile.
+      - name: Check for Gemfile
+        id: gemfile
+        run: |
+          if [ -f "${{ matrix.template }}/Gemfile" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: ruby/setup-ruby@v1
+        if: steps.gemfile.outputs.present == 'true'
+        with:
+          ruby-version: "3.4"
+          # The templates ship no Gemfile.lock, so resolution happens here
+          # against the CI Ruby rather than whichever Ruby wrote a lockfile.
+          bundler-cache: true
+          working-directory: ${{ matrix.template }}
 
       - name: Install eval dependencies
         working-directory: eval

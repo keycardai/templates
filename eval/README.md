@@ -136,6 +136,21 @@ carry notes saying the provisioned zone-native resource and config are correct
 as written, because without them the agent spent every turn reconciling the
 config toward the SPEC's brokered external-provider setup and never built.
 
+### Ruby coverage
+
+`mcp-server-ruby` is discovered by its `Gemfile` and takes the MCP-server flow
+like the other inbound-auth templates. The workflow installs Ruby 3.4 with
+`ruby/setup-ruby` only when the template has a Gemfile, the build agent runs
+`bundle install` and then loads `config.ru` through `Rack::Builder.parse_file`
+with `.env` sourced (no port bound, but the load still fails if `KEYCARD_URL`
+is missing), and the harness starts the server with
+`bundle exec rackup --host 0.0.0.0 --port 8000`, passing `KEYCARD_URL`,
+`KEYCARD_RESOURCE_ID`, and `PORT` through the process environment as it does
+for Go. The template carries a notes entry because its `SPEC.md` tells the
+agent to provision through `keycard agent api` and to abort without a
+zone-bound `keycard.toml`, which no longer applies once the harness has
+provisioned.
+
 ## Environment variables
 
 | Variable | Used by | Meaning |
