@@ -16,11 +16,13 @@ if (!process.env.KEYCARD_URL) {
 }
 
 const KEYCARD_URL: string = process.env.KEYCARD_URL;
-const RESOURCE_ID =
-  process.env.KEYCARD_RESOURCE_ID ?? "mcp-brokered-credentials-typescript";
+const SERVER_NAME = "mcp-brokered-credentials-typescript";
+// The proxy's registered Resource identifier; when set, the verifier rejects
+// tokens minted for any other resource.
+const RESOURCE_ID: string | undefined = process.env.KEYCARD_RESOURCE_ID;
 
 const applicationCredential = discoverApplicationCredential({
-  serverName: RESOURCE_ID,
+  serverName: SERVER_NAME,
   zoneUrl: KEYCARD_URL,
 });
 
@@ -31,7 +33,7 @@ const authProvider = new AuthProvider({
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
-    name: RESOURCE_ID,
+    name: SERVER_NAME,
     version: "0.1.0",
   });
   registerSearchTool(server, authProvider);
@@ -48,12 +50,13 @@ async function main() {
     mcpAuthMetadataRouter({
       oauthMetadata: { issuer: KEYCARD_URL },
       scopesSupported: ["mcp:tools"],
-      resourceName: RESOURCE_ID,
+      resourceName: SERVER_NAME,
     }),
   );
 
   const bearerAuth = requireBearerAuth({
     issuers: KEYCARD_URL,
+    audiences: RESOURCE_ID,
     requiredScopes: ["mcp:tools"],
   });
 
@@ -146,11 +149,11 @@ async function main() {
   });
 
   app.get("/healthz", (_req, res) => {
-    res.json({ ok: true, name: RESOURCE_ID });
+    res.json({ ok: true, name: SERVER_NAME });
   });
 
   const httpServer = app.listen(PORT, () => {
-    console.log(`${RESOURCE_ID} listening on http://localhost:${PORT}`);
+    console.log(`${SERVER_NAME} listening on http://localhost:${PORT}`);
     console.log(`Keycard: ${KEYCARD_URL}`);
     console.log(`Upstream: https://mcp.linear.app/mcp (brokered)`);
   });

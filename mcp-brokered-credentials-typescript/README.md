@@ -63,7 +63,7 @@ Set `KEYCARD_URL` and `PORT` in the platform's env config. The proxy discovers w
 | `KEYCARD_CLIENT_ID` | _(auto-discovered)_ | Brokered by `keycard run` from `urn:<name>:client_id`. |
 | `KEYCARD_CLIENT_SECRET` | _(auto-discovered)_ | Brokered by `keycard run` from `urn:<name>:client_secret`. |
 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | _(auto-discovered)_ | Force a specific credential provider: `eks_workload_identity`, `fly_workload_identity`, or `web_identity`. |
-| `KEYCARD_RESOURCE_ID` | `mcp-brokered-credentials-typescript` | Keycard Resource id used by the middleware. |
+| `KEYCARD_RESOURCE_ID` | _(unset)_ | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. |
 | `PORT` | `8000` | Local HTTP port. |
 
 The proxy discovers credentials automatically at startup (see [`SPEC.md` §3](./SPEC.md#3-runtime-credential-discovery) for the full priority order). Locally, `keycard run` injects `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET`. On Fly.io or EKS the proxy detects the platform and uses its workload-identity token — no static secrets needed.

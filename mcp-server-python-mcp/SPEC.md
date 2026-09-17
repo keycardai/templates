@@ -67,6 +67,8 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 The identifier MUST include the `/mcp` suffix. Carry as `<resource-id>`.
 
+Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
+
 ## 2. Configuration the agent MUST write
 
 ### Zone URL
@@ -86,6 +88,7 @@ Example: ID `<id>` in production → `https://<id>.keycard.cloud`.
 
 ```
 KEYCARD_URL=https://<id>.keycard.cloud
+KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp
 MCP_SERVER_URL=http://localhost:<port>/
 PORT=<port>
 ```

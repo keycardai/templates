@@ -91,6 +91,7 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 - The resource `identifier` MUST include the `/mcp` suffix — that is the path MCP clients hit, and the authorization server rejects token requests for resources whose identifier does not match the protected URL exactly (`invalid_target` / `Requested authorization for unknown resource ...`).
 - `application_id` wires the "provided by" relationship between the Resource and its Application. It must be set at Resource-creation time.
+- Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
 
 On 403, network error, or missing session:
 
@@ -119,6 +120,7 @@ Write `.env` in the project root with the resolved values so `npm start` works w
 
 ```
 KEYCARD_URL=https://<id>.keycard.cloud
+KEYCARD_RESOURCE_ID=http://localhost:8000/mcp
 PORT=8000
 ```
 

@@ -35,6 +35,7 @@ keycard run -- uv run uvicorn main:app --port 8000
 | Variable | Description | Default |
 |---|---|---|
 | `KEYCARD_URL` | Zone issuer URL, e.g. `https://<id>.keycard.cloud` | required |
+| `KEYCARD_RESOURCE_ID` | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. | _(unset)_ |
 | `MCP_SERVER_URL` | Base URL this server is reachable at | `http://localhost:8000/` |
 | `PORT` | HTTP port | `8000` |
 
