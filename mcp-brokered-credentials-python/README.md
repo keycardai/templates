@@ -27,8 +27,14 @@ Follow `SPEC.md` to provision the required Keycard resources (Linear provider, a
 
    ```bash
    cp .env.example .env
-   # Fill in KEYCARD_URL and PORT
+   # Fill in KEYCARD_URL, KEYCARD_RESOURCE_ID, and PORT
    ```
+
+   | Env var | Default | Purpose |
+   |---|---|---|
+   | `KEYCARD_URL` | _(required)_ | The zone's OIDC issuer URL. The verifier trusts tokens from it and resolves its JWKS. |
+   | `KEYCARD_RESOURCE_ID` | _(unset)_ | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. |
+   | `PORT` | `8000` | Local HTTP port. |
 
 3. **Configure `keycard.toml`**
 

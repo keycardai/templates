@@ -18,6 +18,9 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 KEYCARD_URL = os.environ.get("KEYCARD_URL")
+# The proxy's registered Resource identifier; when set, the verifier rejects
+# tokens minted for any other resource.
+RESOURCE_ID = os.environ.get("KEYCARD_RESOURCE_ID")
 SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/")
 PORT = int(os.environ.get("PORT", "8000"))
 SERVER_NAME = "mcp-brokered-credentials-python"
@@ -43,6 +46,7 @@ from tools.execute import register_execute_tool
 
 auth_provider = AuthProvider(
     zone_url=KEYCARD_URL,
+    audience=RESOURCE_ID,
     mcp_server_name=SERVER_NAME,
     mcp_server_url=SERVER_URL,
 )

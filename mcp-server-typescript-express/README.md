@@ -28,7 +28,7 @@ npm run dev
 | Env var | Default | Purpose |
 |---|---|---|
 | `KEYCARD_URL` | _(required)_ | URL the server registers against. |
-| `KEYCARD_RESOURCE_ID` | `mcp-server-typescript-express` | Keycard Resource id used by the middleware. |
+| `KEYCARD_RESOURCE_ID` | _(unset)_ | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. |
 | `PORT` | `8000` | Local HTTP port. |
 
 ## Keycard provisioning

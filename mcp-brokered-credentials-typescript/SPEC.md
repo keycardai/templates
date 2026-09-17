@@ -150,6 +150,8 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 Carry the result forward as `<proxy-resource-id>`.
 
+Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
+
 ### 1f-bis. Wire Linear as a dependency of the proxy application
 
 See [Applications → Dependencies](https://docs.keycard.ai/platform/concepts/applications/#dependencies). Dependencies control which resources an application can access — a way to enforce access policy without writing policies directly.
@@ -261,10 +263,11 @@ Write `.env` in the project root from `.env.example`:
 
 ```
 KEYCARD_URL=https://<id>.keycard.cloud
+KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp
 PORT=<port>
 ```
 
-`KEYCARD_URL` is read by the MCP server itself (the proxy needs it to call Keycard's STS). `package.json` loads `.env` via `node --env-file-if-exists=.env`, so no dotenv dependency is required.
+`KEYCARD_URL` and `KEYCARD_RESOURCE_ID` are read by the MCP server itself (the proxy needs the zone URL to call Keycard's STS). `package.json` loads `.env` via `node --env-file-if-exists=.env`, so no dotenv dependency is required.
 
 `.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — they are brokered at runtime by `keycard run` (see gotcha 5).
 

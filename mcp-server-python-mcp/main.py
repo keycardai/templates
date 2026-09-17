@@ -17,6 +17,9 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 KEYCARD_URL = os.environ.get("KEYCARD_URL")
+# The registered Resource identifier; when set, the verifier rejects tokens
+# minted for any other resource.
+RESOURCE_ID = os.environ.get("KEYCARD_RESOURCE_ID")
 SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/")
 PORT = int(os.environ.get("PORT", "8000"))
 SERVER_NAME = "Hello World Server"
@@ -41,6 +44,7 @@ from tools.hello import register_hello_tool
 
 auth_provider = AuthProvider(
     zone_url=KEYCARD_URL,
+    audience=RESOURCE_ID,
     mcp_server_name=SERVER_NAME,
     mcp_server_url=SERVER_URL,
 )
