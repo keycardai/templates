@@ -320,7 +320,7 @@ AGENT_TASK=Query Snowflake for recent data and produce a summary report.
 PORT=<port>
 ```
 
-`KEYCARD_RESOURCE_ID` binds the inbound A2A verifier to the agent's own Resource (identifier `<agent-base-url>`), so a zone token minted for any other resource is refused at `/a2a/jsonrpc`. Register that Resource under the agent application when other agents will call this one; leave the variable unset only while no Resource exists yet.
+`KEYCARD_RESOURCE_ID` binds the inbound A2A verifier to the agent's own Resource (identifier `<agent-base-url>`), so a zone token minted for any other resource is refused at `/a2a/jsonrpc` with HTTP 401 and a `WWW-Authenticate: Bearer error="invalid_token"` challenge (a missing token gets the bare `Bearer` challenge). The endpoint speaks A2A protocol 1.0 (`SendMessage`, `GetTask`, header `A2A-Version: 1.0`); 0.3 callers using `message/send` are not served. Register that Resource under the agent application when other agents will call this one; leave the variable unset only while no Resource exists yet.
 
 `.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — the agent uses a public-key application credential (keypair + JWKS), not a shared secret.
 

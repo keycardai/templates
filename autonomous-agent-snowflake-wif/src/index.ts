@@ -34,10 +34,9 @@ async function main() {
   });
 
   const requestHandler = createKeycardRequestHandler(executor, agentCard);
-  const userBuilder = keycardUserBuilder({
-    issuer: env.KEYCARD_URL,
-    audience: env.KEYCARD_RESOURCE_ID,
-  });
+  // Verification happens in requireBearerAuth (server.ts); the builder
+  // wraps the already-verified token for the executor.
+  const userBuilder = keycardUserBuilder();
 
   // 3. Start the HTTP server with identity discovery (JWKS, OAuth client
   //    metadata) and A2A endpoints. Must be up before token exchange — the
@@ -46,7 +45,12 @@ async function main() {
   const server = await startServer({
     port: env.PORT,
     agentBaseUrl: env.AGENT_BASE_URL,
-    a2a: { requestHandler, userBuilder },
+    a2a: {
+      requestHandler,
+      userBuilder,
+      issuer: env.KEYCARD_URL,
+      audience: env.KEYCARD_RESOURCE_ID,
+    },
   });
 
   const clientId = getClientId();

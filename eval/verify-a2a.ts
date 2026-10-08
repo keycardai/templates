@@ -21,55 +21,63 @@ export interface VerifyA2AOptions {
   foreignAccessToken: string;
 }
 
-/**
- * What the auth gate and the task store answer with, for the `@keycardai/a2a`
- * the template pins (0.2.x). That release raises the A2A unauthorized code
- * -32001 for a missing or rejected bearer, the same code `@a2a-js/sdk` uses
- * for TaskNotFoundError, so the message is what tells the two apart.
- * `@keycardai/a2a` 0.4 (A2A 1.0) moved auth failures to -32000; when the
- * template moves to it, UNAUTHENTICATED becomes { code: -32000 } alone.
- */
-const UNAUTHENTICATED = { code: -32001, message: /Missing or invalid Authorization header|Invalid or expired token/ };
-const TASK_NOT_FOUND = { code: -32001, message: /^Task not found/ };
+/** A2A 1.0 JSON-RPC code for TaskNotFoundError. */
+const TASK_NOT_FOUND = -32001;
 
 interface JsonRpcResponse {
   error?: { code: number; message?: string };
   result?: unknown;
 }
 
-async function getTask(agentUrl: string, bearer?: string): Promise<{ status: number; body: JsonRpcResponse }> {
+interface RpcReply {
+  status: number;
+  challenge: string | null;
+  body: JsonRpcResponse;
+  text: string;
+}
+
+async function getTask(agentUrl: string, bearer?: string): Promise<RpcReply> {
   const resp = await fetch(`${agentUrl}/a2a/jsonrpc`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "A2A-Version": "1.0",
       ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: crypto.randomUUID(),
-      method: "tasks/get",
+      method: "GetTask",
       params: { id: `eval-missing-${crypto.randomUUID()}` },
     }),
   });
   const text = await resp.text();
   let body: JsonRpcResponse = {};
-  try { body = JSON.parse(text) as JsonRpcResponse; } catch {
-    throw new Error(`Non-JSON response (${resp.status}): ${text.slice(0, 200)}`);
-  }
-  return { status: resp.status, body };
+  try { body = JSON.parse(text) as JsonRpcResponse; } catch { /* 401 bodies are empty */ }
+  return { status: resp.status, challenge: resp.headers.get("www-authenticate"), body, text };
 }
 
-function expectError(
-  label: string,
-  r: { status: number; body: JsonRpcResponse },
-  want: { code: number; message: RegExp },
-) {
-  if (!r.body.error) {
-    throw new Error(`${label}: expected JSON-RPC error ${want.code}, got result ${JSON.stringify(r.body.result).slice(0, 200)}`);
+function expectChallenge(label: string, r: RpcReply, wantError?: string) {
+  if (r.status !== 401) {
+    throw new Error(`${label}: expected HTTP 401, got ${r.status} ${r.text.slice(0, 200)}`);
   }
-  const got = `${r.body.error.code} (${r.body.error.message ?? ""})`;
-  if (r.body.error.code !== want.code || !want.message.test(r.body.error.message ?? "")) {
-    throw new Error(`${label}: expected JSON-RPC error ${want.code} matching ${want.message}, got ${got}`);
+  if (!r.challenge || !/^Bearer\b/i.test(r.challenge)) {
+    throw new Error(`${label}: expected a WWW-Authenticate Bearer challenge, got ${JSON.stringify(r.challenge)}`);
+  }
+  if (wantError && !r.challenge.includes(`error="${wantError}"`)) {
+    throw new Error(`${label}: expected error="${wantError}" in the challenge, got ${r.challenge}`);
+  }
+}
+
+function expectRpcError(label: string, r: RpcReply, code: number) {
+  if (r.status === 401) {
+    throw new Error(`${label}: auth was refused (401 ${r.challenge ?? ""})`);
+  }
+  if (!r.body.error) {
+    throw new Error(`${label}: expected JSON-RPC error ${code}, got ${r.status} ${r.text.slice(0, 200)}`);
+  }
+  if (r.body.error.code !== code) {
+    throw new Error(`${label}: expected JSON-RPC error ${code}, got ${r.body.error.code} (${r.body.error.message ?? ""})`);
   }
 }
 
@@ -77,23 +85,22 @@ export async function verifyA2AAgent(opts: VerifyA2AOptions): Promise<VerifyResu
   const checks: VerifyResult["checks"] = [];
   const agentUrl = opts.agentUrl.replace(/\/$/, "");
 
-  await check("agent card names a JSON-RPC interface", async () => {
+  await check("agent card advertises an A2A 1.0 JSON-RPC interface", async () => {
     const resp = await fetch(`${agentUrl}/.well-known/agent-card.json`);
     if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
     const card = (await resp.json()) as {
       name?: string;
-      url?: string;
-      preferredTransport?: string;
-      additionalInterfaces?: Array<{ transport?: string; url?: string }>;
+      supportedInterfaces?: Array<{ url?: string; protocolBinding?: string; protocolVersion?: string }>;
     };
     if (!card.name) throw new Error("Card has no name");
-    const transports = [card.preferredTransport, ...(card.additionalInterfaces ?? []).map((i) => i.transport)]
-      .filter((t): t is string => typeof t === "string");
-    // A2A 0.3 cards default preferredTransport to JSONRPC when omitted.
-    if (transports.length && !transports.some((t) => /jsonrpc/i.test(t))) {
-      throw new Error(`Card advertises ${JSON.stringify(transports)}, no JSON-RPC interface`);
+    const jsonrpc = (card.supportedInterfaces ?? []).find((i) => /jsonrpc/i.test(i.protocolBinding ?? ""));
+    if (!jsonrpc) {
+      throw new Error(`Card has no JSONRPC interface in supportedInterfaces: ${JSON.stringify(card.supportedInterfaces)}`);
     }
-    if (!card.url) throw new Error("Card has no url");
+    if (jsonrpc.protocolVersion !== "1.0") {
+      throw new Error(`JSONRPC interface is protocol ${JSON.stringify(jsonrpc.protocolVersion)}, expected "1.0"`);
+    }
+    if (!jsonrpc.url) throw new Error("JSONRPC interface has no url");
   }, checks);
 
   await check("JWKS and OAuth client metadata are served", async () => {
@@ -115,16 +122,16 @@ export async function verifyA2AAgent(opts: VerifyA2AOptions): Promise<VerifyResu
     if (!/snowflake/i.test(body.reason ?? "")) throw new Error(`Reason does not name Snowflake: ${JSON.stringify(body)}`);
   }, checks);
 
-  await check("JSON-RPC without a bearer fails unauthenticated", async () => {
-    expectError("no bearer", await getTask(agentUrl), UNAUTHENTICATED);
+  await check("GetTask without a bearer: 401 with a Bearer challenge", async () => {
+    expectChallenge("no bearer", await getTask(agentUrl));
   }, checks);
 
-  await check("JSON-RPC with a zone token for the agent passes auth (task not found, not unauthenticated)", async () => {
-    expectError("agent token", await getTask(agentUrl, opts.accessToken), TASK_NOT_FOUND);
+  await check("GetTask with a zone token for the agent passes auth (TaskNotFound -32001)", async () => {
+    expectRpcError("agent token", await getTask(agentUrl, opts.accessToken), TASK_NOT_FOUND);
   }, checks);
 
-  await check("JSON-RPC with a zone token for another resource is refused", async () => {
-    expectError("foreign token", await getTask(agentUrl, opts.foreignAccessToken), UNAUTHENTICATED);
+  await check("GetTask with a zone token for another resource: 401 invalid_token", async () => {
+    expectChallenge("foreign token", await getTask(agentUrl, opts.foreignAccessToken), "invalid_token");
   }, checks);
 
   return { passed: checks.every((c) => c.passed), checks };
