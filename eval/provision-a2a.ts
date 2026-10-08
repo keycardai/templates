@@ -23,6 +23,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { writeKeycardToml } from "./keycard-toml.js";
 import { keycardEndpoint, findResourceIdByIdentifier } from "./provision.js";
 import { ensureEvalImpersonationPermit, EVAL_IMPERSONATION_POLICY_NAME } from "./policy.js";
 
@@ -171,6 +172,8 @@ export async function provisionA2AAgent(opts: {
   ].join("\n") + "\n";
   await fs.writeFile(path.join(templateDir, ".env"), envContent, "utf8");
   console.log("   Wrote .env");
+  await writeKeycardToml(templateDir, zoneId);
+  console.log("   Wrote keycard.toml");
 
   return {
     zoneId,
@@ -302,6 +305,8 @@ export async function provisionA2ADelegation(opts: {
   ].join("\n") + "\n";
   await fs.writeFile(path.join(templateDir, ".env"), envContent, "utf8");
   console.log("   Wrote .env");
+  await writeKeycardToml(templateDir, zoneId);
+  console.log("   Wrote keycard.toml");
 
   return {
     zoneId,
