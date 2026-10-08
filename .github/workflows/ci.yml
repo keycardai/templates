@@ -99,7 +99,14 @@ jobs:
         working-directory: ${{ matrix.template }}
         run: npm run build
 
+      - name: Live-zone checks skipped on Dependabot PRs
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        run: >
+          echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
+          Monday's eval.yml run on main covers this bump after merge."
+
       - name: Create ephemeral zone
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
@@ -120,6 +127,7 @@ jobs:
           echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
 
       - name: Start server and verify
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         working-directory: ${{ matrix.template }}
         env:
           PORT: "8000"
@@ -129,7 +137,7 @@ jobs:
         run: npm run ci:verify
 
       - name: Delete ephemeral zone
-        if: always()
+        if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -160,7 +168,14 @@ jobs:
         working-directory: ${{ matrix.template }}
         run: uv sync
 
+      - name: Live-zone checks skipped on Dependabot PRs
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        run: >
+          echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
+          Monday's eval.yml run on main covers this bump after merge."
+
       - name: Create ephemeral zone
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
@@ -181,6 +196,7 @@ jobs:
           echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
 
       - name: Start server and verify
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         working-directory: ${{ matrix.template }}
         env:
           PORT: "8000"
@@ -190,7 +206,7 @@ jobs:
         run: bash scripts/ci-verify.sh
 
       - name: Delete ephemeral zone
-        if: always()
+        if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -219,7 +235,14 @@ jobs:
         working-directory: ${{ matrix.template }}
         run: go build ./...
 
+      - name: Live-zone checks skipped on Dependabot PRs
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        run: >
+          echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
+          Monday's eval.yml run on main covers this bump after merge."
+
       - name: Create ephemeral zone
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
@@ -240,6 +263,7 @@ jobs:
           echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
 
       - name: Start server and verify
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         working-directory: ${{ matrix.template }}
         env:
           PORT: "8000"
@@ -249,7 +273,7 @@ jobs:
         run: bash scripts/ci-verify.sh
 
       - name: Delete ephemeral zone
-        if: always()
+        if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -277,7 +301,14 @@ jobs:
           bundler-cache: true
           working-directory: ${{ matrix.template }}
 
+      - name: Live-zone checks skipped on Dependabot PRs
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        run: >
+          echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
+          Monday's eval.yml run on main covers this bump after merge."
+
       - name: Create ephemeral zone
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
@@ -298,6 +329,7 @@ jobs:
           echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
 
       - name: Start server and verify
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         working-directory: ${{ matrix.template }}
         env:
           PORT: "8000"
@@ -307,7 +339,7 @@ jobs:
         run: bash scripts/ci-verify.sh
 
       - name: Delete ephemeral zone
-        if: always()
+        if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
