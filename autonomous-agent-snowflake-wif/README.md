@@ -87,6 +87,7 @@ The agent will:
 |---|---|---|---|
 | `AGENT_BASE_URL` | yes | — | Public URL where this agent is reachable |
 | `KEYCARD_URL` | yes | — | Keycard zone URL (`https://<id>.keycard.cloud`) |
+| `KEYCARD_RESOURCE_ID` | no | _(unset)_ | The agent's registered Resource identifier, its `AGENT_BASE_URL`. When set, inbound A2A calls carrying a token minted for any other resource are rejected. |
 | `SNOWFLAKE_ACCOUNT` | yes | — | Snowflake account identifier (`ORGNAME-ACCTNAME`) |
 | `SNOWFLAKE_USER` | no | — | Snowflake user for WIF authentication |
 | `SNOWFLAKE_DATABASE` | no | — | Default database |

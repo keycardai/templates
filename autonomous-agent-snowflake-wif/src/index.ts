@@ -34,7 +34,10 @@ async function main() {
   });
 
   const requestHandler = createKeycardRequestHandler(executor, agentCard);
-  const userBuilder = keycardUserBuilder({ issuer: env.KEYCARD_URL });
+  const userBuilder = keycardUserBuilder({
+    issuer: env.KEYCARD_URL,
+    audience: env.KEYCARD_RESOURCE_ID,
+  });
 
   // 3. Start the HTTP server with identity discovery (JWKS, OAuth client
   //    metadata) and A2A endpoints. Must be up before token exchange — the
