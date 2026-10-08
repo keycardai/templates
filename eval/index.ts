@@ -103,8 +103,17 @@ const isA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "package.json"), "u
     return Boolean(pkg.dependencies?.["@keycardai/a2a"]);
   })
   .catch(() => false);
-if (isA2AAgent) {
-  const a2aPassed = await runA2AEval({ templateDir: TEMPLATE_DIR, templateName: templateArg, runId: RUN_ID });
+// A Python A2A template declares keycardai-a2a in pyproject.toml the same way.
+const isPythonA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "pyproject.toml"), "utf8")
+  .then((raw) => /^\s*"keycardai-a2a[\s>=<~!\[]/m.test(raw))
+  .catch(() => false);
+if (isA2AAgent || isPythonA2AAgent) {
+  const a2aPassed = await runA2AEval({
+    templateDir: TEMPLATE_DIR,
+    templateName: templateArg,
+    runId: RUN_ID,
+    language: isPythonA2AAgent ? "python" : "typescript",
+  });
   console.log(a2aPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
   process.exit(a2aPassed ? 0 : 1);
 }

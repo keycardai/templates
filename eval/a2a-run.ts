@@ -25,10 +25,17 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { cleanupStaleProvisonings } from "./provision.js";
-import { provisionA2AAgent, teardownA2AProvisioning, type ProvisionedA2AAgent } from "./provision-a2a.js";
+import {
+  provisionA2AAgent,
+  teardownA2AProvisioning,
+  provisionA2ADelegation,
+  teardownA2ADelegation,
+  type ProvisionedA2AAgent,
+  type ProvisionedA2ADelegation,
+} from "./provision-a2a.js";
 import { runBuildAgent } from "./agent.js";
 import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
-import { verifyA2AAgent } from "./verify-a2a.js";
+import { verifyA2AAgent, verifyA2ADelegation } from "./verify-a2a.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +51,17 @@ const BUILD_NOTES = [
   "the marker.",
 ].join("\n");
 
+const DELEGATION_BUILD_NOTES = [
+  "Provisioning is complete and .env is final: do not verify it against the zone",
+  "and do not change it. CALLER_BASE_URL and TARGET_BASE_URL deliberately point",
+  "at localhost. SPEC.md describes keycard CLI provisioning of two applications",
+  "and two resources: that is done, and none of it is your job. Do not run",
+  "keycard CLI commands, do not call the zone or any HTTP endpoint, and do not",
+  "start either agent. Your entire job is: uv sync, then",
+  "uv run python -c \"import caller_agent, target_agent\" with the .env loaded.",
+  "Then print the marker.",
+].join("\n");
+
 function required(name: string): string {
   const val = process.env[name];
   if (!val) throw new Error(`Required env var ${name} is not set`);
@@ -54,7 +72,9 @@ export async function runA2AEval(opts: {
   templateDir: string;
   templateName: string;
   runId: string;
+  language?: "python" | "typescript";
 }): Promise<boolean> {
+  if (opts.language === "python") return runA2ADelegationEval(opts);
   const port = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const agentUrl = `http://localhost:${port}`;
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
@@ -179,6 +199,166 @@ export async function runA2AEval(opts: {
       foreignAccessToken: foreign.accessToken,
     });
 
+    console.log("\n=== Results ===");
+    for (const c of result.checks) {
+      console.log(`  ${c.passed ? "\u2713" : "\u2717"} ${c.name}${c.detail ? `: ${c.detail}` : ""}`);
+    }
+    passed = result.passed;
+  } catch (err) {
+    console.error("\nEval failed:", err instanceof Error ? (err.stack ?? err.message) : String(err));
+  } finally {
+    await cleanup();
+  }
+  return passed;
+}
+
+async function waitForHealthz(url: string, label: string): Promise<void> {
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      if ((await fetch(`${url}/healthz`)).ok) return;
+    } catch { /* not yet */ }
+  }
+  throw new Error(`The ${label} did not serve /healthz in time`);
+}
+
+/**
+ * The Python two-agent delegation template (a2a-delegation-python, ECO-102):
+ * caller on EVAL_A2A_PORT, target on the next port, both started with uv the
+ * way the server flow starts Python templates. The user's token is minted for
+ * the caller by impersonation; the caller exchanges it for the target.
+ */
+async function runA2ADelegationEval(opts: {
+  templateDir: string;
+  templateName: string;
+  runId: string;
+}): Promise<boolean> {
+  const callerPort = Number(process.env.EVAL_A2A_PORT ?? 9000);
+  const targetPort = callerPort + 1;
+  const callerUrl = `http://localhost:${callerPort}`;
+  const targetUrl = `http://localhost:${targetPort}`;
+  const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
+
+  let zoneId: string | undefined;
+  let ephemeral = false;
+  let token: string | undefined;
+  let provisioned: ProvisionedA2ADelegation | undefined;
+  const agents: Array<ReturnType<typeof spawn>> = [];
+  let cleanedUp = false;
+
+  const cleanup = async () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    for (const agent of agents) {
+      if (agent.pid) {
+        try { process.kill(-agent.pid); } catch { /* already dead */ }
+      }
+    }
+    if (provisioned && !ephemeral && token) {
+      await teardownA2ADelegation(provisioned, token)
+        .catch((e) => console.error("Resource cleanup failed:", e));
+      console.log("   Cleaned up apps + resources");
+    }
+    if (zoneId && ephemeral) {
+      console.log(`\nCleaning up zone ${zoneId}...`);
+      await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
+    }
+    await fs.rm(path.join(opts.templateDir, ".env"), { force: true }).catch(() => undefined);
+  };
+  process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
+
+  const start = (label: string, module: string, port: number) => {
+    const agent = spawn("uv", ["run", "uvicorn", `${module}:app`, "--host", "0.0.0.0", "--port", String(port)], {
+      cwd: opts.templateDir,
+      env: { ...process.env },
+      detached: true,
+    });
+    agent.stderr?.on("data", (d: Buffer) => process.stderr.write(`[${label}] ${d}`));
+    agent.stdout?.on("data", (d: Buffer) => process.stdout.write(`[${label}] ${d}`));
+    agent.unref();
+    agents.push(agent);
+  };
+
+  let passed = false;
+  try {
+    console.log("1. Creating eval zone...");
+    const evalZone = await getOrCreateEvalZone(opts.runId);
+    token = evalZone.token;
+    ephemeral = evalZone.ephemeral;
+    zoneId = evalZone.zone.id;
+    console.log(`   Zone: ${evalZone.zone.id} (${evalZone.zone.issuerUrl})`);
+    if (ephemeral) {
+      throw new Error(
+        "The delegation template needs the persistent eval zone: impersonation targets " +
+          "EVAL_TEST_USER_EMAIL, which must already exist as a zone user. " +
+          "Set EVAL_ZONE_ID and EVAL_ZONE_ISSUER_URL.",
+      );
+    }
+
+    console.log("\n2. Provisioning two applications and two resources...");
+    await execFileAsync("bash", ["-c", `lsof -ti :${callerPort},:${targetPort} | xargs kill -9 2>/dev/null; true`]);
+    await cleanupStaleProvisonings(evalZone.zone.id, token);
+    provisioned = await provisionA2ADelegation({
+      zoneId: evalZone.zone.id,
+      zoneIssuerUrl: evalZone.zone.issuerUrl,
+      runId: opts.runId,
+      token,
+      templateDir: opts.templateDir,
+      callerBaseUrl: callerUrl,
+      targetBaseUrl: targetUrl,
+    });
+
+    console.log("\n3. Pre-warming the template's uv environment...");
+    await execFileAsync("uv", ["sync"], { cwd: opts.templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
+    console.log("   uv sync complete");
+
+    console.log("\n4. Running agent (verify config + build)...");
+    const buildOptions = {
+      templateDir: opts.templateDir,
+      zoneIssuerUrl: evalZone.zone.issuerUrl,
+      resourceIdentifier: provisioned.callerResourceIdentifier,
+      language: "python" as const,
+      notes: DELEGATION_BUILD_NOTES,
+    };
+    let build = await runBuildAgent(buildOptions);
+    if (!build.success) {
+      console.log("   First build attempt failed; retrying once...");
+      build = await runBuildAgent(buildOptions);
+    }
+    console.log(build.output.split("\n").slice(-5).join("\n"));
+    if (!build.success) {
+      console.error("--- build agent output tail ---");
+      console.error(build.output.split("\n").slice(-60).join("\n"));
+      throw new Error("Build failed: the agent could not build the template");
+    }
+    console.log("   Build succeeded");
+
+    console.log("\n5. Minting the user's token for the caller by impersonation (no browser)...");
+    const userIdentifier = await resolveZoneUserIdentifier(evalZone.zone.id, impersonatedUser, token);
+    const identity = await impersonateUser({
+      zoneIssuerUrl: evalZone.zone.issuerUrl,
+      clientId: provisioned.callerClientId,
+      clientSecret: provisioned.callerClientSecret,
+      userIdentifier,
+      resource: provisioned.callerResourceIdentifier,
+    });
+    console.log(`   User token: sub ${String(identity.claims.sub)}, aud ${JSON.stringify(identity.claims.aud)}`);
+
+    console.log("\n6. Starting the target and the caller...");
+    start("target", "target_agent", targetPort);
+    start("caller", "caller_agent", callerPort);
+    await waitForHealthz(targetUrl, "target");
+    await waitForHealthz(callerUrl, "caller");
+    console.log("   Both agents ready");
+
+    console.log("\n7. Verifying delegation...");
+    const result = await verifyA2ADelegation({
+      callerUrl,
+      targetUrl,
+      userAccessToken: identity.accessToken,
+      userIdentifier,
+      callerApplicationIdentifier: provisioned.callerApplicationIdentifier,
+    });
     console.log("\n=== Results ===");
     for (const c of result.checks) {
       console.log(`  ${c.passed ? "\u2713" : "\u2717"} ${c.name}${c.detail ? `: ${c.detail}` : ""}`);
