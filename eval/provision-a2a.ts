@@ -197,3 +197,137 @@ export async function teardownA2AProvisioning(
     fetch(`${base}/resources/${provisioned.otherResourceId}`, { method: "DELETE", headers }),
   ]);
 }
+
+/**
+ * Provisioning for the two-agent delegation template (ECO-102).
+ *
+ * Two applications and two resources, each agent owning its own URL as a
+ * resource. The caller's application carries both resources as dependencies:
+ * its own, because the harness impersonates the user against it (the mint's
+ * first audience has to be a resource the application owns), and the
+ * target's, because that is what authorizes the caller's RFC 8693 exchange of
+ * the user's token for the target under the managed default-app-direct-access
+ * policy (the same grant the agent flow relies on in provision-agent.ts). The
+ * zone adds the caller's application identifier as the token's act.sub at
+ * exchange time, so that identifier is what verification asserts on.
+ */
+export interface ProvisionedA2ADelegation {
+  zoneId: string;
+  zoneIssuerUrl: string;
+  callerApplicationId: string;
+  callerApplicationIdentifier: string;
+  callerClientId: string;
+  callerClientSecret: string;
+  targetApplicationId: string;
+  callerResourceId: string;
+  callerResourceIdentifier: string;
+  targetResourceId: string;
+  targetResourceIdentifier: string;
+}
+
+async function createApplication(zoneId: string, token: string, identifier: string): Promise<string> {
+  const resp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/applications`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: identifier, identifier, consent: "implicit" }),
+  });
+  if (!resp.ok) throw new Error(`Create application ${identifier} failed: ${resp.status} ${await resp.text()}`);
+  const { id } = (await resp.json()) as { id: string };
+  return id;
+}
+
+async function createPasswordCredential(
+  zoneId: string,
+  token: string,
+  applicationId: string,
+): Promise<{ clientId: string; clientSecret: string }> {
+  const resp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/application-credentials`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ application_id: applicationId, type: "password" }),
+  });
+  if (!resp.ok) throw new Error(`Create application credential failed: ${resp.status} ${await resp.text()}`);
+  const { identifier, password } = (await resp.json()) as { identifier?: string; password?: string };
+  if (!identifier || !password) throw new Error("Application credential response missing identifier/password");
+  return { clientId: identifier, clientSecret: password };
+}
+
+export async function provisionA2ADelegation(opts: {
+  zoneId: string;
+  zoneIssuerUrl: string;
+  runId: string;
+  token: string;
+  templateDir: string;
+  callerBaseUrl: string;
+  targetBaseUrl: string;
+}): Promise<ProvisionedA2ADelegation> {
+  const { zoneId, zoneIssuerUrl, runId, token, templateDir } = opts;
+  const zoneProviderId = await getZoneProviderId(zoneId, token);
+  console.log(`   Zone provider: ${zoneProviderId}`);
+
+  const callerApplicationIdentifier = `eval-app-${runId}`;
+  const callerApplicationId = await createApplication(zoneId, token, callerApplicationIdentifier);
+  const caller = await createPasswordCredential(zoneId, token, callerApplicationId);
+  console.log(`   Caller application: ${callerApplicationId} (${callerApplicationIdentifier}, credential ${caller.clientId})`);
+
+  const targetApplicationId = await createApplication(zoneId, token, `eval-app-target-${runId}`);
+  console.log(`   Target application: ${targetApplicationId}`);
+
+  const callerResourceId = await createResource({
+    zoneId, token, providerId: zoneProviderId, applicationId: callerApplicationId,
+    name: `eval-resource-caller-${runId}`,
+    identifier: opts.callerBaseUrl,
+  });
+  console.log(`   Caller resource: ${callerResourceId} (${opts.callerBaseUrl})`);
+  const targetResourceId = await createResource({
+    zoneId, token, providerId: zoneProviderId, applicationId: targetApplicationId,
+    name: `eval-resource-target-${runId}`,
+    identifier: opts.targetBaseUrl,
+  });
+  console.log(`   Target resource: ${targetResourceId} (${opts.targetBaseUrl})`);
+
+  await addDependency(zoneId, token, callerApplicationId, callerResourceId);
+  await addDependency(zoneId, token, callerApplicationId, targetResourceId);
+  console.log("   Dependencies: caller application -> caller resource, target resource");
+
+  const permit = await ensureEvalImpersonationPermit(zoneId, token);
+  console.log(`   Policy: ${EVAL_IMPERSONATION_POLICY_NAME} (${permit})`);
+
+  const envContent = [
+    `KEYCARD_URL=${zoneIssuerUrl}`,
+    `KEYCARD_CLIENT_ID=${caller.clientId}`,
+    `KEYCARD_CLIENT_SECRET=${caller.clientSecret}`,
+    `CALLER_BASE_URL=${opts.callerBaseUrl}`,
+    `TARGET_BASE_URL=${opts.targetBaseUrl}`,
+  ].join("\n") + "\n";
+  await fs.writeFile(path.join(templateDir, ".env"), envContent, "utf8");
+  console.log("   Wrote .env");
+
+  return {
+    zoneId,
+    zoneIssuerUrl,
+    callerApplicationId,
+    callerApplicationIdentifier,
+    callerClientId: caller.clientId,
+    callerClientSecret: caller.clientSecret,
+    targetApplicationId,
+    callerResourceId,
+    callerResourceIdentifier: opts.callerBaseUrl,
+    targetResourceId,
+    targetResourceIdentifier: opts.targetBaseUrl,
+  };
+}
+
+export async function teardownA2ADelegation(
+  provisioned: ProvisionedA2ADelegation,
+  token: string,
+): Promise<void> {
+  const headers = { Authorization: `Bearer ${token}` };
+  const base = `${keycardEndpoint()}/zones/${provisioned.zoneId}`;
+  await Promise.all([
+    fetch(`${base}/applications/${provisioned.callerApplicationId}`, { method: "DELETE", headers }),
+    fetch(`${base}/applications/${provisioned.targetApplicationId}`, { method: "DELETE", headers }),
+    fetch(`${base}/resources/${provisioned.callerResourceId}`, { method: "DELETE", headers }),
+    fetch(`${base}/resources/${provisioned.targetResourceId}`, { method: "DELETE", headers }),
+  ]);
+}

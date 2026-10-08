@@ -136,3 +136,120 @@ export async function verifyA2AAgent(opts: VerifyA2AOptions): Promise<VerifyResu
 
   return { passed: checks.every((c) => c.passed), checks };
 }
+
+export interface VerifyA2ADelegationOptions {
+  callerUrl: string;
+  targetUrl: string;
+  /** Zone token for the impersonated user, audienced at the caller's resource. */
+  userAccessToken: string;
+  /** Identifier impersonation minted the token for; the target must report it as sub. */
+  userIdentifier: string;
+  /** The caller's application identifier; the zone records it as act.sub on exchange. */
+  callerApplicationIdentifier: string;
+}
+
+interface TargetReport {
+  sub?: string;
+  act?: { sub?: string; act?: unknown };
+  aud?: string | string[];
+}
+
+async function sendMessage(agentUrl: string, text: string, bearer?: string): Promise<RpcReply> {
+  const resp = await fetch(`${agentUrl}/a2a/jsonrpc`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "A2A-Version": "1.0",
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: crypto.randomUUID(),
+      method: "SendMessage",
+      params: { message: { messageId: crypto.randomUUID(), role: "ROLE_USER", parts: [{ text }] } },
+    }),
+  });
+  const text2 = await resp.text();
+  let body: JsonRpcResponse = {};
+  try { body = JSON.parse(text2) as JsonRpcResponse; } catch { /* 401 bodies are empty */ }
+  return { status: resp.status, challenge: resp.headers.get("www-authenticate"), body, text: text2 };
+}
+
+function messageText(r: RpcReply): string {
+  if (r.body.error) throw new Error(`JSON-RPC error ${r.body.error.code}: ${r.body.error.message ?? ""}`);
+  const result = r.body.result as { message?: { parts?: Array<{ text?: string }> } } | undefined;
+  const parts = result?.message?.parts ?? [];
+  const text = parts.map((p) => p.text ?? "").join("");
+  if (!text) throw new Error(`Reply carries no message text (status ${r.status}): ${r.text.slice(0, 300)}`);
+  return text;
+}
+
+async function checkCard(agentUrl: string) {
+  const resp = await fetch(`${agentUrl}/.well-known/agent-card.json`);
+  if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
+  const card = (await resp.json()) as {
+    name?: string;
+    supportedInterfaces?: Array<{ url?: string; protocolBinding?: string; protocolVersion?: string }>;
+  };
+  if (!card.name) throw new Error("Card has no name");
+  const jsonrpc = (card.supportedInterfaces ?? []).find((i) => /jsonrpc/i.test(i.protocolBinding ?? ""));
+  if (!jsonrpc?.url) throw new Error(`Card has no JSONRPC interface: ${JSON.stringify(card.supportedInterfaces)}`);
+  if (jsonrpc.protocolVersion !== "1.0") {
+    throw new Error(`JSONRPC interface is protocol ${JSON.stringify(jsonrpc.protocolVersion)}, expected "1.0"`);
+  }
+}
+
+/**
+ * Verify the two-agent delegation template: one message goes through the
+ * caller, and the target's reply carries the claims of the exchanged token it
+ * verified. keycardai-a2a answers auth failures the way the TS template does
+ * since #35, as HTTP 401 with an RFC 6750 challenge from keycard_on_error, so
+ * every refusal is asserted on status and challenge, not on a JSON-RPC code.
+ */
+export async function verifyA2ADelegation(opts: VerifyA2ADelegationOptions): Promise<VerifyResult> {
+  const checks: VerifyResult["checks"] = [];
+  const callerUrl = opts.callerUrl.replace(/\/$/, "");
+  const targetUrl = opts.targetUrl.replace(/\/$/, "");
+  let report: TargetReport | undefined;
+
+  await check("both agent cards advertise an A2A 1.0 JSON-RPC interface", async () => {
+    await checkCard(callerUrl);
+    await checkCard(targetUrl);
+  }, checks);
+
+  await check("SendMessage without a bearer: 401 with a Bearer challenge on both agents", async () => {
+    expectChallenge("caller, no bearer", await sendMessage(callerUrl, "hello"));
+    expectChallenge("target, no bearer", await sendMessage(targetUrl, "hello"));
+  }, checks);
+
+  await check("direct call to the target with the user's caller-audienced token: 401 invalid_token", async () => {
+    expectChallenge("target, user token", await sendMessage(targetUrl, "hello", opts.userAccessToken), "invalid_token");
+  }, checks);
+
+  await check("one message through the caller reaches the target and comes back", async () => {
+    const text = messageText(await sendMessage(callerUrl, "who am I?", opts.userAccessToken));
+    const json = text.slice(text.indexOf("{"));
+    try { report = JSON.parse(json) as TargetReport; } catch { throw new Error(`Target report is not JSON: ${text}`); }
+    console.log(`   Target report: ${json}`);
+  }, checks);
+
+  await check("the target saw sub equal to the impersonated user", async () => {
+    if (!report) throw new Error("no target report");
+    if (report.sub !== opts.userIdentifier) throw new Error(`sub ${JSON.stringify(report.sub)}, expected ${opts.userIdentifier}`);
+  }, checks);
+
+  await check("the target saw an act chain naming the caller's application", async () => {
+    if (!report) throw new Error("no target report");
+    if (report.act?.sub !== opts.callerApplicationIdentifier) {
+      throw new Error(`act ${JSON.stringify(report.act)}, expected act.sub ${opts.callerApplicationIdentifier}`);
+    }
+  }, checks);
+
+  await check("the token the target received is audienced to the target only", async () => {
+    if (!report) throw new Error("no target report");
+    const aud = Array.isArray(report.aud) ? report.aud : report.aud ? [report.aud] : [];
+    if (aud.length !== 1 || aud[0] !== targetUrl) throw new Error(`aud ${JSON.stringify(report.aud)}, expected ["${targetUrl}"]`);
+  }, checks);
+
+  return { passed: checks.every((c) => c.passed), checks };
+}

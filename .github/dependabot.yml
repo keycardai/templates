@@ -28,6 +28,7 @@ updates:
 
   - package-ecosystem: uv
     directories:
+      - /a2a-delegation-python
       - /agent-python-langchain
       - /mcp-brokered-credentials-python
       - /mcp-server-python-mcp
