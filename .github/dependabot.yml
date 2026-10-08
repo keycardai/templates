@@ -1,0 +1,69 @@
+# Keeps every template on the current Keycard SDK release. Only Keycard
+# packages are watched; Socket covers third-party dependencies.
+# Runs Sunday 06:00 UTC so a bump lands before the Monday 06:00 UTC eval run
+# (eval.yml) and a bad bump shows up there.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - /autonomous-agent-snowflake-wif
+      - /mcp-brokered-credentials-typescript
+      - /mcp-server-typescript-express
+    schedule:
+      interval: weekly
+      day: sunday
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-name: "@keycardai/*"
+    groups:
+      keycard-npm:
+        patterns:
+          - "@keycardai/*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directories:
+      - /agent-python-langchain
+      - /mcp-brokered-credentials-python
+      - /mcp-server-python-mcp
+    schedule:
+      interval: weekly
+      day: sunday
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-name: "keycardai-*"
+    groups:
+      keycard-uv:
+        patterns:
+          - "keycardai-*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directories:
+      - /mcp-server-go
+      - /mcp-delegated-access-go
+    schedule:
+      interval: weekly
+      day: sunday
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-name: "github.com/keycardai/*"
+    groups:
+      keycard-gomod:
+        patterns:
+          - "github.com/keycardai/*"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
