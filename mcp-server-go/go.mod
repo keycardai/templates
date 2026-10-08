@@ -3,7 +3,7 @@ module mcp-server-go
 go 1.25.0
 
 require (
-	github.com/keycardai/go-sdk v0.18.1
+	github.com/keycardai/go-sdk v0.23.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )
 
