@@ -8,6 +8,8 @@ This template implements AAuth's [identity-only mode](https://github.com/dickhar
 
 The agent authenticates to Snowflake via Keycard's token exchange, obtaining an OIDC access token that Snowflake validates through its Workload Identity Federation configuration. It then runs a [pi-agent-core](https://github.com/earendil-works/pi) LLM loop to query Snowflake and produce results autonomously.
 
+Other agents reach it over [A2A protocol 1.0](https://a2a-protocol.org) (`@keycardai/a2a` 0.4 on `@a2a-js/sdk` 1.x): the agent card at `/.well-known/agent-card.json` advertises a JSON-RPC interface under `supportedInterfaces`, and `/a2a/jsonrpc` accepts `SendMessage` and `GetTask` with an `A2A-Version: 1.0` header. The endpoint is fronted by `requireBearerAuth`, so a missing or rejected Keycard token is answered with HTTP 401 and an RFC 6750 `WWW-Authenticate: Bearer` challenge (`error="invalid_token"` when a token was presented), not with a JSON-RPC error. Agents still on A2A 0.3 (`message/send`) are not served; see the `legacyCompat` option in the `@keycardai/a2a` README if you need the migration window.
+
 ```
 ┌─────────────────────────────────────────────┐
 │  Agent process (this template)              │
@@ -87,7 +89,7 @@ The agent will:
 |---|---|---|---|
 | `AGENT_BASE_URL` | yes | — | Public URL where this agent is reachable |
 | `KEYCARD_URL` | yes | — | Keycard zone URL (`https://<id>.keycard.cloud`) |
-| `KEYCARD_RESOURCE_ID` | no | _(unset)_ | The agent's registered Resource identifier, its `AGENT_BASE_URL`. When set, inbound A2A calls carrying a token minted for any other resource are rejected. |
+| `KEYCARD_RESOURCE_ID` | no | _(unset)_ | The agent's registered Resource identifier, its `AGENT_BASE_URL`. When set, inbound A2A calls carrying a token minted for any other resource are refused with a 401 `invalid_token` challenge. |
 | `SNOWFLAKE_ACCOUNT` | yes | — | Snowflake account identifier (`ORGNAME-ACCTNAME`) |
 | `SNOWFLAKE_USER` | no | — | Snowflake user for WIF authentication |
 | `SNOWFLAKE_DATABASE` | no | — | Default database |

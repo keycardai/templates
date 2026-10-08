@@ -10,12 +10,12 @@
     "ci:verify": "bash scripts/ci-verify.sh"
   },
   "dependencies": {
-    "@a2a-js/sdk": "^0.3.0",
+    "@a2a-js/sdk": "^1.1.0",
     "@earendil-works/pi-agent-core": "^0.74.0",
     "@earendil-works/pi-ai": "^0.74.0",
-    "@keycardai/a2a": "^0.2.0",
+    "@keycardai/a2a": "^0.4.0",
     "@keycardai/mcp": "^2.0.0",
-    "@keycardai/oauth": "^0.6.0",
+    "@keycardai/oauth": "^0.26.0",
     "@modelcontextprotocol/client": "^2.0.0",
     "express": "^5.0.0",
     "snowflake-sdk": "^2.4.1",
@@ -27,6 +27,9 @@
     "@types/node": "^20.11.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "@keycardai/express": "^0.9.1"
   },
   "engines": {
     "node": ">=20.12"

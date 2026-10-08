@@ -1,5 +1,6 @@
 import {
   getKeycardAuth,
+  Role,
   type AgentExecutor,
   type RequestContext,
   type ExecutionEventBus,
@@ -24,9 +25,9 @@ export function createA2AExecutor(
       if (!auth) throw new Error("unauthenticated");
 
       const textPart = requestContext.userMessage.parts.find(
-        (p: any): p is { kind: "text"; text: string } => p.kind === "text",
+        (p) => p.content?.$case === "text",
       );
-      const task = textPart?.text ?? "";
+      const task = textPart?.content?.$case === "text" ? textPart.content.value : "";
 
       const agent = buildAgent({ ...config, task });
 
@@ -45,11 +46,22 @@ export function createA2AExecutor(
 
       const responseMessage: Message = {
         messageId: crypto.randomUUID(),
-        role: "agent",
-        kind: "message",
-        parts: [{ kind: "text", text: responseText }],
+        contextId: requestContext.contextId,
+        taskId: requestContext.taskId,
+        role: Role.ROLE_AGENT,
+        parts: [
+          {
+            content: { $case: "text", value: responseText },
+            metadata: undefined,
+            filename: "",
+            mediaType: "",
+          },
+        ],
+        metadata: undefined,
+        extensions: [],
+        referenceTaskIds: [],
       };
-      eventBus.publish(responseMessage);
+      eventBus.publish({ kind: "message", data: responseMessage });
       eventBus.finished();
     },
 
