@@ -3,6 +3,9 @@ import { z } from "zod";
 const Env = z.object({
   AGENT_BASE_URL: z.string().url(),
   KEYCARD_URL: z.string().url(),
+  // The agent's registered Resource identifier; when set, the inbound
+  // verifier rejects tokens minted for any other resource.
+  KEYCARD_RESOURCE_ID: z.string().optional(),
 
   AGENT_PROVIDER: z.string().default("anthropic"),
   AGENT_MODEL: z.string().default("claude-sonnet-4-20250514"),

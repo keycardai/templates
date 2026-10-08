@@ -19,6 +19,7 @@ import { runBuildAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
 import { verifyServer } from "./verify.js";
 import { runAgentEval } from "./agent-run.js";
+import { runA2AEval } from "./a2a-run.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -91,6 +92,21 @@ if (isAgent) {
   const agentPassed = await runAgentEval({ templateDir: TEMPLATE_DIR, templateName: templateArg, runId: RUN_ID });
   console.log(agentPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
   process.exit(agentPassed ? 0 : 1);
+}
+
+// A2A agent templates are inbound-auth like the servers, but speak A2A: they
+// serve /.well-known/agent-card.json and /a2a/jsonrpc through @keycardai/a2a
+// rather than /mcp, so that dependency in package.json is what identifies them.
+const isA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "package.json"), "utf8")
+  .then((raw) => {
+    const pkg = JSON.parse(raw) as { dependencies?: Record<string, string> };
+    return Boolean(pkg.dependencies?.["@keycardai/a2a"]);
+  })
+  .catch(() => false);
+if (isA2AAgent) {
+  const a2aPassed = await runA2AEval({ templateDir: TEMPLATE_DIR, templateName: templateArg, runId: RUN_ID });
+  console.log(a2aPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
+  process.exit(a2aPassed ? 0 : 1);
 }
 
 let zoneId: string | undefined;

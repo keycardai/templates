@@ -308,6 +308,7 @@ Write `.env` in the project root from `.env.example`:
 ```
 AGENT_BASE_URL=<agent-base-url>
 KEYCARD_URL=https://<id>.keycard.cloud
+KEYCARD_RESOURCE_ID=<agent-base-url>
 SNOWFLAKE_ACCOUNT=<snowflake-account>
 SNOWFLAKE_USER=autonomous_agent
 SNOWFLAKE_DATABASE=<snowflake-database>
@@ -318,6 +319,8 @@ AGENT_MODEL=claude-sonnet-4-20250514
 AGENT_TASK=Query Snowflake for recent data and produce a summary report.
 PORT=<port>
 ```
+
+`KEYCARD_RESOURCE_ID` binds the inbound A2A verifier to the agent's own Resource (identifier `<agent-base-url>`), so a zone token minted for any other resource is refused at `/a2a/jsonrpc`. Register that Resource under the agent application when other agents will call this one; leave the variable unset only while no Resource exists yet.
 
 `.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — the agent uses a public-key application credential (keypair + JWKS), not a shared secret.
 
