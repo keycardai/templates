@@ -51,7 +51,6 @@ if (!templateArg) {
 }
 
 const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", templateArg);
-const SERVER_URL = "http://localhost:8000";
 const RUN_ID = `${Date.now()}`;
 
 // Harness constraints handed to the build agent for templates whose
@@ -66,7 +65,7 @@ const BROKERED_NOTES = [
 // to abort without a zone-bound keycard.toml, neither of which applies once
 // the harness has provisioned.
 const RUBY_NOTES = [
-  "Provisioning is complete. The provisioned .env and keycard.toml are correct as written. Do not restructure keycard.toml toward the SPEC's [org]/[zone] id shape.",
+  "Provisioning is complete.",
   "Do not run keycard CLI commands and do not look for a parent keycard.toml.",
   "Install with bundle install, then confirm config.ru loads.",
 ].join("\n");
@@ -82,6 +81,39 @@ const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true)
 const isRuby = await fs.access(path.join(TEMPLATE_DIR, "Gemfile")).then(() => true).catch(() => false);
 const language: "python" | "typescript" | "go" | "ruby" = isPython ? "python" : isGo ? "go" : isRuby ? "ruby" : "typescript";
 console.log(`Language: ${language}`);
+
+// How the server flow starts a template: a default per language, and an
+// optional per-template override keyed by directory name, like AGENT_NOTES
+// and eval-skip.txt. An override can replace the command, the port, and the
+// health path; SERVER_URL, the stale-port cleanup, and the readiness probe
+// all follow it.
+interface ServerStart {
+  command: [string, string[]];
+  port: number;
+  healthPath: string;
+}
+const DEFAULT_PORT = 8000;
+const DEFAULT_HEALTH_PATH = "/healthz";
+const SERVER_DEFAULTS: Record<typeof language, (port: number) => [string, string[]]> = {
+  python: (port) => ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(port)]],
+  go: () => ["go", ["run", "."]],
+  ruby: (port) => ["bundle", ["exec", "rackup", "--host", "0.0.0.0", "--port", String(port)]],
+  typescript: () => ["node", ["--env-file-if-exists=.env", "dist/server.js"]],
+};
+// No template needs an override today; the map is here for the next one that does.
+const SERVER_OVERRIDES: Record<string, Partial<ServerStart>> = {};
+const override = SERVER_OVERRIDES[templateArg] ?? {};
+const SERVER_PORT = override.port ?? DEFAULT_PORT;
+const SERVER_START: ServerStart = {
+  command: override.command ?? SERVER_DEFAULTS[language](SERVER_PORT),
+  port: SERVER_PORT,
+  healthPath: override.healthPath ?? DEFAULT_HEALTH_PATH,
+};
+const SERVER_URL = `http://localhost:${SERVER_START.port}`;
+
+async function killStaleServer(): Promise<void> {
+  await execFileAsync("bash", ["-c", `lsof -ti :${SERVER_START.port} | xargs kill -9 2>/dev/null; true`]);
+}
 
 // Agent templates are outbound-auth: langgraph serves the graph and the
 // interesting assertion is on the call the agent makes, not on a request made
@@ -168,10 +200,11 @@ try {
     runId: RUN_ID,
     token,
     templateDir: TEMPLATE_DIR,
+    serverPort: SERVER_START.port,
   });
 
-  // Kill any stale server on port 8000 before the agent's smoke tests run
-  await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
+  // Kill any stale server before the agent's smoke tests run
+  await killStaleServer();
 
   // 3. Agent: verify config + install + build
   console.log("\n3. Running agent (verify config + build)...");
@@ -190,18 +223,12 @@ try {
   }
   console.log("   Build succeeded");
 
-  // 4. Start server — kill any stale process on port 8000 first
+  // 4. Start server, killing any stale process on its port first
   console.log("\n4. Starting server...");
-  await execFileAsync("bash", ["-c", "lsof -ti :8000 | xargs kill -9 2>/dev/null; true"]);
+  await killStaleServer();
   await new Promise((r) => setTimeout(r, 500));
 
-  const serverByLanguage: Record<typeof language, [string, string[]]> = {
-    python: ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]],
-    go: ["go", ["run", "."]],
-    ruby: ["bundle", ["exec", "rackup", "--host", "0.0.0.0", "--port", "8000"]],
-    typescript: ["node", ["--env-file-if-exists=.env", "dist/server.js"]],
-  };
-  const [serverCmd, serverArgs] = serverByLanguage[language];
+  const [serverCmd, serverArgs] = SERVER_START.command;
 
   // Inject service account credentials so brokered-credentials templates can start.
   // discoverApplicationCredential picks these up; templates that don't need them ignore them.
@@ -216,7 +243,7 @@ try {
     KEYCARD_CLIENT_SECRET: provisioned.applicationClientSecret,
     KEYCARD_URL: zone.issuerUrl,
     KEYCARD_RESOURCE_ID: provisioned.resourceIdentifier,
-    PORT: "8000",
+    PORT: String(SERVER_START.port),
   };
 
   serverProcess = execFile(serverCmd, serverArgs, {
@@ -232,7 +259,7 @@ try {
   for (let i = 0; i < 10; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
-      const resp = await fetch(`${SERVER_URL}/healthz`);
+      const resp = await fetch(`${SERVER_URL}${SERVER_START.healthPath}`);
       if (resp.ok) { console.log("   Server ready"); break; }
     } catch { /* not yet */ }
     if (i === 9) throw new Error("Server did not start in time");

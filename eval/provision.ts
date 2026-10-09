@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { writeKeycardToml } from "./keycard-toml.js";
 
 export function keycardEndpoint() {
   const e = process.env.CI_KEYCARD_ENDPOINT;
@@ -188,9 +189,8 @@ export async function provision(opts: {
   await fs.writeFile(path.join(templateDir, ".env"), envContent, "utf8");
   console.log(`   Wrote .env`);
 
-  // 5. Write keycard.toml (overwrites the placeholder in the template)
-  const tomlContent = `schema_version = "1"\n\n[project]\nname = "mcp-server-typescript-express"\nkind = "mcp-server"\n\n[zone]\nurl = "${zoneIssuerUrl}"\n\n[server]\ncommand = "npm run start"\nport = ${port}\n`;
-  await fs.writeFile(path.join(templateDir, "keycard.toml"), tomlContent, "utf8");
+  // 5. Write keycard.toml in the CLI's shape for the eval zone
+  await writeKeycardToml(templateDir, zoneId);
   console.log(`   Wrote keycard.toml`);
 
   return {
