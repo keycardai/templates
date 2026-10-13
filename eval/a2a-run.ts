@@ -36,6 +36,7 @@ import {
 import { runBuildAgent } from "./agent.js";
 import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
 import { verifyA2AAgent, verifyA2ADelegation } from "./verify-a2a.js";
+import { stopProcessGroup } from "./stop.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -89,9 +90,7 @@ export async function runA2AEval(opts: {
   const cleanup = async () => {
     if (cleanedUp) return;
     cleanedUp = true;
-    if (agentProcess?.pid) {
-      try { process.kill(-agentProcess.pid); } catch { /* already dead */ }
-    }
+    await stopProcessGroup(agentProcess);
     if (provisioned && !ephemeral && token) {
       await teardownA2AProvisioning(provisioned, token)
         .catch((e) => console.error("Resource cleanup failed:", e));
@@ -250,9 +249,7 @@ async function runA2ADelegationEval(opts: {
     if (cleanedUp) return;
     cleanedUp = true;
     for (const agent of agents) {
-      if (agent.pid) {
-        try { process.kill(-agent.pid); } catch { /* already dead */ }
-      }
+      await stopProcessGroup(agent);
     }
     if (provisioned && !ephemeral && token) {
       await teardownA2ADelegation(provisioned, token)
