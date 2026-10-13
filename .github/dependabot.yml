@@ -39,6 +39,7 @@ updates:
       timezone: Etc/UTC
     allow:
       - dependency-name: "keycardai-*"
+        dependency-type: "direct"
     groups:
       keycard-uv:
         patterns:
