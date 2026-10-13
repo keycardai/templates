@@ -33,8 +33,14 @@ export async function stopProcessGroup(child: ChildProcess | undefined, graceMs 
   }
   if (groupAlive(pid)) {
     try { process.kill(-pid, "SIGKILL"); } catch { /* exited between checks */ }
-    while (groupAlive(pid)) {
+    // Bounded too: a member stuck in the kernel must not hang the eval step,
+    // which is the failure this helper exists to prevent.
+    const killDeadline = Date.now() + graceMs;
+    while (groupAlive(pid) && Date.now() < killDeadline) {
       await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+    if (groupAlive(pid)) {
+      console.warn(`process group ${pid} still alive ${graceMs}ms after SIGKILL; continuing`);
     }
   }
 }
