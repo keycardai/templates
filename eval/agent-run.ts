@@ -26,6 +26,7 @@ import { runBuildAgent } from "./agent.js";
 import { startCalendarStub, type CalendarStub } from "./calendar-stub.js";
 import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
 import { verifyAgent } from "./verify-agent.js";
+import { stopProcessGroup } from "./stop.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,9 +72,7 @@ export async function runAgentEval(opts: {
   const cleanup = async () => {
     if (cleanedUp) return;
     cleanedUp = true;
-    if (agentProcess?.pid) {
-      try { process.kill(-agentProcess.pid); } catch { /* already dead */ }
-    }
+    await stopProcessGroup(agentProcess);
     await stub?.close().catch(() => undefined);
     if (provisioned && !ephemeral && token) {
       await teardownAgentProvisioning(provisioned, token)

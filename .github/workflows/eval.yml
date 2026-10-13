@@ -69,9 +69,12 @@ jobs:
 
       # Available for Python agent templates: the harness boots them with
       # `uv run langgraph dev`. No-op for other languages.
+      # The post-job cache prune only trims what gets saved; it must never
+      # decide whether an eval passed.
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          prune-cache: false
 
       # Available for Ruby templates: the harness boots them with
       # `bundle exec rackup` and the build agent runs `bundle install`.

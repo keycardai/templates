@@ -18,6 +18,7 @@ import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./pro
 import { runBuildAgent } from "./agent.js";
 import { authenticateViaOAuth } from "./browser.js";
 import { verifyServer } from "./verify.js";
+import { stopProcessGroup } from "./stop.js";
 import { runAgentEval } from "./agent-run.js";
 import { runA2AEval } from "./a2a-run.js";
 
@@ -160,9 +161,7 @@ let cleanedUp = false;
 async function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
-  if (serverProcess) {
-    try { process.kill(-(serverProcess.pid!)); } catch { /* already dead */ }
-  }
+  await stopProcessGroup(serverProcess);
   if (provisioned && !ephemeral && token) {
     await teardownProvisioning(provisioned, token).catch((e) => console.error("Resource cleanup failed:", e));
     console.log("   Cleaned up app + resource");
