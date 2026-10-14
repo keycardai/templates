@@ -42,3 +42,8 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 ## Contributing
 
 We welcome new templates. See [CONTRIBUTING.md](./CONTRIBUTING.md) — the bar is intentionally low: a directory, a `README.md`, a `SPEC.md`, and code that runs.
+
+## License
+
+MIT — see [LICENSE](./LICENSE). The Keycard name and logo are trademarks;
+[TRADEMARKS.md](./TRADEMARKS.md) states how they may be used.
