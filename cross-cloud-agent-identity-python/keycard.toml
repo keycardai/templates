@@ -1,0 +1,13 @@
+[org]
+id = "<org-id>"
+
+[zone]
+id = "<zone-id>"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_ID"
+resource = "urn:<name>:client_id"
+
+[[credentials.default]]
+env_var = "KEYCARD_CLIENT_SECRET"
+resource = "urn:<name>:client_secret"
