@@ -3,7 +3,7 @@ name = "mcp-server-python-mcp"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "keycardai-mcp>=2,<3",
+    "keycardai-mcp>=2.3.5,<3",
     "uvicorn>=0.29.0",
     "starlette>=0.27.0",
     "python-dotenv>=1.0.0",

@@ -16,7 +16,7 @@
     "@keycardai/a2a": "^0.4.2",
     "@keycardai/mcp": "^2.0.3",
     "@keycardai/oauth": "^0.26.0",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.2.0",
     "express": "^5.0.0",
     "snowflake-sdk": "^2.4.1",
     "typebox": "^1.1.24",
