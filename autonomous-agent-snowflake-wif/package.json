@@ -14,7 +14,7 @@
     "@earendil-works/pi-agent-core": "^0.74.0",
     "@earendil-works/pi-ai": "^0.74.0",
     "@keycardai/a2a": "^0.4.2",
-    "@keycardai/mcp": "^2.0.3",
+    "@keycardai/mcp": "^2.0.5",
     "@keycardai/oauth": "^0.26.0",
     "@modelcontextprotocol/client": "^2.2.0",
     "express": "^5.0.0",
