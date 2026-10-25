@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -654,7 +654,7 @@ wheels = [
 
 [[package]]
 name = "keycardai-oauth"
-version = "0.33.0"
+version = "0.33.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -662,9 +662,9 @@ dependencies = [
     { name = "joserfc" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ff/76/fd3f3fcf1f6a0063dca3fa5afaf12df353e4fd760a61f280b9ea8360d3b3/keycardai_oauth-0.33.0.tar.gz", hash = "sha256:1114c400ee34518554bff958cf2fcdc3cd1c6764205bef5e09b92ff829dce272", size = 245977, upload-time = "2026-10-09T23:57:57.814Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/26/99a9760a6a98e46f7126b051639e68b4b414880d6416aeffeb986906e217/keycardai_oauth-0.33.2.tar.gz", hash = "sha256:fe8ccabbed615c35d2742f4d3eed4302b715a8719222443d6e3f87373673732a", size = 249957, upload-time = "2026-10-20T20:58:27.794Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/b0/5aff0cb10a842e5fb46a901a490e35db9ad7c49f5b2361731ae72c39b52a/keycardai_oauth-0.33.0-py3-none-any.whl", hash = "sha256:7e03a6311a327d5c411de7256f26eef482c260317de1a239ef03866fa670ab8f", size = 109088, upload-time = "2026-10-09T23:57:56.226Z" },
+    { url = "https://files.pythonhosted.org/packages/44/84/8d5a279eb563b5a97154cea711d144612d71edb90166dc172ad031148291/keycardai_oauth-0.33.2-py3-none-any.whl", hash = "sha256:ce1239a6e35dc08af2853a87b3fd20db6e8e0c5229d075c23d1949f07638331f", size = 109644, upload-time = "2026-10-20T20:58:26.212Z" },
 ]
 
 [[package]]
