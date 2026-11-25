@@ -77,7 +77,19 @@ npx playwright install chromium
 Edit `eval/keycard.toml` and replace the placeholders:
 
 - `[org] id`: your Keycard organization ID (Console → Settings)
-- `[zone] id`: a dedicated eval zone ID (create one in Console, configure zone auth with no external IDP and no invite requirement)
+- `[zone] id`: a dedicated eval zone ID (create one in Console, then set its Identity Provider as in [Zone sign-in](#zone-sign-in))
+
+### Zone sign-in
+
+Password login works only in the Keycard ID Zone: since svc-iam ID-809 (October 27, 2026) every other zone has `password_login_enabled` off, and the Management API refuses to turn it back on. A custom zone with no Identity Provider fails every authorize request with `No User Identity Provider configured in Zone`.
+
+The eval zone therefore uses its organization's Organization Zone as its Identity Provider, as in [Use your Organization Zone as the Identity Provider](https://docs.keycard.ai/admin/zones/#use-your-organization-zone-as-the-identity-provider):
+
+1. Copy the Organization Zone's Issuer URL from **Settings → Connection** in the organization.
+2. In the eval zone, add a Provider with that Issuer URL, and leave Client ID and Client Secret empty.
+3. In the eval zone's **Settings**, under **Zone sign in configuration**, select that Provider as the **Identity Provider** and save.
+
+The test user is then a Keycard account (signed up at the Keycard ID Zone) that is a member of the organization, and a browser sign-in passes through three hops: the eval zone, the Organization Zone, and the ID Zone's login form. `browser.ts` submits the identifier and password wherever they're asked for and approves each consent screen on the way. The organization must not enforce SSO for this user, or the ID Zone hop sends the browser to the SSO provider instead of a password form.
 
 ### 2. Provision vault resources
 
@@ -105,7 +117,7 @@ Run once with a visible browser to sign up the test user in the eval zone:
 EVAL_HEADLESS=false keycard run -- npm run eval -- --template mcp-server-typescript-express
 ```
 
-When the browser opens, sign up with the email/password from your vault resources. Verify your email. After that, all subsequent runs are fully headless.
+When the browser opens, sign in with the email/password from your vault resources, signing up at the Keycard ID Zone first if the account doesn't exist yet, and verify the email. The first sign-in creates the test user in the eval zone. After that, all subsequent runs are fully headless.
 
 ## Run
 

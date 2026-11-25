@@ -78,6 +78,11 @@ export async function authenticateViaOAuth(opts: {
   authorizeUrl.searchParams.set("resource", opts.resourceIdentifier);
 
   const codePromise = captureCallbackCode();
+  // An error callback (for example "No User Identity Provider configured in
+  // Zone") can arrive while the browser is still open. Mark the rejection
+  // handled here so it surfaces at `await codePromise` below, where the
+  // caller's error handling and teardown run, instead of crashing the process.
+  codePromise.catch(() => undefined);
 
   const browser = await chromium.launch({ headless: opts.headless ?? true });
   const context = await browser.newContext();
@@ -85,75 +90,7 @@ export async function authenticateViaOAuth(opts: {
 
   try {
     await page.goto(authorizeUrl.toString());
-
-    // May land on identifier page first, or skip straight to password page
-    // depending on zone config and whether the browser has a prior session.
-    const identifierInput = page.locator('input[name="identifier"]');
-    const passwordInput = page.locator('input[name="password"]');
-
-    // Wait for whichever shows up first
-    try {
-      await Promise.race([
-        identifierInput.waitFor({ timeout: 15_000 }),
-        passwordInput.waitFor({ timeout: 15_000 }),
-      ]);
-    } catch {
-      await dumpPage(page, "login-form-missing");
-      throw new Error(
-        `Login form did not render at ${page.url()} ` +
-        `(expected input[name="identifier"] or input[name="password"]). See dumped HTML above.`,
-      );
-    }
-
-    if (await identifierInput.isVisible()) {
-      await page.fill('input[name="identifier"]', opts.testUserEmail);
-      await page.click('button[type="submit"]');
-      await page.waitForSelector('input[name="password"]');
-    }
-
-    // Password page
-    await page.fill('input[name="username"]', opts.testUserEmail);
-    await page.fill('input[name="password"]', opts.testUserPassword);
-    await page.click('button[type="submit"]');
-
-    // After submitting credentials, wait to see where we land:
-    // - /login/signup or /login/verify-email → new user, need to sign up
-    // - consent page (approve form) → existing user, just approve
-    // - callback URL → already authorized (rare)
-    const silence = () => null;
-    const postPasswordOutcome = await Promise.race([
-      page.waitForURL(`${CALLBACK_URL}**`, { timeout: 45_000 }).then(() => "callback" as const).catch(silence),
-      page.waitForURL("**/login/signup**", { timeout: 45_000 }).then(() => "signup" as const).catch(silence),
-      page.waitForURL("**/login/verify-email**", { timeout: 45_000 }).then(() => "verify" as const).catch(silence),
-      page.waitForURL("**/login/consent**", { timeout: 45_000 }).then(() => "consent-url" as const).catch(silence),
-      page.waitForSelector("form:has(input[name='action'][value='approve']) button[type='submit']", { timeout: 45_000 }).then(() => "consent" as const).catch(silence),
-    ]);
-
-    if (!postPasswordOutcome) {
-      await dumpPage(page, "post-password-stall");
-      throw new Error(
-        `OAuth flow stalled after password submission — unexpected page: ${page.url()}\n` +
-        `See dumped HTML above. Run with EVAL_HEADLESS=false to inspect the browser state.`,
-      );
-    }
-
-    if (postPasswordOutcome === "signup" || postPasswordOutcome === "verify") {
-      if (opts.headless === false) {
-        console.log("\n  ⚠️  New user detected. Complete sign-up in the browser window.");
-        console.log("     After signing up and verifying your email, the eval will continue automatically.\n");
-        await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 300_000 });
-      } else {
-        throw new Error(
-          `Test user '${opts.testUserEmail}' does not have an account in this zone.\n` +
-          `Run once with EVAL_HEADLESS=false to sign up and verify the account.`,
-        );
-      }
-    } else if (postPasswordOutcome === "consent" || postPasswordOutcome === "consent-url") {
-      await page.waitForSelector("form:has(input[name='action'][value='approve']) button[type='submit']", { timeout: 10_000 });
-      await page.click("form:has(input[name='action'][value='approve']) button[type='submit']");
-      await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 15_000 });
-    }
-    // else: postPasswordOutcome === "callback" — already redirected
+    await driveLogin(page, opts);
   } finally {
     await browser.close();
   }
@@ -179,4 +116,142 @@ export async function authenticateViaOAuth(opts: {
 
   const tokens = await tokenResp.json() as { access_token: string; id_token?: string };
   return { accessToken: tokens.access_token, idToken: tokens.id_token };
+}
+
+// Sign-in can span several zones. With the eval zone's Identity Provider set
+// to the Organization Zone, the authorize request goes eval zone -> Organization
+// Zone -> Keycard ID Zone, and each hop can show its own page: an identifier
+// form, a password form, or a consent screen. The forms differ by zone: the ID
+// Zone uses input#username and input#current-password, a zone's own login page
+// uses input[name="identifier"], input[name="username"] and input[name="password"].
+const IDENTIFIER_FIELD = 'input#username, input[name="identifier"]';
+const PASSWORD_FIELD = 'input#current-password, input[name="password"]';
+// Provider buttons on the ID Zone login page are also submit buttons; they carry data-provider.
+const PRIMARY_BUTTON = 'button[type="submit"]:not([data-provider])';
+const APPROVE_BUTTON = "form:has(input[name='action'][value='approve']) button[type='submit']";
+const MAX_LOGIN_STEPS = 8;
+
+type LoginPage = "callback" | "signup" | "consent" | "password" | "identifier" | "error";
+
+/** Wait until the page shows something the login loop knows how to handle. */
+async function nextLoginPage(page: Page): Promise<LoginPage | null> {
+  const silence = () => null;
+  const timeout = 45_000;
+  const seen = await Promise.race([
+    page.waitForURL(`${CALLBACK_URL}**`, { timeout }).then(() => "callback" as const).catch(silence),
+    page.waitForURL(/\/login\/(signup|verify-email)/, { timeout }).then(() => "signup" as const).catch(silence),
+    page.waitForURL("**/login/consent**", { timeout }).then(() => "consent" as const).catch(silence),
+    page.waitForSelector(APPROVE_BUTTON, { timeout }).then(() => "consent" as const).catch(silence),
+    page.waitForSelector(PASSWORD_FIELD, { state: "visible", timeout }).then(() => "password" as const).catch(silence),
+    page.waitForSelector(IDENTIFIER_FIELD, { state: "visible", timeout }).then(() => "identifier" as const).catch(silence),
+    page.getByRole("heading", { name: "Authentication Error" }).waitFor({ timeout }).then(() => "error" as const).catch(silence),
+  ]);
+  // A zone's own login page shows the username and password fields together,
+  // so a page with a visible password field is always the password step.
+  if (seen === "identifier" && (await page.locator(PASSWORD_FIELD).first().isVisible())) return "password";
+  return seen;
+}
+
+/** Fill the field, then confirm the value stuck (hydration can reset an early fill). */
+async function fill(page: Page, selector: string, value: string): Promise<void> {
+  const field = page.locator(selector).first();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await field.fill(value);
+    if ((await field.inputValue()) === value) return;
+    await page.waitForTimeout(500);
+  }
+  throw new Error(`Could not fill ${selector} at ${page.url()}`);
+}
+
+/** After a submit, wait until the page navigates or the element just acted on goes away. */
+async function settle(page: Page, before: string, actedOn: string): Promise<void> {
+  const silence = () => undefined;
+  await Promise.race([
+    page.waitForURL((url) => url.toString() !== before, { timeout: 15_000 }).catch(silence),
+    page.locator(actedOn).first().waitFor({ state: "hidden", timeout: 15_000 }).catch(silence),
+  ]);
+}
+
+/**
+ * Drive the browser from the authorize request to the callback: submit the
+ * identifier and password wherever they're asked for, and approve each
+ * consent screen, for up to MAX_LOGIN_STEPS pages.
+ */
+async function driveLogin(
+  page: Page,
+  opts: { testUserEmail: string; testUserPassword: string; headless?: boolean },
+): Promise<void> {
+  const handled: string[] = [];
+  for (let step = 0; step < MAX_LOGIN_STEPS; step++) {
+    const current = await nextLoginPage(page);
+    const before = page.url();
+    handled.push(`${current ?? "stall"} @ ${new URL(before).host}`);
+
+    switch (current) {
+      case "callback":
+        return;
+
+      case null:
+        await dumpPage(page, "login-stall");
+        throw new Error(
+          `OAuth flow stalled on an unexpected page: ${page.url()}\n` +
+          `Pages so far: ${handled.join(" -> ")}. See dumped HTML above. ` +
+          `Run with EVAL_HEADLESS=false to inspect the browser state.`,
+        );
+
+      case "error":
+        await dumpPage(page, "login-provider-error");
+        throw new Error(
+          `An identity provider in the sign-in chain returned an error at ${page.url()}\n` +
+          `Pages so far: ${handled.join(" -> ")}.`,
+        );
+
+      case "signup":
+        if (opts.headless === false) {
+          console.log("\n  ⚠️  New user detected. Complete sign-up in the browser window.");
+          console.log("     After signing up and verifying your email, the eval will continue automatically.\n");
+          await page.waitForURL(`${CALLBACK_URL}**`, { timeout: 300_000 });
+          return;
+        }
+        throw new Error(
+          `Test user '${opts.testUserEmail}' has no account at ${new URL(page.url()).host}.\n` +
+          `Run once with EVAL_HEADLESS=false to sign up and verify the account.`,
+        );
+
+      case "consent": {
+        const approve = page.locator(APPROVE_BUTTON).first();
+        if (await approve.isVisible().catch(() => false)) {
+          await approve.click();
+        } else {
+          await page.getByRole("button", { name: /^allow/i }).first().click();
+        }
+        await settle(page, before, APPROVE_BUTTON);
+        break;
+      }
+
+      case "password": {
+        // A zone's own login page asks for the username beside the password.
+        const username = page.locator('input[name="username"]').first();
+        if ((await username.isVisible().catch(() => false)) && (await username.isEditable().catch(() => false))) {
+          await fill(page, 'input[name="username"]', opts.testUserEmail);
+        }
+        await fill(page, PASSWORD_FIELD, opts.testUserPassword);
+        await page.locator(PRIMARY_BUTTON).first().click();
+        await settle(page, before, PASSWORD_FIELD);
+        break;
+      }
+
+      case "identifier":
+        await fill(page, IDENTIFIER_FIELD, opts.testUserEmail);
+        await page.locator(PRIMARY_BUTTON).first().click();
+        await settle(page, before, IDENTIFIER_FIELD);
+        break;
+    }
+  }
+
+  await dumpPage(page, "login-too-many-steps");
+  throw new Error(
+    `OAuth flow did not reach the callback within ${MAX_LOGIN_STEPS} pages: ` +
+    `${handled.join(" -> ")}. See dumped HTML above.`,
+  );
 }
