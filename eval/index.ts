@@ -70,9 +70,19 @@ const RUBY_NOTES = [
   "Do not run keycard CLI commands and do not look for a parent keycard.toml.",
   "Install with bundle install, then confirm config.ru loads.",
 ].join("\n");
+// The delegated-access server exits at startup without KEYCARD_CLIENT_ID and
+// KEYCARD_CLIENT_SECRET. The harness passes them only to the server it starts
+// after the build, so the SPEC's smoke test cannot run inside the build step.
+const GO_DELEGATED_NOTES = [
+  "Provisioning is complete. The provisioned .env and keycard.toml are correct as written.",
+  "KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET are deliberately absent from .env and from your shell. The harness passes them to the server it starts after this step. Do not look for them or add them.",
+  "Do not start the server and do not run the SPEC's smoke test (section 3). The harness starts the server and probes /healthz, the OAuth metadata, /mcp, and /broker itself.",
+  "Do not probe the zone or the server over HTTP. Your job is: go mod download, then go build ./..., then report.",
+].join("\n");
 const AGENT_NOTES: Record<string, string> = {
   "mcp-brokered-credentials-python": BROKERED_NOTES,
   "mcp-brokered-credentials-typescript": BROKERED_NOTES,
+  "mcp-delegated-access-go": GO_DELEGATED_NOTES,
   "mcp-server-ruby": RUBY_NOTES,
 };
 
@@ -215,7 +225,9 @@ try {
     notes: AGENT_NOTES[templateArg],
   });
 
-  console.log(agentResult.output.split("\n").slice(-5).join("\n"));
+  // A failed build prints the agent's whole transcript, so the turns it spent
+  // are in the job log.
+  console.log(agentResult.success ? agentResult.output.split("\n").slice(-5).join("\n") : agentResult.output);
 
   if (!agentResult.success) {
     throw new Error("Build failed: the agent could not build the template");

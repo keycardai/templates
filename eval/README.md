@@ -135,6 +135,12 @@ deliberately differs from it. The two `mcp-brokered-credentials-*` templates
 carry notes saying the provisioned zone-native resource and config are correct
 as written, because without them the agent spent every turn reconciling the
 config toward the SPEC's brokered external-provider setup and never built.
+`mcp-delegated-access-go` carries a note telling the agent to build without
+starting the server: its `main.go` exits without `KEYCARD_CLIENT_ID` and
+`KEYCARD_CLIENT_SECRET`, which the harness passes only to the server it starts
+after the build, so the SPEC's smoke test cannot pass inside the build step.
+When the build agent fails, the harness prints its whole transcript (tool
+output capped at 500 characters per call) instead of the last five lines.
 
 ### Ruby coverage
 
