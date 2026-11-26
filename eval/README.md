@@ -157,6 +157,19 @@ agent to provision through `keycard agent api` and to abort without a
 zone-bound `keycard.toml`, which no longer applies once the harness has
 provisioned.
 
+### Java coverage
+
+`mcp-server-java` is discovered by its `build.gradle.kts` and takes the
+MCP-server flow. The workflow installs Temurin 21 and `setup-gradle` only when
+the template has a `build.gradle.kts`, then runs the Gradle wrapper once to
+download Gradle and resolve dependencies, because each of the build agent's
+shell commands times out after 60 seconds. The build agent runs
+`./gradlew installDist`, and the harness starts the server with the generated
+start script `build/install/<template>/bin/<template>`, passing `KEYCARD_URL`,
+`KEYCARD_RESOURCE_ID`, and `PORT` through the process environment as it does
+for Go and Ruby. The template carries a notes entry for the same reason as Ruby,
+plus the build command the harness depends on.
+
 ## Environment variables
 
 | Variable | Used by | Meaning |
