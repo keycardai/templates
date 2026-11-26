@@ -161,7 +161,7 @@ Run from the project directory after provisioning. Do not leave processes behind
 
 ```bash
 ./gradlew installDist
-KEYCARD_URL="$KEYCARD_URL" PORT=<port> ./build/install/mcp-server-java/bin/mcp-server-java &
+(set -a && . ./.env && set +a && exec ./build/install/mcp-server-java/bin/mcp-server-java) &
 SERVER_PID=$!
 # wait for the server to accept connections
 curl -fsS http://localhost:<port>/healthz | head -1
@@ -204,7 +204,7 @@ The skill renders the handoff from the following data:
 | `name` | `<name>` | n/a | Kebab-case project name |
 | `port` | `<port>` | n/a | Local HTTP port the server listens on |
 | `build_command` | `./gradlew installDist` | this session | Downloads dependencies and builds the start script |
-| `start_command` | `cd <name> && ./build/install/mcp-server-java/bin/mcp-server-java` | their terminal (separate, keep open) | The server must be reachable at `http://localhost:<port>/mcp` for the remaining steps |
+| `start_command` | `cd <name> && set -a && . ./.env && set +a && ./build/install/mcp-server-java/bin/mcp-server-java` | their terminal (separate, keep open) | The server must be reachable at `http://localhost:<port>/mcp` for the remaining steps |
 | `claude_register_command` | `claude mcp add --transport http <name> http://localhost:<port>/mcp` | this session | Adds the server to Claude's MCP config |
 | `restart_command` | `keycard run -- claude` | their terminal | Claude only discovers MCP servers at startup |
 | `auth_command` | `/mcp` → pick `<name>` | new agent session | Completes the OAuth flow so Keycard issues a credential for the resource |
