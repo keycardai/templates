@@ -153,12 +153,16 @@ const isA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "package.json"), "u
 const isPythonA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "pyproject.toml"), "utf8")
   .then((raw) => /^\s*"keycardai-a2a[\s>=<~!\[]/m.test(raw))
   .catch(() => false);
-if (isA2AAgent || isPythonA2AAgent) {
+// A Java A2A template declares ai.keycard:keycard-a2a in build.gradle.kts.
+const isJavaA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "build.gradle.kts"), "utf8")
+  .then((raw) => /"ai\.keycard:keycard-a2a:/.test(raw))
+  .catch(() => false);
+if (isA2AAgent || isPythonA2AAgent || isJavaA2AAgent) {
   const a2aPassed = await runA2AEval({
     templateDir: TEMPLATE_DIR,
     templateName: templateArg,
     runId: RUN_ID,
-    language: isPythonA2AAgent ? "python" : "typescript",
+    language: isPythonA2AAgent ? "python" : isJavaA2AAgent ? "java" : "typescript",
   });
   console.log(a2aPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
   process.exit(a2aPassed ? 0 : 1);

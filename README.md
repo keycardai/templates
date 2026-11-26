@@ -29,6 +29,7 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 | [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | FastMCP |
 | [`mcp-server-ruby`](./mcp-server-ruby) | MCP server | Ruby | Rack |
 | [`mcp-server-java`](./mcp-server-java) | MCP server | Java | Jetty (Servlet) |
+| [`a2a-delegation-java`](./a2a-delegation-java) | A2A agents | Java | Jetty (Servlet) |
 | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
 | [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
 | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |

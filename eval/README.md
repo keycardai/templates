@@ -164,6 +164,16 @@ start script `build/install/<template>/bin/<template>`, passing `KEYCARD_URL`,
 for Go and Ruby. The template carries a notes entry for the same reason as Ruby,
 plus the build command the harness depends on.
 
+`a2a-delegation-java` is told apart from the MCP server by
+`ai.keycard:keycard-a2a` in its `build.gradle.kts` and takes the two-agent
+delegation flow that `a2a-delegation-python` takes: two applications and two
+resources, the user's token minted for the caller by impersonation (no
+browser), and the same `verifyA2ADelegation` checks. The harness runs
+`./gradlew -q installDist` before the build agent, starts each agent as
+`build/install/a2a-delegation-java/bin/a2a-delegation-java caller|target`, and
+passes the provisioned `.env` through the process environment. These two
+templates carry Java's live rows (SDK-114).
+
 ## Environment variables
 
 | Variable | Used by | Meaning |

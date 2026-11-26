@@ -73,6 +73,7 @@ updates:
   - package-ecosystem: gradle
     directories:
       - /mcp-server-java
+      - /a2a-delegation-java
     schedule:
       interval: weekly
       day: sunday
