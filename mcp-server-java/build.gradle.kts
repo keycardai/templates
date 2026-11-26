@@ -9,7 +9,7 @@ repositories {
 
 dependencies {
     // Keycard: bearer-token filter and OAuth metadata servlets (pulls in keycard-oauth).
-    implementation("ai.keycard:keycard-mcp:0.6.0")
+    implementation("ai.keycard:keycard-mcp:0.10.0")
     // The official MCP Java SDK and its Streamable HTTP servlet transport.
     implementation("io.modelcontextprotocol.sdk:mcp:2.2.0")
     // Embedded Jetty supplies the Servlet API that keycard-mcp compiles against.

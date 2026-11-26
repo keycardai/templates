@@ -23,7 +23,7 @@ The Gradle wrapper is checked in, so the only prerequisite is a JDK 17 or newer.
 | Env var | Default | Purpose |
 |---|---|---|
 | `KEYCARD_URL` | _(required)_ | The zone's OIDC issuer URL. The verifier trusts tokens from it and resolves its JWKS. |
-| `KEYCARD_RESOURCE_ID` | _(unset)_ | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. |
+| `KEYCARD_RESOURCE_ID` | `http://localhost:<PORT>/mcp` | The registered Resource identifier. Drives the protected-resource metadata document, the 401 `resource_metadata` challenge URL and the verifier audience. |
 | `PORT` | `8000` | Local HTTP port. |
 
 Keycard configuration is read in `Server.java` and passed to the SDK explicitly. The SDK reads no environment variables of its own.

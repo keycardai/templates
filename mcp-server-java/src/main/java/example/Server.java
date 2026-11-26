@@ -1,9 +1,7 @@
 package example;
 
-import ai.keycard.mcp.AuthorizationServerMetadataServlet;
-import ai.keycard.mcp.ProtectedResourceMetadataServlet;
+import ai.keycard.mcp.AuthProvider;
 import ai.keycard.mcp.RequireBearerAuthFilter;
-import ai.keycard.oauth.TokenVerifier;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
@@ -54,10 +52,13 @@ public final class Server {
             System.exit(1);
         }
         URI zone = URI.create(keycardUrl);
-        // The registered Resource identifier, e.g. http://localhost:8000/mcp. When set, the
-        // verifier rejects tokens minted for any other resource.
-        String resourceId = System.getenv("KEYCARD_RESOURCE_ID");
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8000"));
+        // The registered Resource identifier, e.g. http://localhost:8000/mcp. One identifier
+        // drives the protected-resource document, the 401 challenge URL and the verifier audience.
+        String resourceId = System.getenv("KEYCARD_RESOURCE_ID");
+        if (resourceId == null || resourceId.isBlank()) {
+            resourceId = "http://localhost:" + port + MCP_PATH;
+        }
 
         // 1. Build the MCP server and register tools. This is the official SDK only; Keycard is
         // not involved here. Add your own tools alongside hello.
@@ -69,31 +70,30 @@ public final class Server {
                 .toolCall(helloTool(), (exchange, request) -> hello(request))
                 .build();
 
-        // 2. The verifier trusts only tokens issued by this Keycard zone and resolves their
-        // signing keys from the zone's JWKS.
-        TokenVerifier.Builder verifier = TokenVerifier.builder(zone);
-        if (resourceId != null && !resourceId.isBlank()) {
-            verifier.audiences(resourceId);
-        }
+        // 2. Bind the zone and resource identifier once so token verification, protected-resource
+        // metadata and 401 challenges share the same policy.
+        AuthProvider auth = AuthProvider.builder(zone)
+                .resourceIdentifier(resourceId)
+                .build();
 
         ServletContextHandler context = new ServletContextHandler();
 
         // 3a. OAuth metadata so MCP clients can discover how to authenticate.
         context.addServlet(
-                new ServletHolder(ProtectedResourceMetadataServlet.builder(zone)
+                new ServletHolder(auth.protectedResourceMetadata()
                         .resourceName(NAME)
                         .scopesSupported(SCOPE)
                         .build()),
                 "/.well-known/oauth-protected-resource/*");
         context.addServlet(
-                new ServletHolder(AuthorizationServerMetadataServlet.of(zone)),
+                new ServletHolder(auth.authorizationServerMetadata()),
                 "/.well-known/oauth-authorization-server");
 
         // 3b. Protect /mcp with bearer auth scoped to mcp:tools. An unauthenticated request gets a
         // 401 with an RFC 6750 challenge advertising resource_metadata, which is how a client
         // discovers where to authenticate. The transport answers on an async context, so the
         // filter and the servlet are both async-supported.
-        FilterHolder bearer = new FilterHolder(RequireBearerAuthFilter.builder(verifier.build())
+        FilterHolder bearer = new FilterHolder(RequireBearerAuthFilter.builder(auth)
                 .requiredScopes(SCOPE)
                 .build());
         bearer.setAsyncSupported(true);
