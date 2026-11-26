@@ -25,7 +25,7 @@ jobs:
           else
             skip=$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' eval/eval-skip.txt)
             dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
-              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; -o -exec test -f '{}/go.mod' \; -o -exec test -f '{}/Gemfile' \; \) -print \
+              \( -exec test -f '{}/package.json' \; -o -exec test -f '{}/pyproject.toml' \; -o -exec test -f '{}/go.mod' \; -o -exec test -f '{}/Gemfile' \; -o -exec test -f '{}/build.gradle.kts' \; \) -print \
               | sed 's|^\./||' | sort | grep -vxF -f <(echo "$skip") | jq -R . | jq -sc .)
             echo "templates=$dirs" >> "$GITHUB_OUTPUT"
           fi
@@ -91,6 +91,26 @@ jobs:
           # against the CI Ruby rather than whichever Ruby wrote a lockfile.
           bundler-cache: true
           working-directory: ${{ matrix.template }}
+
+      # Available for Java templates: the build agent runs the Gradle wrapper
+      # and the harness starts the server from its installDist output. The
+      # wrapper download and dependency resolution happen here because each of
+      # the agent's shell commands times out after 60 seconds. Guarded like Ruby.
+      - name: Check for build.gradle.kts
+        id: gradle
+        run: |
+          if [ -f "${{ matrix.template }}/build.gradle.kts" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-java@v4
+        if: steps.gradle.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.gradle.outputs.present == 'true'
+      - name: Warm the Gradle wrapper and dependencies
+        if: steps.gradle.outputs.present == 'true'
+        working-directory: ${{ matrix.template }}
+        run: ./gradlew -q dependencies --configuration runtimeClasspath > /dev/null
 
       - name: Install eval dependencies
         working-directory: eval

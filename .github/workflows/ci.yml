@@ -18,6 +18,7 @@ jobs:
       python: ${{ steps.find.outputs.python }}
       go: ${{ steps.find.outputs.go }}
       ruby: ${{ steps.find.outputs.ruby }}
+      java: ${{ steps.find.outputs.java }}
     steps:
       - uses: actions/checkout@v4
       - id: find
@@ -28,7 +29,7 @@ jobs:
           # the rest. Every language must be written on every path or the
           # matrix job reads an empty output and silently does nothing.
           emit_one() {
-            for lang in typescript python go ruby; do
+            for lang in typescript python go ruby java; do
               if [ "$lang" = "$1" ]; then
                 echo "$lang=[\"$TEMPLATE\"]" >> "$GITHUB_OUTPUT"
               else
@@ -51,12 +52,14 @@ jobs:
               emit_one go
             elif [ -f "$TEMPLATE/Gemfile" ]; then
               emit_one ruby
+            elif [ -f "$TEMPLATE/build.gradle.kts" ]; then
+              emit_one java
             elif [ -f "$TEMPLATE/pyproject.toml" ]; then
               emit_one python
             else
               # Previously this fell through to python, so a template in any
               # other language was verified with the wrong toolchain.
-              echo "::error::Cannot detect the language of '$TEMPLATE': no package.json, go.mod, Gemfile or pyproject.toml"
+              echo "::error::Cannot detect the language of '$TEMPLATE': no package.json, go.mod, Gemfile, build.gradle.kts or pyproject.toml"
               exit 1
             fi
           else
@@ -64,6 +67,7 @@ jobs:
               echo "typescript=$(discover package.json)"
               echo "go=$(discover go.mod)"
               echo "ruby=$(discover Gemfile)"
+              echo "java=$(discover build.gradle.kts)"
               echo "python=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
                 -exec test -f '{}/pyproject.toml' \; \
                 ! -exec test -f '{}/package.json' \; -print \
@@ -300,6 +304,74 @@ jobs:
           # against the CI Ruby rather than whichever Ruby wrote a lockfile.
           bundler-cache: true
           working-directory: ${{ matrix.template }}
+
+      - name: Live-zone checks skipped on Dependabot PRs
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        run: >
+          echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
+          Monday's eval.yml run on main covers this bump after merge."
+
+      - name: Create ephemeral zone
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        id: zone
+        run: |
+          ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
+          TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
+            -d "grant_type=client_credentials" \
+            -d "client_id=${CI_KEYCARD_CLIENT_ID}" \
+            -d "client_secret=${CI_KEYCARD_CLIENT_SECRET}" \
+            | jq -r '.access_token')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then echo "Failed to obtain access token"; exit 1; fi
+          echo "::add-mask::$TOKEN"
+          echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          sleep 5
+          ZONE=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/zones" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"${ZONE_NAME}\"}")
+          echo "ZONE_ID=$(echo "$ZONE" | jq -r '.id')" >> "$GITHUB_OUTPUT"
+          echo "KEYCARD_URL=$(echo "$ZONE" | jq -r '.protocols.oauth2.issuer')" >> "$GITHUB_OUTPUT"
+
+      - name: Start server and verify
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        working-directory: ${{ matrix.template }}
+        env:
+          PORT: "8000"
+          KEYCARD_URL: ${{ steps.zone.outputs.KEYCARD_URL }}
+          KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+        run: bash scripts/ci-verify.sh
+
+      - name: Delete ephemeral zone
+        if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        run: |
+          [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
+            curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
+              -H "Authorization: Bearer $TOKEN" && echo "Zone deleted" || true
+
+  verify-java:
+    needs: discover
+    if: needs.discover.outputs.java != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.discover.outputs.java) }}
+    env:
+      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        working-directory: ${{ matrix.template }}
+        run: ./gradlew build installDist
 
       - name: Live-zone checks skipped on Dependabot PRs
         if: github.event.pull_request.user.login == 'dependabot[bot]'

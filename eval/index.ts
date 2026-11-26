@@ -70,17 +70,27 @@ const RUBY_NOTES = [
   "Do not run keycard CLI commands and do not look for a parent keycard.toml.",
   "Install with bundle install, then confirm config.ru loads.",
 ].join("\n");
+// The Java SPEC has the same provisioning steps as the Ruby one. The harness
+// starts the server from the installDist output, so the build must produce it.
+const JAVA_NOTES = [
+  "Provisioning is complete.",
+  "Do not run keycard CLI commands and do not look for a parent keycard.toml.",
+  "Build with ./gradlew installDist. The harness starts build/install/mcp-server-java/bin/mcp-server-java.",
+].join("\n");
 const AGENT_NOTES: Record<string, string> = {
   "mcp-brokered-credentials-python": BROKERED_NOTES,
   "mcp-brokered-credentials-typescript": BROKERED_NOTES,
   "mcp-server-ruby": RUBY_NOTES,
+  "mcp-server-java": JAVA_NOTES,
 };
 
 // Detect template language from the presence of its build manifest
 const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
 const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true).catch(() => false);
 const isRuby = await fs.access(path.join(TEMPLATE_DIR, "Gemfile")).then(() => true).catch(() => false);
-const language: "python" | "typescript" | "go" | "ruby" = isPython ? "python" : isGo ? "go" : isRuby ? "ruby" : "typescript";
+const isJava = await fs.access(path.join(TEMPLATE_DIR, "build.gradle.kts")).then(() => true).catch(() => false);
+const language: "python" | "typescript" | "go" | "ruby" | "java" =
+  isPython ? "python" : isGo ? "go" : isRuby ? "ruby" : isJava ? "java" : "typescript";
 console.log(`Language: ${language}`);
 
 // How the server flow starts a template: a default per language, and an
@@ -99,6 +109,9 @@ const SERVER_DEFAULTS: Record<typeof language, (port: number) => [string, string
   python: (port) => ["uv", ["run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(port)]],
   go: () => ["go", ["run", "."]],
   ruby: (port) => ["bundle", ["exec", "rackup", "--host", "0.0.0.0", "--port", String(port)]],
+  // The Gradle application start script, named after the template directory,
+  // which is also the Gradle project name. It reads PORT from the environment.
+  java: () => [`./build/install/${templateArg}/bin/${templateArg}`, []],
   typescript: () => ["node", ["--env-file-if-exists=.env", "dist/server.js"]],
 };
 // No template needs an override today; the map is here for the next one that does.
@@ -231,7 +244,7 @@ try {
 
   // Inject service account credentials so brokered-credentials templates can start.
   // discoverApplicationCredential picks these up; templates that don't need them ignore them.
-  // The node and python servers read the provisioned .env; the Go and Ruby servers have no
+  // The node and python servers read the provisioned .env; the Go, Ruby and Java servers have no
   // .env loader, so the provisioned config is passed through the process environment for parity.
   const serverEnv = {
     ...process.env,
