@@ -11,7 +11,7 @@ on:
 
 jobs:
   discover:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       templates: ${{ steps.find.outputs.templates }}
     steps:
@@ -32,7 +32,10 @@ jobs:
 
   eval:
     needs: discover
-    runs-on: ubuntu-latest
+    # Pinned image: the Playwright locked in eval/package-lock.json has
+    # chromium builds only for the Ubuntu releases it knows, so the runner
+    # image moves together with that lock.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       # All jobs share one eval zone (EVAL_ZONE_ID) and every template
@@ -106,3 +109,19 @@ jobs:
       - name: Run eval
         working-directory: eval
         run: npx tsx index.ts --template ${{ matrix.template }}
+
+  # Posts a failed scheduled run to Slack. The step skips while the
+  # EVAL_SLACK_WEBHOOK_URL secret is unset, so the job stays green without it.
+  notify:
+    needs: [discover, eval]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    env:
+      EVAL_SLACK_WEBHOOK_URL: ${{ secrets.EVAL_SLACK_WEBHOOK_URL }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Post failure to Slack
+        if: env.EVAL_SLACK_WEBHOOK_URL != ''
+        run: |
+          jq -n --arg text ":red_circle: Weekly Template Eval failed on ${GITHUB_REF_NAME}: ${RUN_URL}" '{text: $text}' \
+            | curl -fsS -X POST -H 'Content-Type: application/json' --data @- "$EVAL_SLACK_WEBHOOK_URL"
