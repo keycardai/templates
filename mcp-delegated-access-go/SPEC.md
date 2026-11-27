@@ -243,4 +243,4 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 
 5. **Claude does not see the new MCP server.** Claude discovers MCP servers at startup and does not hot-reload. The user MUST restart Claude (`keycard run -- claude`) after `claude mcp add`.
 
-6. **`/broker` returns `brokered: false`.** The token exchange failed. Check the response's `error_code`, `error_description`, and `raw_error` fields. Common causes: the application credential is wrong, or the application is not authorized to exchange for `KEYCARD_RESOURCE_ID`. Unauthenticated calls to `/broker` return `401` because bearer auth runs before the exchange.
+6. **`/broker` returns `brokered: false`.** The token exchange failed and the response has `status: "partial_error"`. Check the response's `error_code`, `error_description`, and `raw_error` fields. Common causes: the application credential is wrong, or the application is not authorized to exchange for `KEYCARD_RESOURCE_ID`. Unauthenticated calls to `/broker` return `401` because bearer auth runs before the exchange.

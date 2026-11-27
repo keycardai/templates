@@ -115,7 +115,7 @@ func brokerHandler(client *oauth.TokenExchangeClient, resourceID string) http.Ha
 
 		resp := map[string]any{"status": oauth.StatusSuccess, "brokered": err == nil}
 		if err != nil {
-			resp["status"] = oauth.StatusError
+			resp["status"] = oauth.StatusPartialError
 			resp["error"] = fmt.Sprintf("Token exchange failed for %s", resourceID)
 			resp["error_code"], resp["error_description"], resp["raw_error"] = "", "", ""
 			var oauthErr *oauth.OAuthError

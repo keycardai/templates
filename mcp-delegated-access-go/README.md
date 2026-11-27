@@ -34,7 +34,7 @@ The server listens on `http://localhost:8000/mcp`. It validates Keycard-minted J
 - `GET /.well-known/oauth-protected-resource/mcp`: protected-resource metadata from the configured binding. The unscoped `/.well-known/oauth-protected-resource` is not served.
 - `GET /.well-known/oauth-authorization-server`: proxies the zone's authorization server metadata.
 - `POST /mcp`: the MCP endpoint. Tools require bearer auth with the `mcp:tools` scope. A request to `/mcp` without a token returns `401` with the public metadata URL in its `WWW-Authenticate` challenge.
-- `GET /broker`: bearer auth, then token exchange scoped to `KEYCARD_RESOURCE_ID`. It reports `brokered: true` on success without returning the token.
+- `GET /broker`: bearer auth, then token exchange scoped to `KEYCARD_RESOURCE_ID`. It reports `brokered: true` on success without returning the token, or `status: "partial_error"` and `brokered: false` if the exchange fails.
 
 With the environment configured and `jq` installed, run `bash scripts/ci-verify.sh` to build, start, and check the server. See [`SPEC.md`](./SPEC.md) for the verification checklist.
 ## Keycard provisioning

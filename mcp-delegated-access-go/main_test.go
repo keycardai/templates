@@ -37,7 +37,7 @@ func TestBrokerExchange(t *testing.T) {
 			tokenStatus: http.StatusBadRequest,
 			tokenBody:   `{"error":"invalid_target","error_description":"resource not allowed"}`,
 			want: map[string]any{
-				"status": "error", "brokered": false, "error": "Token exchange failed for " + resource,
+				"status": "partial_error", "brokered": false, "error": "Token exchange failed for " + resource,
 				"error_code": "invalid_target", "error_description": "resource not allowed", "raw_error": "",
 			},
 		},
