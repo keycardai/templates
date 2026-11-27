@@ -26,7 +26,7 @@ export interface ZoneInfo {
   stsProviderUrl: string;
 }
 
-async function getToken(): Promise<string> {
+export async function getToken(): Promise<string> {
   const resp = await fetch(`${endpoint()}/service-account-token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -36,7 +36,7 @@ async function getToken(): Promise<string> {
       client_secret: process.env.CI_KEYCARD_CLIENT_SECRET!,
     }),
   });
-  if (!resp.ok) throw new Error(`Token exchange failed: ${resp.status} ${await resp.text()}`);
+  if (!resp.ok) throw new Error(`Token exchange failed: HTTP ${resp.status}`);
   const { access_token } = await resp.json() as { access_token: string };
   return access_token;
 }
