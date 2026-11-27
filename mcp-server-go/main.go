@@ -16,7 +16,6 @@ import (
 	"os"
 
 	keycardmcp "github.com/keycardai/go-sdk/mcp"
-	"github.com/keycardai/go-sdk/oauth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -28,6 +27,14 @@ func main() {
 	keycardURL := os.Getenv("KEYCARD_URL")
 	if keycardURL == "" {
 		log.Fatal("KEYCARD_URL environment variable is required (the zone's OIDC issuer URL)")
+	}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
+	resourceID := os.Getenv("KEYCARD_RESOURCE_ID")
+	if resourceID == "" {
+		resourceID = "http://localhost:" + port + "/mcp"
 	}
 
 	// 1. Build the MCP server and register tools. This is the official SDK only; Keycard
@@ -43,34 +50,26 @@ func main() {
 		&mcp.StreamableHTTPOptions{},
 	)
 
-	// 2. The verifier trusts only tokens issued by this Keycard zone and resolves their
-	// signing keys from the zone's JWKS. Binding the audience to this resource (the
-	// registered /mcp endpoint URL, KEYCARD_RESOURCE_ID) makes the verifier reject tokens
-	// minted for any other resource; the metadata handler advertises the matching
-	// path-inserted resource so clients request exactly this audience.
-	var verifierOpts []oauth.JWTVerifierOption
-	if resourceID := os.Getenv("KEYCARD_RESOURCE_ID"); resourceID != "" {
-		verifierOpts = append(verifierOpts, oauth.WithAudiences(resourceID))
-	}
-	verifier, err := keycardmcp.NewZoneTokenVerifier(keycardURL, verifierOpts...)
+	// 2. Use the registered resource for the token audience, metadata, and challenge.
+	binding, err := keycardmcp.NewResourceBinding(keycardURL, keycardmcp.WithResourceIdentifier(resourceID))
 	if err != nil {
-		log.Fatalf("building token verifier: %v", err)
+		log.Fatalf("building resource binding: %v", err)
+	}
+	requireBearer, err := binding.BearerAuth(keycardmcp.WithRequiredScopes("mcp:tools"))
+	if err != nil {
+		log.Fatalf("building bearer middleware: %v", err)
 	}
 
 	mux := http.NewServeMux()
 
 	// 3a. OAuth metadata so MCP clients can discover how to authenticate.
-	mux.Handle("/.well-known/", keycardmcp.AuthMetadataHandler(
-		keycardmcp.WithIssuer(keycardURL),
+	mux.Handle("/.well-known/", binding.MetadataHandler(
 		keycardmcp.WithScopesSupported([]string{"mcp:tools"}),
 		keycardmcp.WithResourceName("mcp-server-go"),
 	))
 
 	// 3b. Protect /mcp with bearer auth scoped to mcp:tools.
-	mux.Handle("/mcp", keycardmcp.RequireBearerAuth(
-		verifier,
-		keycardmcp.WithRequiredScopes("mcp:tools"),
-	)(mcpHandler))
+	mux.Handle("/mcp", requireBearer(mcpHandler))
 
 	// 3c. Unauthenticated liveness probe used by the smoke test.
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -78,10 +77,8 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	addr := ":8000"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
-	}
+	addr := ":" + port
+	log.Printf("Protected resource: %s (set KEYCARD_RESOURCE_ID to the public /mcp URL when not on localhost)", resourceID)
 	log.Printf("MCP server running on http://localhost%s/mcp", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
