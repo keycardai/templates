@@ -2,7 +2,7 @@
 
 > A Keycard-protected MCP server that also brokers delegated access: it exchanges the caller's verified token for a resource-scoped token using its own application credential (RFC 8693). The simplest way to see the full OAuth handshake plus delegated token exchange end-to-end in Go.
 
-This template is a plain Go `net/http` MCP server built on `mcp-server-go`, adding an `AuthProvider` (wired with a `ClientSecret` credential) and a `/broker` endpoint. It runs as-is, but it has **no** authorization until Keycard is provisioned with the primitives below. An agent (e.g. the `keycard-template-app` skill) MUST perform the steps in this document before declaring the project ready.
+This template is a plain Go `net/http` MCP server built on `mcp-server-go`, adding a token exchange client with an application credential and a `/broker` endpoint. It runs as-is, but it has **no** authorization until Keycard is provisioned with the primitives below. An agent (e.g. the `keycard-template-app` skill) MUST perform the steps in this document before declaring the project ready.
 
 ## 0. How the agent uses this document
 
@@ -10,7 +10,7 @@ This template is a plain Go `net/http` MCP server built on `mcp-server-go`, addi
 
 ## 0a. What this template is
 
-A working MCP server built on Go's standard `net/http` and the official MCP Go SDK (`github.com/modelcontextprotocol/go-sdk`), protected by Keycard's OAuth 2.1 flow via `github.com/keycardai/go-sdk`. It ships the `hello` tool plus a `/broker` endpoint that demonstrates **delegated access**: after bearer auth verifies the caller, the server's `AuthProvider` exchanges that token for a token scoped to its own resource (RFC 8693 token exchange), authenticated with the server's `ClientSecret` application credential, and reports the brokered result. Beyond the base OAuth plumbing (metadata endpoints, bearer middleware, Streamable HTTP), this shows how a server acts on the user's behalf against a downstream resource.
+A working MCP server built on Go's standard `net/http` and the official MCP Go SDK (`github.com/modelcontextprotocol/go-sdk`), protected by Keycard's OAuth 2.1 flow via `github.com/keycardai/go-sdk`. It ships the `hello` tool plus a `/broker` endpoint that demonstrates **delegated access**. After bearer auth verifies the caller, the SDK's `TokenExchangeClient` exchanges the caller's token for a token scoped to the server's resource (RFC 8693) and reports the result without exposing the token.
 
 Pick this template when your MCP server needs to call a downstream API or resource on the user's behalf, not just verify tokens.
 
@@ -123,7 +123,8 @@ KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp
 PORT=8000
 ```
 
-`KEYCARD_RESOURCE_ID` is this server's registered resource (the `/mcp` URL from §1c). It is both the audience tokens are bound to and the resource the broker exchanges for.
+`KEYCARD_RESOURCE_ID` is this server's registered public `/mcp` URL from §1c. If unset, it defaults to `http://localhost:<PORT>/mcp`; `PORT` defaults to `8000`.
+The resource binding uses this identifier for the JWT audience, the protected-resource document's `resource` field, and the `resource_metadata` URL in the challenge for `/mcp`. The broker also uses it as the exchange target.
 
 Commit `.env.example` with placeholders. `.env` is already in `.gitignore`.
 
@@ -147,31 +148,28 @@ Do not add `schema_version`, `[project]`, `[server]`, or `[zone].url` — runtim
 
 ### Application credential (KEYCARD_CLIENT_ID / KEYCARD_CLIENT_SECRET)
 
-The broker authenticates its token exchange with the server's own OAuth client credential. Supply `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` via the environment (`keycard run` or your deployment's secret store) — **never commit them to `.env`**. These are the application's client credentials from your zone (Console → Applications → your app → Credentials).
+The broker authenticates its token exchange with the server's own OAuth client credential. Supply `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` via the environment (`keycard run` or your deployment's secret store); **never commit them to `.env`**. These are the application's client credentials from your zone (Console → Applications → your app → Credentials). The server builds the credential with `oauth.NewClientSecret` and passes it to `oauth.NewTokenExchangeClient` via `oauth.WithTokenExchangeCredential`. Each exchange supplies the verified caller's token and resource, not the application credential.
 
 Leave the `keycard.toml` `[credentials]` table empty unless a tool calls a third-party API; then use `keycard-discover-entities` + `keycard-upsert-config` to add the entry — never hand-edit unknown URIs.
 
 ## 3. Agent verification
 
-Run from the project directory after provisioning. Do not leave processes behind.
+Load the environment from §2 and run from the project directory after provisioning. Install `jq` if it is not available.
 
 ```bash
 go build ./...
-KEYCARD_URL="$KEYCARD_URL" PORT=<port> go run . &
-SERVER_PID=$!
-# wait for "MCP server running on http://localhost:<port>/mcp"
-curl -fsS http://localhost:<port>/healthz | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-protected-resource | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-authorization-server | head -1
-curl -fsS -o /dev/null -w '%{http_code}\n' http://localhost:<port>/broker  # expect 401 (bearer auth runs first)
-kill $SERVER_PID 2>/dev/null || true
+go vet ./...
+bash scripts/ci-verify.sh
 ```
 
-The local smoke test only confirms `/broker` rejects unauthenticated calls (`401`). The full delegated exchange (`brokered: true`) requires a real user token and is exercised by the Keycard template eval, not this smoke test.
+Verification checklist:
 
-`/healthz` and `/.well-known/oauth-protected-resource` are served locally and MUST return JSON immediately. `/.well-known/oauth-authorization-server` proxies the zone, so it requires a real `KEYCARD_URL`; if it returns a `502` or an upstream error, confirm `.env` has a real zone URL (not a placeholder like `https://your-zone.keycard.cloud`), then restart.
-
-The agent MUST stop the smoke-test process before handing off.
+- `GET /healthz` returns JSON without authentication.
+- `GET /.well-known/oauth-protected-resource/mcp` returns a document with `resource` exactly equal to `KEYCARD_RESOURCE_ID` (or its default). The unscoped `/.well-known/oauth-protected-resource` is not served.
+- `POST /mcp` without a token returns `401` and a `WWW-Authenticate: Bearer` challenge with `resource_metadata="http://localhost:<PORT>/.well-known/oauth-protected-resource/mcp"` for the default resource. For an explicit public resource URL, the challenge uses that URL's origin.
+- `GET /.well-known/oauth-authorization-server` returns JSON from the zone. If the proxy returns `502`, confirm `KEYCARD_URL` is a reachable zone URL, not a placeholder.
+- `GET /broker` without a token returns `401`; its challenge omits `resource_metadata` because `/broker` is not the bound `/mcp` path. The full delegated exchange (`brokered: true`) requires a real user token and is exercised by the Keycard template eval.
+- The build and server log contain no SDK deprecation warnings. The script stops the smoke-test process on exit.
 
 ## 4. What the agent MUST NOT do
 
@@ -225,12 +223,12 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 
 1. **Call the hello tool.** Ask Claude: *"Use `hello` to greet me as `<your name>`."* You should get back `Hello, <your name>!` — that confirms the full OAuth flow (token mint → bearer validation → tool execution) works end-to-end.
 2. **List the server's tools.** Ask Claude: *"What tools does the `<name>` server expose?"*
-3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource` — you'll see the JSON the MCP SDK uses to discover the authorization server, including `resource` and `scopes_supported`.
+3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource/mcp` to see the JSON clients use to discover the authorization server, including `resource` and `scopes_supported`.
 
 ## 8. Where to extend
 
-- **Add a tool.** Define an input struct and a handler `func(ctx, *mcp.ServerSession, *mcp.CallToolParamsFor[In]) (*mcp.CallToolResultFor[any], error)`, then register it with `mcp.AddTool(server, &mcp.Tool{Name, Description}, handler)` in `main.go` — alongside `hello`. Tools are gated by the `mcp:tools` scope the bearer middleware enforces.
-- **Change the server.** `main.go` is the whole net/http app. The OAuth metadata handler (`keycardmcp.AuthMetadataHandler`) and bearer middleware (`keycardmcp.RequireBearerAuth`) come from `github.com/keycardai/go-sdk/mcp` — you only touch those to change scopes or add a second resource.
+- **Add a tool.** Follow `helloHandler` with an input struct and a handler of type `func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, any, error)`. Register it with `mcp.AddTool` in `main.go`. Tools require the `mcp:tools` scope.
+- **Change the server.** `main.go` creates a single binding with `keycardmcp.NewResourceBinding(keycardURL, keycardmcp.WithResourceIdentifier(resourceID))`. It mounts `binding.MetadataHandler` at `/.well-known/` and wraps the protected routes with the middleware returned by `binding.BearerAuth`.
 - **Add downstream credentials.** If a tool needs to call a third-party API, use `keycard-discover-entities` to find the Keycard entity URI and `keycard-upsert-config` to add a credential entry, brokered into the process by `keycard run`.
 
 ## 9. Common gotchas the agent should pre-empt
@@ -245,4 +243,4 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 
 5. **Claude does not see the new MCP server.** Claude discovers MCP servers at startup and does not hot-reload. The user MUST restart Claude (`keycard run -- claude`) after `claude mcp add`.
 
-6. **`/broker` returns `brokered: false`.** The token exchange failed; the AccessContext carries the reason in the `error` field. Common causes: the application credential (`KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET`) is missing or wrong, or the application is not authorized to exchange for `KEYCARD_RESOURCE_ID`. Unauthenticated calls to `/broker` return `401` because bearer auth runs before the exchange.
+6. **`/broker` returns `brokered: false`.** The token exchange failed. Check the response's `error_code`, `error_description`, and `raw_error` fields. Common causes: the application credential is wrong, or the application is not authorized to exchange for `KEYCARD_RESOURCE_ID`. Unauthenticated calls to `/broker` return `401` because bearer auth runs before the exchange.

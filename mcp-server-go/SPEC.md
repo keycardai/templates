@@ -115,12 +115,16 @@ Example: ID `<id>` in production → `https://<id>.keycard.cloud`.
 
 ### .env
 
-Write `.env` in the project root so `go run .` works without manual exports. The template reads `KEYCARD_URL` and `PORT` from the environment; load `.env` via your shell, `keycard run`, or a tool like `direnv`:
+Write `.env` in the project root so `go run .` works without manual exports. The template reads `KEYCARD_URL`, `KEYCARD_RESOURCE_ID`, and `PORT` from the environment; load `.env` via your shell, `keycard run`, or a tool like `direnv`:
 
 ```
 KEYCARD_URL=https://<id>.keycard.cloud
+KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp
 PORT=8000
 ```
+
+`KEYCARD_RESOURCE_ID` is this server's registered public `/mcp` URL from §1c. If unset, it defaults to `http://localhost:<PORT>/mcp`; `PORT` defaults to `8000`.
+The resource binding uses this identifier for the JWT audience, the protected-resource document's `resource` field, and the `resource_metadata` URL in the challenge for `/mcp`.
 
 Commit `.env.example` with placeholders. `.env` is already in `.gitignore`.
 
@@ -148,22 +152,21 @@ The `[credentials]` table is intentionally empty. Leave it empty unless the user
 
 ## 3. Agent verification
 
-Run from the project directory after provisioning. Do not leave processes behind.
+Load the environment from §2 and run from the project directory after provisioning. Install `jq` if it is not available.
 
 ```bash
 go build ./...
-KEYCARD_URL="$KEYCARD_URL" PORT=<port> go run . &
-SERVER_PID=$!
-# wait for "MCP server running on http://localhost:<port>/mcp"
-curl -fsS http://localhost:<port>/healthz | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-protected-resource | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-authorization-server | head -1
-kill $SERVER_PID 2>/dev/null || true
+go vet ./...
+bash scripts/ci-verify.sh
 ```
 
-`/healthz` and `/.well-known/oauth-protected-resource` are served locally and MUST return JSON immediately. `/.well-known/oauth-authorization-server` proxies the zone, so it requires a real `KEYCARD_URL`; if it returns a `502` or an upstream error, confirm `.env` has a real zone URL (not a placeholder like `https://your-zone.keycard.cloud`), then restart.
+Verification checklist:
 
-The agent MUST stop the smoke-test process before handing off.
+- `GET /healthz` returns JSON without authentication.
+- `GET /.well-known/oauth-protected-resource/mcp` returns a document with `resource` exactly equal to `KEYCARD_RESOURCE_ID` (or its default). The unscoped `/.well-known/oauth-protected-resource` is not served.
+- `POST /mcp` without a token returns `401` and a `WWW-Authenticate: Bearer` challenge with `resource_metadata="http://localhost:<PORT>/.well-known/oauth-protected-resource/mcp"` for the default resource. For an explicit public resource URL, the challenge uses that URL's origin.
+- `GET /.well-known/oauth-authorization-server` returns JSON from the zone. If the proxy returns `502`, confirm `KEYCARD_URL` is a reachable zone URL, not a placeholder.
+- The build and server log contain no SDK deprecation warnings. The script stops the smoke-test process on exit.
 
 ## 4. What the agent MUST NOT do
 
@@ -217,12 +220,12 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 
 1. **Call the hello tool.** Ask Claude: *"Use `hello` to greet me as `<your name>`."* You should get back `Hello, <your name>!` — that confirms the full OAuth flow (token mint → bearer validation → tool execution) works end-to-end.
 2. **List the server's tools.** Ask Claude: *"What tools does the `<name>` server expose?"*
-3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource` — you'll see the JSON the MCP SDK uses to discover the authorization server, including `resource` and `scopes_supported`.
+3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource/mcp` to see the JSON clients use to discover the authorization server, including `resource` and `scopes_supported`.
 
 ## 8. Where to extend
 
-- **Add a tool.** Define an input struct and a handler `func(ctx, *mcp.ServerSession, *mcp.CallToolParamsFor[In]) (*mcp.CallToolResultFor[any], error)`, then register it with `mcp.AddTool(server, &mcp.Tool{Name, Description}, handler)` in `main.go` — alongside `hello`. Tools are gated by the `mcp:tools` scope the bearer middleware enforces.
-- **Change the server.** `main.go` is the whole net/http app. The OAuth metadata handler (`keycardmcp.AuthMetadataHandler`) and bearer middleware (`keycardmcp.RequireBearerAuth`) come from `github.com/keycardai/go-sdk/mcp` — you only touch those to change scopes or add a second resource.
+- **Add a tool.** Follow `helloHandler` with an input struct and a handler of type `func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, any, error)`. Register it with `mcp.AddTool` in `main.go`. Tools require the `mcp:tools` scope.
+- **Change the server.** `main.go` creates a single binding with `keycardmcp.NewResourceBinding(keycardURL, keycardmcp.WithResourceIdentifier(resourceID))`. It mounts `binding.MetadataHandler` at `/.well-known/` and wraps the protected route with the middleware returned by `binding.BearerAuth`.
 - **Add downstream credentials.** If a tool needs to call a third-party API, use `keycard-discover-entities` to find the Keycard entity URI and `keycard-upsert-config` to add a credential entry, brokered into the process by `keycard run`.
 
 ## 9. Common gotchas the agent should pre-empt
@@ -237,4 +240,4 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 
 5. **Claude does not see the new MCP server.** Claude discovers MCP servers at startup and does not hot-reload. The user MUST restart Claude (`keycard run -- claude`) after `claude mcp add`.
 
-6. **MCP client cannot find the authorization server.** `/.well-known/oauth-protected-resource` advertises `authorization_servers` from the issuer passed to `AuthMetadataHandler`, and omits the field entirely when no issuer is configured. If a client fails discovery, check that `keycardmcp.WithIssuer(...)` is set to the zone URL in `main.go`. Earlier SDK versions instead derived the authorization server from the request origin when the client sent `MCP-Protocol-Version: 2025-03-26`; that branch is gone, so the issuer is now the only source.
+6. **MCP client cannot find the authorization server.** `/.well-known/oauth-protected-resource/mcp` advertises the binding's issuer in `authorization_servers`. Check that `KEYCARD_URL` is the zone issuer and that `KEYCARD_RESOURCE_ID` matches the public MCP URL exactly, including the `/mcp` path.

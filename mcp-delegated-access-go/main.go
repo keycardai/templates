@@ -3,8 +3,8 @@
 // resource-scoped token using its own application credential (RFC 8693 token exchange).
 //
 // It builds on the mcp-server-go pattern (OAuth metadata + bearer middleware over the
-// official modelcontextprotocol/go-sdk) and adds an AuthProvider wired with a ClientSecret
-// credential plus a /broker endpoint that demonstrates the Grant token-exchange flow.
+// official modelcontextprotocol/go-sdk) and adds a token exchange client wired with a
+// client-secret credential plus a /broker endpoint.
 //
 // Configure KEYCARD_URL (the zone's OIDC issuer), KEYCARD_RESOURCE_ID (this server's
 // registered resource, the /mcp endpoint URL), and the application credential
@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -33,11 +34,15 @@ func main() {
 	if keycardURL == "" {
 		log.Fatal("KEYCARD_URL environment variable is required (the zone's OIDC issuer URL)")
 	}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
 	// This server's registered resource (the /mcp endpoint URL). Tokens are audience-bound
 	// to it, and it is the resource the broker exchanges the user's token for.
 	resourceID := os.Getenv("KEYCARD_RESOURCE_ID")
 	if resourceID == "" {
-		log.Fatal("KEYCARD_RESOURCE_ID environment variable is required (this server's registered resource URL)")
+		resourceID = "http://localhost:" + port + "/mcp"
 	}
 	// The server's own application credential, used to authenticate the token exchange.
 	clientID := os.Getenv("KEYCARD_CLIENT_ID")
@@ -58,72 +63,36 @@ func main() {
 		&mcp.StreamableHTTPOptions{},
 	)
 
-	// 2. The verifier trusts only tokens issued by this zone, bound to this resource's
-	// audience so tokens minted for any other resource are rejected.
-	verifier, err := keycardmcp.NewZoneTokenVerifier(keycardURL, oauth.WithAudiences(resourceID))
+	// 2. Use the registered resource for the token audience, metadata, and challenge.
+	binding, err := keycardmcp.NewResourceBinding(keycardURL, keycardmcp.WithResourceIdentifier(resourceID))
 	if err != nil {
-		log.Fatalf("building token verifier: %v", err)
+		log.Fatalf("building resource binding: %v", err)
+	}
+	requireBearer, err := binding.BearerAuth(keycardmcp.WithRequiredScopes("mcp:tools"))
+	if err != nil {
+		log.Fatalf("building bearer middleware: %v", err)
 	}
 
-	// 3. The auth provider brokers downstream tokens: it exchanges a user's verified token
-	// for a resource-scoped token, authenticating the exchange with the server's own
-	// client-secret credential.
-	cred, err := keycardmcp.NewClientSecret(clientID, clientSecret)
+	// 3. Configure the exchange client with the server's own credential.
+	cred, err := oauth.NewClientSecret(clientID, clientSecret)
 	if err != nil {
 		log.Fatalf("building application credential: %v", err)
 	}
-	authProvider, err := keycardmcp.NewAuthProvider(
-		keycardmcp.WithZoneURL(keycardURL),
-		keycardmcp.WithApplicationCredential(cred),
-	)
-	if err != nil {
-		log.Fatalf("building auth provider: %v", err)
-	}
+	exchangeClient := oauth.NewTokenExchangeClient(keycardURL, oauth.WithTokenExchangeCredential(cred))
 
 	mux := http.NewServeMux()
 
 	// 4a. OAuth metadata so MCP clients can discover how to authenticate.
-	mux.Handle("/.well-known/", keycardmcp.AuthMetadataHandler(
-		keycardmcp.WithIssuer(keycardURL),
+	mux.Handle("/.well-known/", binding.MetadataHandler(
 		keycardmcp.WithScopesSupported([]string{"mcp:tools"}),
 		keycardmcp.WithResourceName("mcp-delegated-access-go"),
 	))
 
 	// 4b. Protect /mcp with bearer auth scoped to mcp:tools.
-	mux.Handle("/mcp", keycardmcp.RequireBearerAuth(
-		verifier,
-		keycardmcp.WithRequiredScopes("mcp:tools"),
-	)(mcpHandler))
+	mux.Handle("/mcp", requireBearer(mcpHandler))
 
-	// 4c. /broker demonstrates delegated access: bearer auth verifies the user, Grant
-	// exchanges that token for a token scoped to resourceID, and the handler reports the
-	// brokered result from the AccessContext.
-	mux.Handle("/broker", keycardmcp.RequireBearerAuth(
-		verifier,
-		keycardmcp.WithRequiredScopes("mcp:tools"),
-	)(authProvider.Grant([]string{resourceID})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ac := keycardmcp.AccessContextFromRequest(r)
-
-		resp := map[string]any{"status": string(ac.Status())}
-		token, accessErr := ac.Access(resourceID)
-		if accessErr != nil {
-			resp["brokered"] = false
-			resp["error"] = accessErr.Error()
-			if detail := ac.GetResourceError(resourceID); detail != nil {
-				resp["error_code"] = detail.Code
-				resp["error_description"] = detail.Description
-				resp["raw_error"] = detail.RawError
-			}
-		} else {
-			resp["brokered"] = true
-			resp["resource"] = resourceID
-			resp["token_type"] = token.TokenType
-			resp["expires_in"] = token.ExpiresIn
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))))
+	// 4c. Verify the caller before attempting delegated token exchange.
+	mux.Handle("/broker", requireBearer(brokerHandler(exchangeClient, resourceID)))
 
 	// 4d. Unauthenticated liveness probe used by the smoke test.
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -131,12 +100,43 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	addr := ":8000"
-	if port := os.Getenv("PORT"); port != "" {
-		addr = ":" + port
-	}
+	addr := ":" + port
 	log.Printf("MCP server (with delegated-access broker) running on http://localhost%s/mcp", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func brokerHandler(client *oauth.TokenExchangeClient, resourceID string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		caller := keycardmcp.AuthInfoFromRequest(r)
+		token, err := client.ExchangeToken(r.Context(), oauth.TokenExchangeRequest{
+			SubjectToken: caller.Token,
+			Resource:     resourceID,
+		})
+
+		resp := map[string]any{"status": oauth.StatusSuccess, "brokered": err == nil}
+		if err != nil {
+			resp["status"] = oauth.StatusError
+			resp["error"] = fmt.Sprintf("Token exchange failed for %s", resourceID)
+			resp["error_code"], resp["error_description"], resp["raw_error"] = "", "", ""
+			var oauthErr *oauth.OAuthError
+			if errors.As(err, &oauthErr) {
+				resp["error_code"] = oauthErr.ErrorCode
+				resp["error_description"] = oauthErr.Message
+				if oauthErr.ErrorDescription != nil {
+					resp["error_description"] = *oauthErr.ErrorDescription
+				}
+			} else {
+				resp["raw_error"] = err.Error()
+			}
+		} else {
+			resp["resource"] = resourceID
+			resp["token_type"] = token.TokenType
+			resp["expires_in"] = token.ExpiresIn
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
 }
 
 func helloHandler(_ context.Context, _ *mcp.CallToolRequest, in helloInput) (*mcp.CallToolResult, any, error) {
