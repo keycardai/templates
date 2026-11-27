@@ -10,6 +10,8 @@ Built on [`github.com/keycardai/go-sdk`](https://pkg.go.dev/github.com/keycardai
 cp -R mcp-delegated-access-go my-mcp-server
 cd my-mcp-server
 export KEYCARD_URL=https://your-zone.keycard.cloud
+# Optional: defaults to http://localhost:<PORT>/mcp, with PORT defaulting to 8000.
+# export KEYCARD_RESOURCE_ID=https://mcp.example.com/mcp
 # supply the app credential via the environment (do not commit it)
 export KEYCARD_CLIENT_ID=... KEYCARD_CLIENT_SECRET=...
 go run .

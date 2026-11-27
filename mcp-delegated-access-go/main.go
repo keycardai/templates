@@ -101,6 +101,7 @@ func main() {
 	})
 
 	addr := ":" + port
+	log.Printf("Protected resource: %s (set KEYCARD_RESOURCE_ID to the public /mcp URL when not on localhost)", resourceID)
 	log.Printf("MCP server (with delegated-access broker) running on http://localhost%s/mcp", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }

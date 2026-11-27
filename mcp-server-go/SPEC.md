@@ -166,7 +166,7 @@ Verification checklist:
 - `GET /.well-known/oauth-protected-resource/mcp` returns a document with `resource` exactly equal to `KEYCARD_RESOURCE_ID` (or its default). The unscoped `/.well-known/oauth-protected-resource` is not served.
 - `POST /mcp` without a token returns `401` and a `WWW-Authenticate: Bearer` challenge with `resource_metadata="http://localhost:<PORT>/.well-known/oauth-protected-resource/mcp"` for the default resource. For an explicit public resource URL, the challenge uses that URL's origin.
 - `GET /.well-known/oauth-authorization-server` returns JSON from the zone. If the proxy returns `502`, confirm `KEYCARD_URL` is a reachable zone URL, not a placeholder.
-- The build and server log contain no SDK deprecation warnings. The script stops the smoke-test process on exit.
+- The startup log reports the effective protected resource identifier. The build and server log contain no SDK deprecation warnings. The script stops the smoke-test process on exit.
 
 ## 4. What the agent MUST NOT do
 

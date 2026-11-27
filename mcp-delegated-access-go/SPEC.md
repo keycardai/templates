@@ -169,7 +169,7 @@ Verification checklist:
 - `POST /mcp` without a token returns `401` and a `WWW-Authenticate: Bearer` challenge with `resource_metadata="http://localhost:<PORT>/.well-known/oauth-protected-resource/mcp"` for the default resource. For an explicit public resource URL, the challenge uses that URL's origin.
 - `GET /.well-known/oauth-authorization-server` returns JSON from the zone. If the proxy returns `502`, confirm `KEYCARD_URL` is a reachable zone URL, not a placeholder.
 - `GET /broker` without a token returns `401`; its challenge omits `resource_metadata` because `/broker` is not the bound `/mcp` path. The full delegated exchange (`brokered: true`) requires a real user token and is exercised by the Keycard template eval.
-- The build and server log contain no SDK deprecation warnings. The script stops the smoke-test process on exit.
+- The startup log reports the effective protected resource identifier. The build and server log contain no SDK deprecation warnings. The script stops the smoke-test process on exit.
 
 ## 4. What the agent MUST NOT do
 
