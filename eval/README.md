@@ -76,8 +76,8 @@ npx playwright install chromium
 
 Edit `eval/keycard.toml` and replace the placeholders:
 
-- `[org] id` — your Keycard organization ID (Console → Settings)
-- `[zone] id` — a dedicated eval zone ID (create one in Console, configure zone auth with no external IDP and no invite requirement)
+- `[org] id`: your Keycard organization ID (Console → Settings)
+- `[zone] id`: a dedicated eval zone ID (create one in Console, configure zone auth with no external IDP and no invite requirement)
 
 ### 2. Provision vault resources
 
@@ -120,12 +120,10 @@ must exist in the eval zone; the password is unused on this path.
 
 ### Skipping templates
 
-`eval-skip.txt` lists templates the weekly workflow's discover job leaves out
-of the matrix, one directory name per line with `#` comments. It holds
-templates the harness has no flow for yet (`autonomous-agent-snowflake-wif` is
-an A2A agent, which the MCP-server flow cannot start or probe). A named
-`workflow_dispatch` template input bypasses the list, since naming a template
-is operator intent.
+`eval-skip.txt` contains only comments, so it excludes no templates. The
+weekly workflow's discover job uses it to exclude templates from the automatic
+matrix, one directory name per line. It ignores `#` comments and blank lines.
+A named `workflow_dispatch` template input bypasses the list.
 
 ### Harness notes for the build agent
 
