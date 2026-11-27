@@ -17,6 +17,7 @@ export async function bootstrapIdentity(
   config: IdentityConfig = {},
 ): Promise<WebIdentity> {
   const identity = new WebIdentity({
+    clientId: getClientId(),
     storageDir: config.storageDir ?? "./agent_keys",
     keyId: config.keyId ?? process.env.AGENT_NAME ?? DEFAULT_AGENT_NAME,
   });
@@ -64,7 +65,7 @@ export function identityRouter(): Router {
       client_name: process.env.AGENT_NAME ?? DEFAULT_AGENT_NAME,
       token_endpoint_auth_method: "private_key_jwt",
       token_endpoint_auth_signing_alg: "RS256",
-      grant_types: ["urn:ietf:params:oauth:grant-type:token-exchange"],
+      grant_types: ["client_credentials"],
       jwks: identity.getPublicJwks(),
     });
   });

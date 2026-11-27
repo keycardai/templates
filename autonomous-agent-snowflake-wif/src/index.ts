@@ -1,4 +1,4 @@
-import { bootstrapIdentity, setAgentBaseUrl, getClientId } from "./identity.js";
+import { bootstrapIdentity, setAgentBaseUrl } from "./identity.js";
 import { startServer } from "./server.js";
 import { KeycardTokenProvider } from "./tokenProvider.js";
 import { SnowflakeClient } from "./snowflake.js";
@@ -13,6 +13,7 @@ import { loadEnv } from "./env.js";
 
 async function main() {
   const env = loadEnv();
+  setAgentBaseUrl(env.AGENT_BASE_URL);
 
   // 1. Create (or load) a keypair that gives this agent a verifiable identity.
   console.log("Bootstrapping agent identity...");
@@ -41,7 +42,6 @@ async function main() {
   // 3. Start the HTTP server with identity discovery (JWKS, OAuth client
   //    metadata) and A2A endpoints. Must be up before token exchange — the
   //    authorization server needs to reach our public keys.
-  setAgentBaseUrl(env.AGENT_BASE_URL);
   const server = await startServer({
     port: env.PORT,
     agentBaseUrl: env.AGENT_BASE_URL,
@@ -53,14 +53,11 @@ async function main() {
     },
   });
 
-  const clientId = getClientId();
-
   // 4. Set up the token provider. It uses the agent's identity to request
   //    scoped access tokens from the authorization server (OAuth 2.0).
   const tokenProvider = new KeycardTokenProvider({
     keycardUrl: env.KEYCARD_URL,
     identity,
-    clientId,
   });
 
   // 5. Connect to Snowflake via Workload Identity Federation (WIF) using

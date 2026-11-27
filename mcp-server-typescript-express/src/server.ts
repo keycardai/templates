@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { mcpAuthMetadataRouter } from "@keycardai/mcp/server/auth/router";
-import { requireBearerAuth } from "@keycardai/mcp/server/auth/middleware/bearerAuth";
+import { createKeycardMiddleware } from "@keycardai/express";
 import { registerHelloTool } from "./tools/hello.js";
 
 const PORT = Number(process.env.PORT ?? 8000);
@@ -14,9 +13,12 @@ if (!process.env.KEYCARD_URL) {
 
 const KEYCARD_URL: string = process.env.KEYCARD_URL;
 const SERVER_NAME = "mcp-server-typescript-express";
-// The registered Resource identifier; when set, the verifier rejects tokens
-// minted for any other resource.
-const RESOURCE_ID: string | undefined = process.env.KEYCARD_RESOURCE_ID;
+const RESOURCE_ID = process.env.KEYCARD_RESOURCE_ID || `http://localhost:${PORT}/mcp`;
+const resourceUrl = new URL(RESOURCE_ID);
+if (!["http:", "https:"].includes(resourceUrl.protocol)) {
+  throw new Error("KEYCARD_RESOURCE_ID must be an HTTP(S) URL");
+}
+const MCP_PATH = new RegExp(`^${resourceUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -32,19 +34,15 @@ async function main() {
   app.set("trust proxy", true);
   app.use(express.json());
 
-  app.use(
-    mcpAuthMetadataRouter({
-      oauthMetadata: { issuer: KEYCARD_URL },
-      scopesSupported: ["mcp:tools"],
-      resourceName: SERVER_NAME,
-    }),
-  );
-
-  const bearerAuth = requireBearerAuth({
-    issuers: KEYCARD_URL,
-    audiences: RESOURCE_ID,
-    requiredScopes: ["mcp:tools"],
+  const keycard = createKeycardMiddleware({
+    zoneUrl: KEYCARD_URL,
+    resourceIdentifier: RESOURCE_ID,
   });
+  app.use(keycard.metadataRouter({
+    scopesSupported: ["mcp:tools"],
+    resourceName: SERVER_NAME,
+  }));
+  const bearerAuth = keycard.requireBearerAuth({ requiredScopes: ["mcp:tools"] });
 
   // One transport per MCP session. The MCP SDK forbids reconnecting a
   // single server to multiple transports, so each session also gets
@@ -56,7 +54,7 @@ async function main() {
   // sessions don't accumulate indefinitely.
   const transports = new Map<string, NodeStreamableHTTPServerTransport>();
 
-  app.post("/mcp", bearerAuth, async (req: Request, res: Response) => {
+  app.post(MCP_PATH, bearerAuth, async (req: Request, res: Response) => {
     try {
       const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
@@ -105,7 +103,7 @@ async function main() {
     }
   });
 
-  app.get("/mcp", bearerAuth, async (req: Request, res: Response) => {
+  app.get(MCP_PATH, bearerAuth, async (req: Request, res: Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     const transport = sessionId ? transports.get(sessionId) : undefined;
     if (!transport) {
@@ -122,7 +120,7 @@ async function main() {
     await transport.handleRequest(req, res);
   });
 
-  app.delete("/mcp", bearerAuth, async (req: Request, res: Response) => {
+  app.delete(MCP_PATH, bearerAuth, async (req: Request, res: Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     const transport = sessionId ? transports.get(sessionId) : undefined;
     if (!transport) {
