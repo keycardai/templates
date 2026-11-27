@@ -183,6 +183,7 @@ plus the build command the harness depends on.
 | Variable | Used by | Meaning |
 |---|---|---|
 | `CI_KEYCARD_CLIENT_ID`, `CI_KEYCARD_CLIENT_SECRET`, `CI_KEYCARD_ENDPOINT` | both | Service account that creates the zone |
+| `EVAL_KEYCARD_CLIENT_ID`, `EVAL_KEYCARD_CLIENT_SECRET` | both | Optional. A service account for the eval alone, so PR CI (`ci.yml`) and the eval show up as different actors and rotate separately. Set both or neither; when unset, the eval uses `CI_KEYCARD_*` |
 | `ANTHROPIC_API_KEY` | both | Drives the build agent, and the agent template's model turn |
 | `EVAL_TEST_USER_EMAIL` | both | Browser sign-in for servers, impersonation target for agents |
 | `EVAL_TEST_USER_PASSWORD` | servers | Browser sign-in only |

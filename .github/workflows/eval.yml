@@ -48,8 +48,8 @@ jobs:
       - name: Check eval zone config
         working-directory: eval
         env:
-          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.EVAL_KEYCARD_CLIENT_ID || secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.EVAL_KEYCARD_CLIENT_SECRET || secrets.CI_KEYCARD_CLIENT_SECRET }}
           CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
           EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
           EVAL_ZONE_ID: ${{ secrets.EVAL_ZONE_ID }}
@@ -71,8 +71,8 @@ jobs:
       matrix:
         template: ${{ fromJson(needs.discover.outputs.templates) }}
     env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+      CI_KEYCARD_CLIENT_ID: ${{ secrets.EVAL_KEYCARD_CLIENT_ID || secrets.CI_KEYCARD_CLIENT_ID }}
+      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.EVAL_KEYCARD_CLIENT_SECRET || secrets.CI_KEYCARD_CLIENT_SECRET }}
       CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
       EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
       EVAL_TEST_USER_PASSWORD: ${{ secrets.EVAL_TEST_USER_PASSWORD }}
