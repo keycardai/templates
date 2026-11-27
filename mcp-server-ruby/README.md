@@ -11,7 +11,8 @@ cp -R mcp-server-ruby my-mcp-server
 cd my-mcp-server
 bundle install
 export KEYCARD_URL=https://your-zone.keycard.cloud
-bundle exec rackup --port 8000
+export PORT=8000
+bundle exec rackup --port "$PORT"
 ```
 
 The server listens on `http://localhost:8000/mcp` and validates Keycard-minted JWTs against `KEYCARD_URL`.
@@ -24,7 +25,7 @@ No `Gemfile.lock` ships with the template, so `bundle install` resolves against 
 |---|---|---|
 | `KEYCARD_URL` | _(required)_ | The zone's OIDC issuer URL. The verifier trusts tokens from it and resolves its JWKS. |
 | `KEYCARD_RESOURCE_ID` | `http://localhost:<PORT>/mcp` | The registered Resource identifier. Drives the protected-resource metadata document, the 401 `resource_metadata` challenge URL, and the verifier audience. |
-| `PORT` | `8000` | Local HTTP port. |
+| `PORT` | `8000` | Local HTTP port used to derive the default `KEYCARD_RESOURCE_ID`. Pass the same value to `rackup --port "$PORT"` (`rackup` does not read `PORT` itself). |
 
 Keycard configuration is read in `config.ru` and passed to the SDK explicitly. The gems read no environment variables of their own.
 

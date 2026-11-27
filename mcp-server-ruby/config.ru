@@ -22,6 +22,8 @@ KEYCARD_URL = ENV.fetch("KEYCARD_URL") do
   abort("KEYCARD_URL environment variable is required (the zone's OIDC issuer URL)")
 end
 
+# Rackup does not read PORT itself; pass --port "$PORT" (or set KEYCARD_RESOURCE_ID)
+# when listening on a port other than 8000 so discovery URLs match the listener.
 PORT = ENV["PORT"].to_s.empty? ? "8000" : ENV["PORT"]
 
 # The registered Resource identifier, defaulting to http://localhost:<PORT>/mcp.

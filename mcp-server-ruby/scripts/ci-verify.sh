@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${PORT:-8000}"
+export PORT="${PORT:-8000}"
 BASE="http://localhost:$PORT"
 
 bundle exec rackup --host 0.0.0.0 --port "$PORT" &

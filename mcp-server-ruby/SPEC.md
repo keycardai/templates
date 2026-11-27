@@ -161,7 +161,7 @@ Run from the project directory after provisioning. Do not leave processes behind
 
 ```bash
 bundle install
-KEYCARD_URL="$KEYCARD_URL" PORT=<port> bundle exec rackup --port <port> &
+(set -a && . ./.env && set +a && exec bundle exec rackup --port "$PORT") &
 SERVER_PID=$!
 # wait for the server to accept connections
 curl -fsS http://localhost:<port>/healthz | head -1
@@ -203,7 +203,7 @@ The skill renders the handoff from the following data:
 | `name` | `<name>` | — | Kebab-case project name |
 | `port` | `<port>` | — | Local HTTP port the server listens on |
 | `build_command` | `bundle install` | this session | Installs the gems |
-| `start_command` | `cd <name> && bundle exec rackup --port <port>` | their terminal (separate, keep open) | The server must be reachable at `http://localhost:<port>/mcp` for the remaining steps |
+| `start_command` | `cd <name> && set -a && . ./.env && set +a && bundle exec rackup --port "$PORT"` | their terminal (separate, keep open) | The server must be reachable at `http://localhost:<port>/mcp` for the remaining steps |
 | `claude_register_command` | `claude mcp add --transport http <name> http://localhost:<port>/mcp` | this session | Adds the server to Claude's MCP config |
 | `restart_command` | `keycard run -- claude` | their terminal | Claude only discovers MCP servers at startup |
 | `auth_command` | `/mcp` → pick `<name>` | new agent session | Completes the OAuth flow so Keycard issues a credential for the resource |
