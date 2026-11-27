@@ -77,19 +77,15 @@ npx playwright install chromium
 Edit `eval/keycard.toml` and replace the placeholders:
 
 - `[org] id`: your Keycard organization ID (Console → Settings)
-- `[zone] id`: a dedicated eval zone ID (create one in Console, then set its Identity Provider as in [Zone sign-in](#zone-sign-in))
+- `[zone] id`: the organization's Organization Zone ID (the `zone_id` on the organization; see [Zone sign-in](#zone-sign-in))
 
 ### Zone sign-in
 
 Password login works only in the Keycard ID Zone: since svc-iam ID-809 (October 27, 2026) every other zone has `password_login_enabled` off, and the Management API refuses to turn it back on. A custom zone with no Identity Provider fails every authorize request with `No User Identity Provider configured in Zone`.
 
-The eval zone therefore uses its organization's Organization Zone as its Identity Provider, as in [Use your Organization Zone as the Identity Provider](https://docs.keycard.ai/admin/zones/#use-your-organization-zone-as-the-identity-provider):
+The eval therefore runs in the organization's Organization Zone, which comes with Keycard ID as its Identity Provider. Use an organization dedicated to the eval, with SSO off: the eval provisions apps, resources and an impersonation policy there, and a user who must sign in through SSO gets sent to the SSO provider instead of a password form.
 
-1. Copy the Organization Zone's Issuer URL from **Settings → Connection** in the organization.
-2. In the eval zone, add a Provider with that Issuer URL, and leave Client ID and Client Secret empty.
-3. In the eval zone's **Settings**, under **Zone sign in configuration**, select that Provider as the **Identity Provider** and save.
-
-The test user is then a Keycard account (signed up at the Keycard ID Zone) that is a member of the organization, and a browser sign-in passes through three hops: the eval zone, the Organization Zone, and the ID Zone's login form. `browser.ts` submits the identifier and password wherever they're asked for and approves each consent screen on the way. The organization must not enforce SSO for this user, or the ID Zone hop sends the browser to the SSO provider instead of a password form.
+The test user is a Keycard account (signed up at the Keycard ID Zone, email verified) that is invited to the organization as a member. A browser sign-in passes through two hops: the Organization Zone, then the ID Zone's login form. `browser.ts` submits the identifier and password wherever they're asked for and approves each consent screen on the way.
 
 ### 2. Provision vault resources
 
