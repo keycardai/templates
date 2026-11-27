@@ -320,7 +320,7 @@ AGENT_TASK=Query Snowflake for recent data and produce a summary report.
 PORT=<port>
 ```
 
-`KEYCARD_RESOURCE_ID` binds the inbound A2A verifier to the agent's own Resource (identifier `<agent-base-url>`), so a zone token minted for any other resource is refused at `/a2a/jsonrpc` with HTTP 401 and a `WWW-Authenticate: Bearer error="invalid_token"` challenge (a missing token gets the bare `Bearer` challenge). The endpoint speaks A2A protocol 1.0 (`SendMessage`, `GetTask`, header `A2A-Version: 1.0`); 0.3 callers using `message/send` are not served. Register that Resource under the agent application when other agents will call this one; leave the variable unset only while no Resource exists yet.
+`KEYCARD_RESOURCE_ID` defaults to `AGENT_BASE_URL`. It binds the inbound A2A verifier to the agent's own Resource and configures its public metadata at `/.well-known/oauth-protected-resource` for the default base URL. A zone token minted for any other resource is refused at `/a2a/jsonrpc` with HTTP 401 and an `invalid_token` challenge. A missing token gets a bare `Bearer` challenge with the default base URL because the Resource path is not `/a2a/jsonrpc`. The endpoint speaks A2A protocol 1.0 (`SendMessage`, `GetTask`, header `A2A-Version: 1.0`); 0.3 callers using `message/send` are not served. Register that Resource under the agent application when other agents will call this one.
 
 `.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — the agent uses a public-key application credential (keypair + JWKS), not a shared secret.
 
@@ -373,13 +373,13 @@ When authenticating to Snowflake, `src/tokenProvider.ts` uses a `KeycardTokenPro
 | Step | What happens | Where |
 |---|---|---|
 | 1 | Agent signs a client assertion JWT (`iss` = metadata document URL) with its private key | `WebIdentity` |
-| 2 | Agent sends the assertion as both subject and client credential to Keycard STS | `tokenProvider.ts` |
+| 2 | `ClientCredentialsClient` uses its configured `WebIdentity` credential to send the assertion to the discovered token endpoint with the `client_credentials` grant | `tokenProvider.ts` |
 | 3 | Keycard STS fetches `<agent-base-url>/.well-known/oauth-client-metadata` to discover the agent's JWKS and verify the assertion | Keycard STS |
 | 4 | STS returns an access token scoped to `snowflakecomputing.com` | Keycard STS |
 | 5 | Agent connects to Snowflake using the OIDC access token via Workload Identity Federation | `snowflake.ts` |
 | 6 | Snowflake validates the OIDC token (issuer + subject match the WIF user config) | Snowflake |
 
-There is no user/subject token in this flow — the agent authenticates purely with its own client assertion. The agent IS the subject.
+There is no user or subject token in this flow. The agent authenticates with its own client assertion, and its client metadata advertises `grant_types: ["client_credentials"]`.
 
 ## 4. Agent verification
 
@@ -390,6 +390,12 @@ The build step does not need brokered credentials, only the runtime does. Verify
 ```bash
 npm install && npm run build
 ```
+
+For the HTTP smoke test, run `KEYCARD_URL=<zone-url> npm run ci:verify` before configuring Snowflake. The script starts and stops its own process and checks:
+
+- `GET /healthz` returns HTTP 200, including in degraded mode without Snowflake.
+- `GET /.well-known/oauth-protected-resource` returns the same Resource identifier as the inbound verifier and the configured zone issuer.
+- An unauthenticated `POST /a2a/jsonrpc` returns HTTP 401 with a `WWW-Authenticate: Bearer` challenge for the default base URL Resource.
 
 ### Identity check
 

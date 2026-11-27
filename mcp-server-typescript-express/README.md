@@ -28,7 +28,11 @@ npm run dev
 | Env var | Default | Purpose |
 |---|---|---|
 | `KEYCARD_URL` | _(required)_ | URL the server registers against. |
-| `KEYCARD_RESOURCE_ID` | _(unset)_ | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. |
+| `KEYCARD_RESOURCE_ID` | `http://localhost:$PORT/mcp` | The exact registered HTTP(S) Resource URL. Its path is the MCP route, and only tokens with this audience are accepted. |
+
+The server uses `@keycardai/express` to publish protected-resource metadata and issue bearer challenges for the same Resource. With the default URL, `GET /.well-known/oauth-protected-resource/mcp` returns the metadata, and an unauthenticated `POST /mcp` returns HTTP 401 with `WWW-Authenticate: Bearer resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource/mcp"`. If you set a different public Resource URL, connect to that exact path and query. `GET /.well-known/oauth-authorization-server` still serves zone discovery.
+
+To verify discovery and the challenge without an MCP token, export `KEYCARD_URL` and any port or Resource overrides, then run `npm run build && npm run ci:verify`.
 | `PORT` | `8000` | Local HTTP port. |
 
 ## Keycard provisioning

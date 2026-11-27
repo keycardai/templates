@@ -10,7 +10,7 @@ This template is a plain Node/Express MCP server. It runs as-is, but it has **no
 
 ## 0a. What this template is
 
-A working MCP server built on Express and the official MCP TypeScript SDK, protected by Keycard's OAuth 2.1 flow. It ships one tool — `hello` — that takes a name and returns a greeting. The point isn't the tool itself; it's the full protocol plumbing around it: OAuth metadata endpoints (`.well-known/oauth-protected-resource`, `.well-known/oauth-authorization-server`), bearer-token middleware that validates Keycard-minted JWTs, and Streamable HTTP transport. Once scaffolded, you have a running example you can extend by dropping new tool files into `src/tools/`.
+A working MCP server built on Express and the official MCP TypeScript SDK, protected by Keycard's OAuth 2.1 flow. It ships one tool, `hello`, that takes a name and returns a greeting. The protocol plumbing includes OAuth metadata endpoints (`/.well-known/oauth-protected-resource/mcp` by default and `/.well-known/oauth-authorization-server`), bearer-token middleware that validates Keycard-minted JWTs, and Streamable HTTP transport. Once scaffolded, you have a running example you can extend by dropping new tool files into `src/tools/`.
 
 Pick this template when you want to build your own MCP server from scratch and need a working, minimal starting point that already handles authentication.
 
@@ -91,7 +91,7 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 - The resource `identifier` MUST include the `/mcp` suffix — that is the path MCP clients hit, and the authorization server rejects token requests for resources whose identifier does not match the protected URL exactly (`invalid_target` / `Requested authorization for unknown resource ...`).
 - `application_id` wires the "provided by" relationship between the Resource and its Application. It must be set at Resource-creation time.
-- Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
+- Export the exact HTTP(S) identifier just created as `KEYCARD_RESOURCE_ID` (see §2). If unset, it defaults to `http://localhost:<PORT>/mcp`. The configured path is the MCP endpoint; use the same full URL when connecting clients. The Express SDK uses this identifier for the protected-resource metadata, the 401 challenge and the verifier audience.
 
 On 403, network error, or missing session:
 
@@ -154,15 +154,15 @@ Run from the project directory after provisioning. Do not leave processes behind
 
 ```bash
 npm install && npm run build
-npm start &
-SERVER_PID=$!
-# wait for "running on http://localhost:<port>" log line
-curl -fsS http://localhost:<port>/.well-known/oauth-protected-resource | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-authorization-server | head -1
-kill $SERVER_PID 2>/dev/null || true
+KEYCARD_URL=<zone-url> PORT=<port> KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp npm run ci:verify
 ```
 
-Both endpoints MUST return JSON. If `oauth-authorization-server` returns an HTML page mentioning `TypeError: Invalid URL`, `KEYCARD_URL` was not loaded — confirm `.env` exists with a real URL (not a placeholder like `https://your-zone.keycard.cloud`), then restart.
+The script stops the server on exit. It MUST verify all of the following:
+
+- `GET /healthz` returns HTTP 200.
+- `GET /.well-known/oauth-protected-resource/mcp` returns JSON with the exact Resource URL, the zone in `authorization_servers` and `mcp:tools` in `scopes_supported`.
+- An unauthenticated `POST /mcp` returns HTTP 401 with a `WWW-Authenticate: Bearer resource_metadata="http://localhost:<port>/.well-known/oauth-protected-resource/mcp"` header.
+- `GET /.well-known/oauth-authorization-server` returns the configured zone issuer.
 
 The agent MUST stop the smoke-test process before handing off. A stray process holds the port, and Claude Code cannot pick up MCP servers added mid-session anyway.
 
@@ -212,7 +212,7 @@ The skill renders the handoff from the following data. The agent extracts these 
 
 ### Carried IDs for the recap
 
-After §1 and §3, the agent has these values in hand: `<zone-id>`, `<application-id>`, `<resource-id>`, `<provider-id>` (STS), and the verified endpoints (`/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`). The skill renders them in its own voice — the SPEC does not supply a recap template. Point the user at `https://console.keycard.ai` for looking up any of the registered IDs.
+After §1 and §3, the agent has these values in hand: `<zone-id>`, `<application-id>`, `<resource-id>`, `<provider-id>` (STS), and the verified endpoints (`/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server`). The skill renders them in its own voice. Point the user at `https://console.keycard.ai` for looking up any of the registered IDs.
 
 ## 6. What to say to the user (per-step narration)
 
@@ -223,7 +223,7 @@ The `keycard-template-app` skill prescribes the narration style; the lines below
 | Step 4 (copy) | "Copying the `mcp-server-typescript-express` blueprint into `./<name>` — this gives you a working Express MCP server with a `hello` tool already wired up. The cached copy stays untouched." |
 | Step 6 (fill in) | "Filling in `.env` with your zone's OIDC issuer URL and a free local port so the server knows which Keycard zone to trust. I'll also set your project name in `package.json` and drop a `keycard.toml` next to it." |
 | Step 7 (register) | "Registering this server with your Keycard zone — that means creating an Application (so Keycard recognizes your server) and a Resource (the `/mcp` endpoint itself, so Keycard knows what scope the tokens grant access to). Both are backed by your zone's built-in STS provider, which is what actually mints the OAuth tokens." |
-| Step 8 (smoke-test) | "Booting the server for a few seconds to confirm the OAuth metadata endpoints respond with real JSON. If `.well-known/oauth-protected-resource` comes back happy, the OIDC wiring is correct. I'll shut it down again so the port stays free for you." |
+| Step 8 (smoke-test) | "Booting the server briefly to verify its sign-in instructions are published and returned when an unauthenticated client connects. I'll shut it down again so the port stays free for you." |
 | Step 9 (handoff) | "All the Keycard-side setup is done. The last bit has to happen in your terminal — start the server, restart Claude so it discovers the new MCP entry, and authenticate via `/mcp`." |
 
 ## 7. Things to try once it's running
@@ -232,12 +232,12 @@ The agent SHOULD print these as concrete suggestions after the handoff recap, so
 
 1. **Call the hello tool.** Ask Claude: *"Use `hello` to greet me as `<your name>`."* You should get back `Hello, <your name>!` — that confirms the full OAuth flow (token mint → bearer validation → tool execution) works end-to-end.
 2. **List the server's tools.** Ask Claude: *"What tools does the `<name>` server expose?"* Claude will call `tools/list` on the MCP transport and show you the `hello` tool's name, description, and input schema.
-3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource` in a browser — you'll see the JSON document the MCP SDK uses to discover your Keycard zone's authorization server, including the `resource` identifier and `scopes_supported`.
+3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource/mcp` in a browser to see the JSON document the MCP SDK uses to discover your Keycard zone's authorization server, including the `resource` identifier and `scopes_supported`.
 
 ## 8. Where to extend
 
 - **Add a new tool.** Create a file in `src/tools/` following the pattern in `src/tools/hello.ts`: export a `register<ToolName>Tool(server: McpServer)` function that calls `server.tool(...)` with a name, description, Zod input schema, and handler. Then import and call it in `src/server.ts` inside `createMcpServer()` — that's the only wiring needed.
-- **Change the server itself.** `src/server.ts` is the Express app. The OAuth metadata router (`mcpAuthMetadataRouter`) and bearer-auth middleware (`requireBearerAuth`) are imported from `@keycardai/mcp` — you shouldn't need to touch those unless you're changing scopes or adding a second resource.
+- **Change the server itself.** `src/server.ts` is the Express app. `createKeycardMiddleware` from `@keycardai/express` gives both `metadataRouter()` and `requireBearerAuth()` the same Resource identifier.
 - **Add downstream credentials.** If a new tool needs to call a third-party API (e.g. GitHub, Slack), use the `keycard-discover-entities` skill to find the right Keycard entity URI and `keycard-upsert-config` to add a `[[credentials.default]]` entry in `keycard.toml`. The credential will be brokered into the process by `keycard run`.
 
 ## 9. Common gotchas the agent should pre-empt

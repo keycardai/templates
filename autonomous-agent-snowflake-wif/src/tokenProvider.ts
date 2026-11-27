@@ -1,20 +1,15 @@
+import { ClientCredentialsClient } from "@keycardai/oauth";
 import type { WebIdentity } from "@keycardai/mcp/server/auth/credentials";
 
 export interface TokenProviderConfig {
   keycardUrl: string;
   identity: WebIdentity;
-  clientId: string;
   refreshBufferMs?: number;
 }
 
 interface TokenEntry {
   token: string;
   expiresAt: number;
-}
-
-interface TokenResponse {
-  access_token: string;
-  expires_in: number;
 }
 
 /**
@@ -28,9 +23,13 @@ export class KeycardTokenProvider {
   private cache = new Map<string, TokenEntry>();
   private pending = new Map<string, Promise<TokenEntry>>();
   private refreshBufferMs: number;
+  private client: ClientCredentialsClient;
 
-  constructor(private config: TokenProviderConfig) {
+  constructor(config: TokenProviderConfig) {
     this.refreshBufferMs = config.refreshBufferMs ?? 60_000;
+    this.client = new ClientCredentialsClient(config.keycardUrl, {
+      credential: config.identity,
+    });
   }
 
   async getToken(resource: string): Promise<string> {
@@ -57,65 +56,10 @@ export class KeycardTokenProvider {
   }
 
   private async exchange(resource: string): Promise<TokenEntry> {
-    const tokenEndpoint = `${this.config.keycardUrl}/oauth/2/token`;
-    const request = await this.config.identity.prepareTokenExchangeRequest(
-      "",
-      resource,
-      {
-        tokenEndpoint,
-        authInfo: { resource_client_id: this.config.clientId },
-      },
-    );
-
-    const { access_token, expires_in } = await clientCredentialsGrant(
-      tokenEndpoint,
-      request.clientAssertion!,
-      resource,
-    );
+    const { accessToken, expiresIn } = await this.client.requestToken({ resource });
     return {
-      token: access_token,
-      expiresAt: Date.now() + expires_in * 1000,
+      token: accessToken,
+      expiresAt: Date.now() + (expiresIn ?? 3600) * 1000,
     };
   }
-}
-
-export async function clientCredentialsGrant(
-  tokenEndpoint: string,
-  assertion: string,
-  resource: string,
-): Promise<TokenResponse> {
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_assertion_type:
-      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-    client_assertion: assertion,
-    resource,
-  });
-
-  const response = await fetch(tokenEndpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    let desc = `HTTP ${response.status}`;
-    try {
-      const errorBody = JSON.parse(text);
-      desc = errorBody.error_description ?? errorBody.error ?? desc;
-    } catch {
-      desc = text || desc;
-    }
-    throw new Error(`Keycard token exchange failed (${response.status}): ${desc}`);
-  }
-
-  const json = await response.json();
-  if (typeof json.access_token !== "string") {
-    throw new Error("Token response missing access_token");
-  }
-  return {
-    access_token: json.access_token,
-    expires_in: typeof json.expires_in === "number" ? json.expires_in : 3600,
-  };
 }

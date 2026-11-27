@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
-import { mcpAuthMetadataRouter } from "@keycardai/mcp/server/auth/router";
-import { requireBearerAuth } from "@keycardai/mcp/server/auth/middleware/bearerAuth";
+import { createKeycardMiddleware } from "@keycardai/express";
 import { AuthProvider } from "@keycardai/mcp/server/auth/provider";
 import { discoverApplicationCredential } from "./credentials.js";
 import { registerSearchTool } from "./tools/search.js";
@@ -17,9 +16,12 @@ if (!process.env.KEYCARD_URL) {
 
 const KEYCARD_URL: string = process.env.KEYCARD_URL;
 const SERVER_NAME = "mcp-brokered-credentials-typescript";
-// The proxy's registered Resource identifier; when set, the verifier rejects
-// tokens minted for any other resource.
-const RESOURCE_ID: string | undefined = process.env.KEYCARD_RESOURCE_ID;
+const RESOURCE_ID = process.env.KEYCARD_RESOURCE_ID ?? `http://localhost:${PORT}/mcp`;
+const resourceUrl = new URL(RESOURCE_ID);
+if (!["http:", "https:"].includes(resourceUrl.protocol)) {
+  throw new Error("KEYCARD_RESOURCE_ID must be an HTTP(S) URL");
+}
+const MCP_PATH = new RegExp(`^${resourceUrl.pathname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 
 const applicationCredential = discoverApplicationCredential({
   serverName: SERVER_NAME,
@@ -46,19 +48,15 @@ async function main() {
   app.set("trust proxy", true);
   app.use(express.json());
 
-  app.use(
-    mcpAuthMetadataRouter({
-      oauthMetadata: { issuer: KEYCARD_URL },
-      scopesSupported: ["mcp:tools"],
-      resourceName: SERVER_NAME,
-    }),
-  );
-
-  const bearerAuth = requireBearerAuth({
-    issuers: KEYCARD_URL,
-    audiences: RESOURCE_ID,
-    requiredScopes: ["mcp:tools"],
+  const keycard = createKeycardMiddleware({
+    zoneUrl: KEYCARD_URL,
+    resourceIdentifier: RESOURCE_ID,
   });
+  app.use(keycard.metadataRouter({
+    scopesSupported: ["mcp:tools"],
+    resourceName: SERVER_NAME,
+  }));
+  const bearerAuth = keycard.requireBearerAuth({ requiredScopes: ["mcp:tools"] });
 
   // NOTE: entries are removed on graceful MCP close (server.onclose) but NOT
   // on raw client disconnect, idle timeout, or token expiry. For a long-lived
@@ -66,7 +64,7 @@ async function main() {
   // sessions don't accumulate indefinitely.
   const transports = new Map<string, NodeStreamableHTTPServerTransport>();
 
-  app.post("/mcp", bearerAuth, async (req: Request, res: Response) => {
+  app.post(MCP_PATH, bearerAuth, async (req: Request, res: Response) => {
     try {
       const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
@@ -114,7 +112,7 @@ async function main() {
     }
   });
 
-  app.get("/mcp", bearerAuth, async (req: Request, res: Response) => {
+  app.get(MCP_PATH, bearerAuth, async (req: Request, res: Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     const transport = sessionId ? transports.get(sessionId) : undefined;
     if (!transport) {
@@ -131,7 +129,7 @@ async function main() {
     await transport.handleRequest(req, res);
   });
 
-  app.delete("/mcp", bearerAuth, async (req: Request, res: Response) => {
+  app.delete(MCP_PATH, bearerAuth, async (req: Request, res: Response) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     const transport = sessionId ? transports.get(sessionId) : undefined;
     if (!transport) {

@@ -1,7 +1,6 @@
 import * as http from "node:http";
-import { ClientSecret } from "@keycardai/mcp/server/auth/credentials";
-import { WebIdentity, EKSWorkloadIdentity } from "@keycardai/mcp/server/auth/credentials";
-import type { ApplicationCredential } from "@keycardai/mcp/server/auth/credentials";
+import { ClientSecret, FileTokenSource, WebIdentity, WorkloadIdentity } from "@keycardai/oauth/server";
+import type { ApplicationCredential } from "@keycardai/oauth/credentials";
 
 // Re-export so server.ts only imports from this module.
 export type { ApplicationCredential };
@@ -161,7 +160,7 @@ export interface DiscoverOptions {
  *
  *  1. KEYCARD_CLIENT_ID + KEYCARD_CLIENT_SECRET  →  ClientSecret
  *  2. KEYCARD_APPLICATION_CREDENTIAL_TYPE         →  explicit override
- *  3. EKS token file env vars                     →  EKSWorkloadIdentity
+ *  3. EKS token file env vars                     →  WorkloadIdentity
  *  4. FLY_APP_NAME                                →  FlyWorkloadIdentity
  *  5. Throw with actionable guidance.
  */
@@ -178,15 +177,16 @@ export function discoverApplicationCredential(
   if (credType) {
     switch (credType) {
       case "eks_workload_identity": {
-        const tokenFile = process.env.KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE;
-        return new EKSWorkloadIdentity(
-          tokenFile ? { tokenFilePath: tokenFile } : undefined,
-        );
+        return new WorkloadIdentity(new FileTokenSource());
       }
       case "fly_workload_identity":
         return new FlyWorkloadIdentity({ audience: options.zoneUrl });
       case "web_identity":
+        if (!clientId) {
+          throw new Error("KEYCARD_CLIENT_ID is required for web_identity");
+        }
         return new WebIdentity({
+          clientId,
           serverName: options.serverName,
         });
       default:
@@ -198,7 +198,7 @@ export function discoverApplicationCredential(
   }
 
   if (EKS_TOKEN_ENV_VARS.some((v) => process.env[v])) {
-    return new EKSWorkloadIdentity();
+    return new WorkloadIdentity(new FileTokenSource());
   }
 
   if (process.env.FLY_APP_NAME) {

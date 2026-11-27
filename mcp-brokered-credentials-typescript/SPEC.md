@@ -150,7 +150,7 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 Carry the result forward as `<proxy-resource-id>`.
 
-Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
+Export the exact HTTP(S) identifier just created as `KEYCARD_RESOURCE_ID` (see §2). If unset, it defaults to `http://localhost:<PORT>/mcp`. The configured path is the MCP endpoint; use the same full URL when connecting clients. `createKeycardMiddleware` from `@keycardai/express` uses this identifier for protected-resource metadata, the 401 challenge and the verifier audience.
 
 ### 1f-bis. Wire Linear as a dependency of the proxy application
 
@@ -309,7 +309,7 @@ Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `
 |---|---|---|---|
 | 1 | `KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET` both set | `ClientSecret` | Local via `keycard run` |
 | 2 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE` set | Depends on value (see below) | Explicit override on any platform |
-| 3 | Any of `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE` | `EKSWorkloadIdentity` | EKS pods with mounted identity tokens |
+| 3 | Any of `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE` | `WorkloadIdentity` with `FileTokenSource` | EKS pods with mounted identity tokens |
 | 4 | `FLY_APP_NAME` set | `FlyWorkloadIdentity` | Fly.io machines |
 | 5 | _(none matched)_ | **throws** with actionable guidance | — |
 
@@ -317,9 +317,9 @@ Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `
 
 Set this env var to force a specific provider, bypassing auto-detection. Accepted values:
 
-- `eks_workload_identity` — construct `EKSWorkloadIdentity` (honors `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE` for custom token path).
+- `eks_workload_identity`: construct `WorkloadIdentity` with `FileTokenSource` (honors `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE` for a custom token path).
 - `fly_workload_identity` — construct `FlyWorkloadIdentity` with `audience` set to `KEYCARD_URL`.
-- `web_identity` — construct `WebIdentity` (generates and persists an RSA key pair for `private_key_jwt` authentication).
+- `web_identity`: construct `WebIdentity` with `KEYCARD_CLIENT_ID` set to the registered public-key credential identifier in the process environment, without a client secret. The SDK generates and persists an RSA key pair for `private_key_jwt` authentication.
 
 Any other value throws.
 
@@ -329,7 +329,7 @@ Any other value throws.
 
 1. POSTs `{ "aud": "<KEYCARD_URL>" }` to `/v1/tokens/oidc` over the `/.fly/api` Unix socket (the local machine API exposed by Fly). Trust is established by access to the socket — no separate bearer token is needed.
 2. Receives a short-lived OIDC JWT and caches it until 60 seconds before its `exp` claim.
-3. Returns the OIDC token as a `client_assertion` (type `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`), identical in shape to `EKSWorkloadIdentity`.
+3. Returns the OIDC token as a `client_assertion` (type `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`), identical in shape to `WorkloadIdentity`.
 
 The deploy procedure (see `deploy-fly.md` §4–§5) registers the Fly OIDC provider and an application-credential binding (subject `<fly-org>:<project-name>:*`) so that Keycard's STS accepts the machine-issued OIDC token as valid proof of identity for the proxy application.
 
@@ -340,6 +340,20 @@ The build step does not need brokered credentials, only the runtime does. Verify
 ```bash
 npm install && npm run build
 ```
+
+For a local smoke test of HTTP discovery only, run the script with placeholder application credentials. It starts and stops its own process and does not exchange tokens or call Linear:
+
+```bash
+KEYCARD_URL=<zone-url> PORT=<port> KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp \
+  KEYCARD_CLIENT_ID=smoke-test KEYCARD_CLIENT_SECRET=smoke-test npm run ci:verify
+```
+
+The script MUST verify all of the following:
+
+- `GET /healthz` returns HTTP 200.
+- `GET /.well-known/oauth-protected-resource/mcp` returns the exact Resource URL, the zone in `authorization_servers` and `mcp:tools` in `scopes_supported`.
+- An unauthenticated `POST /mcp` returns HTTP 401 with a `WWW-Authenticate: Bearer resource_metadata="http://localhost:<port>/.well-known/oauth-protected-resource/mcp"` header.
+- `GET /.well-known/oauth-authorization-server` returns the configured zone issuer.
 
 Then a non-interactive smoke test that the two vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run` here — see gotcha 3 in §10. The actual brokered hydration is verified when the user runs `keycard run -- npm start` in §6.
 
@@ -358,7 +372,7 @@ Both lookups MUST succeed and return a non-null `credential_provider_id`. If eit
 - a `[[credentials.default]]` entry pointing at the wrong URN — re-check the `<name>` substitution in the appended blocks
 - `keycard.toml` has unresolved `<org-id>` / `<zone-id>` placeholders, or is missing `[org]` / `[zone]` blocks entirely — `keycard run` will fail to authenticate when the user runs the proxy
 
-Do NOT start the proxy server inside the agent session (see gotcha 3). The user starts it themselves in §6.
+Do NOT start the proxy with `keycard run` inside the agent session (see gotcha 3). The user starts it with real credentials in §6.
 
 ## 5. Agent guardrails
 
@@ -419,7 +433,7 @@ The `keycard-template-app` skill prescribes the narration style; the lines below
 | Step 4 (copy) | "Copying the `mcp-brokered-credentials-typescript` blueprint into `./<name>` — this gives you an MCP proxy that talks to Linear's MCP server using Keycard-brokered credentials. No Linear API key needed." |
 | Step 6 (fill in) | "Filling in `.env` with your zone's OIDC issuer URL and a free local port. I'll also write `keycard.toml` with your zone/org IDs and two credential entries — those tell `keycard run` to broker the proxy's `client_id` and `client_secret` from the zone vault at startup." |
 | Step 7 (register) | "This template needs more Keycard primitives than the basic server. I'm about to register: (1) an OAuth provider for Linear so Keycard can broker tokens to `mcp.linear.app`, (2) a Linear Application + Resource so Keycard knows what it's brokering, (3) your proxy's own Application + Resource backed by the zone's STS, (4) a dependency from the proxy to Linear — dependencies control which resources an application can access, so you don't need to write policies yourself, and (5) application credentials stored in the zone vault. Each of these builds on the one before — I'll name what I get back after each step." |
-| Step 8 (smoke-test) | "Building the project and verifying the two vault resources (`urn:<name>:client_id` and `urn:<name>:client_secret`) resolve correctly in the API. I'm not starting the server here — it needs `keycard run` to broker the secrets into the process, which can't nest inside the agent session. The actual end-to-end test happens when you run it yourself in the next step." |
+| Step 8 (smoke-test) | "Building the project, checking the proxy's sign-in instructions, and verifying that both vault Resources resolve. Testing the proxy with real credentials happens when you start it in the next step." |
 | Step 9 (handoff) | "All the Keycard-side setup is done — your zone knows about both the proxy and Linear, and the vault has the proxy's credentials. The last bit has to happen in your terminal: start the proxy with `keycard run -- npm start`, restart Claude, and authenticate via `/mcp`." |
 
 ## 8. Things to try once it's running
