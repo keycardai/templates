@@ -2,7 +2,8 @@
 
 source "https://rubygems.org"
 
-gem "keycardai-mcp", "~> 0.1"
+gem "keycardai-mcp", ">= 0.3.0"
+gem "keycardai-oauth", ">= 0.18.0"
 
 gem "mcp", "~> 1.0"
 gem "rackup", "~> 2.2"

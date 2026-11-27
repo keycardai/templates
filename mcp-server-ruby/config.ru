@@ -15,15 +15,19 @@
 
 require "json"
 require "keycardai/mcp"
+require "keycardai/oauth"
 require "mcp"
 
 KEYCARD_URL = ENV.fetch("KEYCARD_URL") do
   abort("KEYCARD_URL environment variable is required (the zone's OIDC issuer URL)")
 end
 
-# The registered Resource identifier, e.g. http://localhost:8000/mcp. When set,
-# the verifier rejects tokens minted for any other resource.
-RESOURCE_ID = ENV.fetch("KEYCARD_RESOURCE_ID", nil)
+PORT = ENV["PORT"].to_s.empty? ? "8000" : ENV["PORT"]
+
+# The registered Resource identifier, defaulting to http://localhost:<PORT>/mcp.
+# One configured resource identifier drives the protected-resource metadata
+# document, the 401 resource_metadata challenge URL, and the verifier audience.
+RESOURCE_ID = ENV["KEYCARD_RESOURCE_ID"].to_s.empty? ? "http://localhost:#{PORT}/mcp" : ENV["KEYCARD_RESOURCE_ID"]
 
 # 1. Build the MCP server and register tools. This is the official gem only;
 # Keycard is not involved here. Add your own tools alongside hello.
@@ -36,13 +40,17 @@ mcp_server.define_tool(
   MCP::Tool::Response.new([{ type: "text", text: "Hello, #{name}!" }])
 end
 
-# 2. The verifier trusts only tokens issued by this Keycard zone and resolves
-# their signing keys from the zone's JWKS, caching per (issuer, kid).
-verifier = Keycardai::OAuth::TokenVerifier.new(issuers: KEYCARD_URL, audiences: RESOURCE_ID)
+# 2. The verifier trusts only tokens issued by this Keycard zone for RESOURCE_ID
+# and resolves their signing keys from the zone's JWKS, caching per (issuer, kid).
+verifier = Keycardai::OAuth::TokenVerifier.new(
+  issuers: KEYCARD_URL,
+  resource_identifier: RESOURCE_ID,
+)
 
 # 3a. OAuth metadata so MCP clients can discover how to authenticate.
 metadata = Keycardai::MCP::MetadataApp.new(
   issuer: KEYCARD_URL,
+  resource_identifier: RESOURCE_ID,
   resource_name: "mcp-server-ruby",
   scopes_supported: ["mcp:tools"],
 )

@@ -10,7 +10,7 @@ This template is a plain Rack MCP server. It runs as-is, but it has **no** autho
 
 ## 0a. What this template is
 
-A working MCP server built on plain Rack and the official MCP Ruby SDK (the [`mcp` gem](https://github.com/modelcontextprotocol/ruby-sdk)), protected by Keycard's OAuth 2.1 flow via `keycardai-mcp`. It ships one tool — `hello` — that takes a name and returns a greeting. The point isn't the tool; it's the protocol plumbing around it: OAuth metadata endpoints (`.well-known/oauth-protected-resource`, `.well-known/oauth-authorization-server`), bearer-token middleware that validates Keycard-minted JWTs, and a scope-gated `/mcp` endpoint. Once scaffolded, you extend it by registering more tools in `config.ru`.
+A working MCP server built on plain Rack and the official MCP Ruby SDK (the [`mcp` gem](https://github.com/modelcontextprotocol/ruby-sdk)), protected by Keycard's OAuth 2.1 flow via `keycardai-mcp`. It ships one tool, `hello`, that takes a name and returns a greeting. The point isn't the tool; it's the protocol plumbing around it: OAuth metadata endpoints (`.well-known/oauth-protected-resource/mcp`, `.well-known/oauth-authorization-server`), bearer-token middleware that validates Keycard-minted JWTs, and a scope-gated `/mcp` endpoint. Once scaffolded, you extend it by registering more tools in `config.ru`.
 
 `keycardai-mcp` wraps no MCP SDK. It attaches at the Rack seam, so the official `mcp` gem mounts behind it untouched and can be swapped for any other Rack-compatible handler.
 
@@ -125,7 +125,7 @@ KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp
 PORT=<port>
 ```
 
-`KEYCARD_RESOURCE_ID` MUST match the Resource `identifier` created in §1c exactly. When set, the verifier binds the audience, so a token minted for a different resource is rejected. Leave it unset only if you have not provisioned a Resource yet.
+`KEYCARD_RESOURCE_ID` MUST match the Resource `identifier` created in §1c exactly (defaults to `http://localhost:<port>/mcp`). One configured resource identifier drives the protected-resource document, the 401 `resource_metadata` challenge URL, and the verifier audience.
 
 Commit `.env.example` with placeholders. `.env` is already in `.gitignore`.
 
@@ -165,12 +165,12 @@ KEYCARD_URL="$KEYCARD_URL" PORT=<port> bundle exec rackup --port <port> &
 SERVER_PID=$!
 # wait for the server to accept connections
 curl -fsS http://localhost:<port>/healthz | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-protected-resource | head -1
+curl -fsS http://localhost:<port>/.well-known/oauth-protected-resource/mcp | head -1
 curl -fsS http://localhost:<port>/.well-known/oauth-authorization-server | head -1
 kill $SERVER_PID 2>/dev/null || true
 ```
 
-`/healthz` and `/.well-known/oauth-protected-resource` are served locally and MUST return JSON immediately. `/.well-known/oauth-authorization-server` proxies the zone, so it requires a real `KEYCARD_URL`; if it returns a `502` or an upstream error, confirm `.env` has a real zone URL (not a placeholder like `https://your-zone.keycard.cloud`), then restart.
+`/healthz` and `/.well-known/oauth-protected-resource/mcp` are served locally and MUST return JSON immediately. `/.well-known/oauth-authorization-server` proxies the zone, so it requires a real `KEYCARD_URL`; if it returns a `502` or an upstream error, confirm `.env` has a real zone URL (not a placeholder like `https://your-zone.keycard.cloud`), then restart.
 
 `scripts/ci-verify.sh` runs exactly these checks plus one more: an unauthenticated `POST /mcp` MUST return 401 with a `WWW-Authenticate` header carrying `resource_metadata`. That header is how an MCP client discovers where to authenticate, so a 401 without it means the server is unusable even though every other endpoint looks healthy.
 
@@ -184,7 +184,6 @@ The agent MUST stop the smoke-test process before handing off.
 - Do not start the server for the user inside the agent session — Claude Code does not hot-reload MCP config, so the user's server must run in a separate terminal that survives the Claude restart.
 - Do not write Cedar or per-tool policy — v1 auth is OAuth scope-based (`mcp:tools`).
 - Do not add credentials the user did not ask for.
-- Do not add a `keycardai-oauth` line to the `Gemfile`. `keycardai-mcp` depends on it, and pinning it separately invites a resolution conflict.
 
 ## 5. Handoff data (for the skill to render)
 
@@ -229,7 +228,7 @@ Paraphrase these into the skill's voice; never read them verbatim and never pass
 
 1. **Call the hello tool.** Ask Claude: *"Use `hello` to greet me as `<your name>`."* You should get back `Hello, <your name>!` — that confirms the full OAuth flow (token mint → bearer validation → tool execution) works end-to-end.
 2. **List the server's tools.** Ask Claude: *"What tools does the `<name>` server expose?"*
-3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource` — you'll see the JSON the MCP SDK uses to discover the authorization server, including `resource` and `scopes_supported`.
+3. **Inspect the OAuth metadata.** Open `http://localhost:<port>/.well-known/oauth-protected-resource/mcp` to see the JSON the MCP SDK uses to discover the authorization server, including `resource` and `scopes_supported`.
 
 ## 8. Where to extend
 
