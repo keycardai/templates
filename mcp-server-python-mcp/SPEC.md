@@ -67,7 +67,10 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 The identifier MUST include the `/mcp` suffix. Carry as `<resource-id>`.
 
-Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
+Set `KEYCARD_RESOURCE_ID` to the registered HTTP(S) identifier (see §2).
+It defaults to `http://localhost:<PORT>/mcp` and binds the verifier audience,
+protected-resource metadata, and the 401 Bearer challenge. A custom URL's
+path also sets the MCP endpoint.
 
 ## 2. Configuration the agent MUST write
 
@@ -89,7 +92,6 @@ Example: ID `<id>` in production → `https://<id>.keycard.cloud`.
 ```
 KEYCARD_URL=https://<id>.keycard.cloud
 KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp
-MCP_SERVER_URL=http://localhost:<port>/
 PORT=<port>
 ```
 
@@ -107,16 +109,19 @@ Leave the `[credentials]` table empty unless the user adds a tool that calls a t
 
 ```bash
 uv sync
-uv run uvicorn main:app --port <port> &
-SERVER_PID=$!
-# wait for "Application startup complete" log line
-curl -fsS http://localhost:<port>/.well-known/oauth-protected-resource | head -1
-curl -fsS http://localhost:<port>/.well-known/oauth-authorization-server | head -1
-curl -fsS http://localhost:<port>/healthz | head -1
-kill $SERVER_PID 2>/dev/null || true
+PORT=<port> KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp bash scripts/ci-verify.sh
 ```
 
-All three endpoints MUST return JSON. If `oauth-authorization-server` returns HTML mentioning `TypeError: Invalid URL`, `KEYCARD_URL` was not loaded — confirm `.env` contains a real URL, then restart.
+The script starts and stops the smoke-test process. Verify:
+
+- `GET /healthz` returns JSON.
+- An unauthenticated `POST /mcp` returns HTTP 401 with a Bearer
+  `WWW-Authenticate` challenge advertising
+  `http://localhost:<port>/.well-known/oauth-protected-resource/mcp`.
+- `GET /.well-known/oauth-protected-resource/mcp` returns JSON whose
+  `resource` equals the registered identifier. For a custom resource path,
+  use that path instead of `/mcp` in the POST and metadata suffix.
+- `GET /.well-known/oauth-authorization-server` returns JSON for the zone.
 
 The agent MUST stop the smoke-test process before handing off.
 
@@ -125,7 +130,7 @@ The agent MUST stop the smoke-test process before handing off.
 - Do not commit `KEYCARD_URL` or `.env` to the repo.
 - Do not invent Resource identifiers — derive from the project name and reuse on re-runs.
 - Do not pick a `keycard-vault` provider.
-- Do not start the server inside the agent session.
+- Do not leave the smoke-test server running inside the agent session.
 - Do not write Cedar or per-tool policy.
 - Do not add credentials the user did not ask for.
 

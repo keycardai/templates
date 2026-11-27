@@ -6,7 +6,7 @@ An MCP **proxy** server that sits between Claude and Linear's official MCP serve
 
 Pick this template to see Keycard's brokered-credential flow in action, or as a pattern for proxying any OAuth-protected MCP server (swap Linear's URL and the same plumbing works for any upstream supporting OAuth 2.1 + dynamic client registration).
 
-The agent (e.g. the `keycard-template-app` skill) MUST perform every step in this document before declaring the project ready. The `keycard run -- uvicorn main:app` workflow at the end depends on every primitive being in place.
+The agent (e.g. the `keycard-template-app` skill) MUST perform every step in this document before declaring the project ready. The `keycard run -- uv run uvicorn main:app` workflow at the end depends on every primitive being in place.
 
 Throughout, treat `<name>` as the kebab-case project name (default: `mcp-brokered-credentials-python`) and `<port>` as the local HTTP port (default: `8000`).
 
@@ -150,7 +150,10 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 Carry the result forward as `<proxy-resource-id>`.
 
-Export the identifier just created as `KEYCARD_RESOURCE_ID` (see §2). The server binds its bearer verifier to it, so tokens minted for any other resource are rejected; when it is unset the audience check is off.
+Set `KEYCARD_RESOURCE_ID` to the registered HTTP(S) identifier (see §2).
+It defaults to `http://localhost:<PORT>/mcp` and binds the verifier audience,
+protected-resource metadata, and the 401 Bearer challenge. A custom URL's
+path also sets the MCP endpoint.
 
 ### 1f-bis. Wire Linear as a dependency of the proxy application
 
@@ -303,25 +306,42 @@ Use the `keycard-upsert-config` skill for these edits. Nothing else belongs in `
 
 ## 3. Runtime credential discovery
 
-At startup, `AuthProvider` in `keycardai.mcp.server.auth` calls `_discover_application_credential()` which probes the environment and returns the first matching provider:
+At startup, `keycardai.starlette.AuthProvider` discovers the application
+credential through the OAuth SDK. The proxy passes it to
+`AsyncClient(credential=...)` at construction. The SDK recognizes:
 
-| Priority | Env signal | Provider | Typical environment |
-|---|---|---|---|
-| 1 | `KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET` both set | `ClientSecret` | Local via `keycard run` |
-| 2 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE=eks_workload_identity` | `EKSWorkloadIdentity` | Explicit override |
-| 3 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE=web_identity` | `WebIdentity` | Explicit override |
-| 4 | Any of `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE` | `EKSWorkloadIdentity` | EKS pods with mounted identity tokens |
-| 5 | _(none matched)_ | `None` (basic exchange, no client auth) | — |
+| Env signal | Provider | Typical environment |
+|---|---|---|
+| `KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET` | `ClientSecret` | Local via `keycard run` |
+| Any of `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE`, or `AZURE_FEDERATED_TOKEN_FILE` | `WorkloadIdentity` | Mounted identity tokens |
+| `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` | `WebIdentity` | Private key JWT |
 
-To force a specific provider, set `KEYCARD_APPLICATION_CREDENTIAL_TYPE` to `eks_workload_identity` or `web_identity`.
+If multiple credential sources are configured, set
+`KEYCARD_APPLICATION_CREDENTIAL_TYPE` to `client_secret`, `workload_identity`,
+or `web_identity`. With no configured credential, the server still boots
+for discovery checks; accessing Linear requires an application credential.
 
 ## 4. Agent verification
 
-There is no build step for Python — `uv sync` installs dependencies but no compilation is required. Verify the vault resources exist and are wired to a `keycard-vault` provider. Do NOT use `keycard run` here — see gotcha 3 in §10.
+Install dependencies and run the HTTP smoke test without `keycard run`.
+The smoke test never calls Linear. Verify separately that the vault
+resources exist and are wired to a `keycard-vault` provider.
 
 ```bash
 uv sync
+PORT=<port> KEYCARD_RESOURCE_ID=http://localhost:<port>/mcp bash scripts/ci-verify.sh
 ```
+
+The script starts and stops the smoke-test process. Verify:
+
+- `GET /healthz` returns JSON.
+- An unauthenticated `POST /mcp` returns HTTP 401 with a Bearer
+  `WWW-Authenticate` challenge advertising
+  `http://localhost:<port>/.well-known/oauth-protected-resource/mcp`.
+- `GET /.well-known/oauth-protected-resource/mcp` returns JSON whose
+  `resource` equals the registered identifier. For a custom resource path,
+  use that path instead of `/mcp` in the POST and metadata suffix.
+- `GET /.well-known/oauth-authorization-server` returns JSON for the zone.
 
 Then a non-interactive smoke test that the two vault resources exist:
 
@@ -340,7 +360,8 @@ Both lookups MUST succeed and return a non-null `credential_provider_id`. If eit
 - a `[[credentials.default]]` entry pointing at the wrong URN — re-check the `<name>` substitution in the appended blocks
 - `keycard.toml` has unresolved `<org-id>` / `<zone-id>` placeholders, or is missing `[org]` / `[zone]` blocks entirely — `keycard run` will fail to authenticate when the user runs the proxy
 
-Do NOT start the proxy server inside the agent session (see gotcha 3). The user starts it themselves in §6.
+Do not start the credentialed proxy with `keycard run` inside the agent
+session (see gotcha 3). The user starts that process themselves in §6.
 
 ## 5. Agent guardrails
 
@@ -381,7 +402,7 @@ The skill renders the handoff from the following data:
 | `name` | `<name>` | — | Kebab-case project name used everywhere |
 | `port` | `<port>` | — | Local HTTP port the proxy listens on |
 | `install_command` | `uv sync` | this session | Installs dependencies |
-| `start_command` | `cd <name> && keycard run -- uvicorn main:app --host 0.0.0.0 --port <port>` | their terminal (separate, keep open) | The wrapper hands the proxy a short-lived credential it needs to start; the proxy refuses to boot without it |
+| `start_command` | `cd <name> && keycard run -- uv run uvicorn main:app --host 0.0.0.0 --port <port>` | their terminal (separate, keep open) | The wrapper gives the proxy the credentials it needs to access Linear |
 | `expected_ready_log` | uvicorn startup output on port `<port>` | — | Signal to wait for before proceeding |
 | `claude_register_command` | `claude mcp add --transport http <name> http://localhost:<port>/mcp` | this session (agent may execute) | Adds the proxy to Claude's MCP config |
 | `restart_command` | `keycard run -- claude` | their terminal | Claude only discovers MCP servers at startup, so a restart is required |
@@ -401,8 +422,8 @@ The `keycard-template-app` skill prescribes the narration style; the lines below
 | Step 4 (copy) | "Copying the `mcp-brokered-credentials-python` blueprint into `./<name>` — this gives you an MCP proxy that talks to Linear's MCP server using Keycard-brokered credentials. No Linear API key needed." |
 | Step 6 (fill in) | "Filling in `.env` with your zone's OIDC issuer URL and a free local port. I'll also write `keycard.toml` with your zone/org IDs and two credential entries — those tell `keycard run` to broker the proxy's `client_id` and `client_secret` from the zone vault at startup." |
 | Step 7 (register) | "This template needs more Keycard primitives than the basic server. I'm about to register: (1) an OAuth provider for Linear so Keycard can broker tokens to `mcp.linear.app`, (2) a Linear Application + Resource so Keycard knows what it's brokering, (3) your proxy's own Application + Resource backed by the zone's STS, (4) a dependency from the proxy to Linear — dependencies control which resources an application can access, so you don't need to write policies yourself, and (5) application credentials stored in the zone vault. Each of these builds on the one before — I'll name what I get back after each step." |
-| Step 8 (smoke-test) | "Installing dependencies with `uv sync` and verifying the two vault resources (`urn:<name>:client_id` and `urn:<name>:client_secret`) resolve correctly in the API. I'm not starting the server here — it needs `keycard run` to broker the secrets into the process, which can't nest inside the agent session. The actual end-to-end test happens when you run it yourself in the next step." |
-| Step 9 (handoff) | "All the Keycard-side setup is done — your zone knows about both the proxy and Linear, and the vault has the proxy's credentials. The last bit has to happen in your terminal: start the proxy with `keycard run -- uvicorn main:app --host 0.0.0.0 --port <port>`, restart Claude, and authenticate via `/mcp`." |
+| Step 8 (smoke-test) | "Installing dependencies, verifying the proxy's discovery endpoints, and checking that both vault resources resolve. The end-to-end check with Linear happens when you run the proxy yourself in the next step." |
+| Step 9 (handoff) | "Your zone knows about the proxy and Linear, and the vault has the proxy's credentials. In your terminal, start the proxy with `keycard run -- uv run uvicorn main:app --host 0.0.0.0 --port <port>`, restart Claude, and authenticate via `/mcp`." |
 
 ## 8. Things to try once it's running
 
@@ -417,7 +438,7 @@ The agent SHOULD print these as concrete suggestions after the handoff recap, so
 
 - **Swap the upstream.** The Linear MCP URL is defined in `upstream.py` as `LINEAR_MCP_URL`. To proxy a different OAuth-MCP server (e.g. GitHub, Slack), change this constant and register the new upstream's provider/application/resource in Keycard following the same pattern as §1a–§1c.
 - **Change what gets proxied.** `tools/search.py` filters the upstream tool catalog by regex; `tools/execute.py` forwards a single tool call. You can add tools that call multiple upstream tools, aggregate results, or transform the response before returning it.
-- **Understand the token exchange.** `AuthProvider._discover_application_credential()` handles credential discovery (see §3 for the priority table). The `@auth_provider.grant(LINEAR_MCP_URL)` decorator on each tool handles the per-call token exchange — this is the core brokering pattern you'd reuse for any upstream.
+- **Understand the token exchange.** The server builds one OAuth `AsyncClient` with its discovered credential. On each tool call, `linear_client_for_user` uses that client to exchange the verified user's token for `LINEAR_MCP_URL`.
 - **Add a direct tool (no upstream).** You can also add tools that don't fan out — just create a file in `tools/` following the `hello` pattern from the base template. The proxy and direct tools coexist fine.
 
 ## 10. Common gotchas the agent should pre-empt
@@ -428,11 +449,11 @@ When one of these fails, surface the matching diagnostic verbatim rather than pr
 
 2. **Dependencies silently dropped on resource POST.** The `dependencies` field is only accepted via `PUT /applications/<app-id>/dependencies/<resource-id>` with an empty body. Passing `dependencies: [...]` on a resource or application POST/PATCH is silently ignored — the API returns 200 but the dependency is not created. Always use the dedicated PUT route (§1f-bis) and verify with the GET endpoint afterward.
 
-3. **`keycard run` refusing to nest.** `keycard run` requires an interactive TTY and will not nest inside the agent's own `keycard run` session. Do NOT try to smoke-test with `keycard run -- uvicorn main:app` from within the agent — use the API-based vault-resource check (§4) instead. The actual `keycard run` test happens when the user starts the proxy themselves.
+3. **`keycard run` refusing to nest.** `keycard run` requires an interactive TTY and does not nest in another `keycard run` session. Use the HTTP and vault-resource checks in §4 instead. The user tests the credentialed proxy from their terminal.
 
 4. **`${...}` interpolation in `keycard.toml`.** TOML does not expand environment variables. Never write `${KEYCARD_URL}` or any `${...}` syntax into `keycard.toml` — it will be treated as a literal string. Runtime config (`KEYCARD_URL`, `PORT`) goes in `.env`; `keycard.toml` only holds static IDs and credential-mapping entries.
 
-5. **`KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` written to `.env` or source code.** These secrets MUST only enter the process via `keycard run` brokering from the vault. Putting them in `.env` defeats the entire point of the template (demonstrating zero-static-secret credential delivery). If the proxy fails to start with "Could not discover application credentials", the user likely forgot `keycard run` — they ran `uvicorn main:app` directly instead of `keycard run -- uvicorn main:app`.
+5. **`KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` written to `.env` or source code.** These secrets MUST only enter the process via `keycard run` brokering from the vault. If discovery works but Linear calls fail, check that the proxy was started with `keycard run -- uv run uvicorn main:app`.
 
 6. **Linear consent screen not appearing.** If the user authenticates via `/mcp` but never sees a Linear consent prompt, the dependency wiring (§1f-bis) is missing — without it the proxy cannot access the Linear resource at all. Verify with `GET /zones/<zone-id>/applications/<proxy-application-id>/dependencies` — the Linear resource must appear in `items`. If not, re-run the PUT.
 

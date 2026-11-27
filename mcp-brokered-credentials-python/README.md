@@ -33,7 +33,7 @@ Follow `SPEC.md` to provision the required Keycard resources (Linear provider, a
    | Env var | Default | Purpose |
    |---|---|---|
    | `KEYCARD_URL` | _(required)_ | The zone's OIDC issuer URL. The verifier trusts tokens from it and resolves its JWKS. |
-   | `KEYCARD_RESOURCE_ID` | _(unset)_ | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. |
+   | `KEYCARD_RESOURCE_ID` | `http://localhost:<PORT>/mcp` | The registered Resource's HTTP(S) URL. Its path sets the MCP endpoint, and the exact URL sets the token audience and OAuth discovery. |
    | `PORT` | `8000` | Local HTTP port. |
 
 3. **Configure `keycard.toml`**
@@ -43,10 +43,29 @@ Follow `SPEC.md` to provision the required Keycard resources (Linear provider, a
 ## Run
 
 ```bash
-keycard run -- uvicorn main:app --host 0.0.0.0 --port 8000
+keycard run -- uv run uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-`keycard run` brokers `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` from the zone vault into the process environment. Running `uvicorn` directly (without `keycard run`) will fail at startup because credentials cannot be discovered.
+`keycard run` brokers `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` from the
+zone vault into the process environment. The server can start without them
+for smoke tests, but the provisioned proxy application needs them to access Linear.
+
+## Endpoints
+
+| Path | Description |
+|---|---|
+| `GET /healthz` | Health check |
+| `GET /.well-known/oauth-protected-resource/mcp` | OAuth resource metadata (RFC 9728) for the default resource |
+| `GET /.well-known/oauth-authorization-server` | OAuth AS metadata (RFC 8414) |
+| `POST /mcp` | MCP Streamable HTTP transport |
+
+An unauthenticated `POST /mcp` returns HTTP 401 with a Bearer
+`WWW-Authenticate` challenge. Its `resource_metadata` URL and the metadata
+document's `resource` both come from `KEYCARD_RESOURCE_ID`. A different
+resource path changes both the MCP endpoint and the metadata suffix.
+After `uv sync`, run `bash scripts/ci-verify.sh` to verify them without
+contacting Linear. Export `PORT` and `KEYCARD_RESOURCE_ID` first if you use
+nondefault values.
 
 ## How it works
 
@@ -55,12 +74,12 @@ Claude → [Keycard bearer token] → proxy → [RFC 8693 token exchange] → [L
 ```
 
 1. Claude authenticates to the proxy with a Keycard bearer token.
-2. When a tool is called, `@auth_provider.grant("https://mcp.linear.app/mcp")` exchanges that token for a Linear-scoped OAuth token via the zone's STS.
+2. At startup the proxy configures an OAuth `AsyncClient` with the discovered application credential. On each tool call, the client exchanges the user's token for a Linear-scoped token via the zone's STS.
 3. The proxy opens a fresh MCP session to `https://mcp.linear.app/mcp` with the brokered token and forwards the call.
 4. The brokered token is scoped to the call duration — no Linear tokens are cached or stored.
 
 ## Extending
 
 - **Swap the upstream** — change `LINEAR_MCP_URL` in `upstream.py` and register the new upstream's Keycard primitives (§1a–§1c of `SPEC.md`).
-- **Add direct tools** — add a file to `tools/` following the pattern in `tools/search.py` or `tools/execute.py`, without `@auth_provider.grant()`.
-- **Proxy multiple upstreams** — pass a list of resource URLs to `@auth_provider.grant(["url1", "url2"])` and call `access_ctx.access(url)` per resource.
+- **Add direct tools:** register a tool in `tools/` without calling the upstream client.
+- **Proxy multiple upstreams:** call `exchange_token` with the resource URL of each upstream you need to call.

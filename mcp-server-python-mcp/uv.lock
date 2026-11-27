@@ -678,14 +678,34 @@ wheels = [
 
 [[package]]
 name = "joserfc"
-version = "1.7.4"
+version = "1.7.7"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/e0/27a6a081ae25420eda6768ceae05d7022a7f2447f420588843f2a44e4298/joserfc-1.7.4.tar.gz", hash = "sha256:b3bc561672ae541b17a9237053b48a03dacddd92d68047b3ecdfb4b5714a88ed", size = 234027, upload-time = "2026-07-19T15:43:02.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/15/48ff246732232d35ee234228def22b52455fcc55577f06146602399a29b0/joserfc-1.7.7.tar.gz", hash = "sha256:471d0fd12a5a0d1c0942de280f39efe6f597878315033270b504d4d006d25510", size = 237446, upload-time = "2026-10-19T00:30:29.974Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/bf/249dcd99b3376375910b7fa922383b57792975c8758f50d44612e749226c/joserfc-1.7.4-py3-none-any.whl", hash = "sha256:32d46c2cd5e3203c13e87a6c61333cab310b1ba80cd54b4c4f386a848a122463", size = 71000, upload-time = "2026-07-19T15:43:01.299Z" },
+    { url = "https://files.pythonhosted.org/packages/df/9f/934db284aa22f37af59708e382903860d4b81329c137b1b0ed2745daeb65/joserfc-1.7.7-py3-none-any.whl", hash = "sha256:06979cfbab78bc802f14c0358f32969826cc26720e13cb38926ffdc86bc0cb2c", size = 71758, upload-time = "2026-10-19T00:30:28.498Z" },
+]
+
+[[package]]
+name = "joserfc"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version == '3.11.*' or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten')",
+]
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/31/5c3f27e82c92a7bbe1f028033ff19e0251540395c9be244c01a50de42bdb/joserfc-1.8.0.tar.gz", hash = "sha256:cbf03cb2c6db8cc5289f1ef8718842e53dba244b4c0de5fefa0c0eaee4bde8db", size = 241023, upload-time = "2026-11-03T10:45:57.948Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/7e/7ffaae13415e8f51c8e8d5d1845f2de7a27ebf2717e97a38d7e7446d6030/joserfc-1.8.0-py3-none-any.whl", hash = "sha256:176b836ac7ed9a46a88629e24076314b475f33a75d0bad7f26146e572eed7c79", size = 73147, upload-time = "2026-11-03T10:45:56.531Z" },
 ]
 
 [[package]]
@@ -718,7 +738,7 @@ wheels = [
 
 [[package]]
 name = "keycardai-mcp"
-version = "2.3.6"
+version = "2.3.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -732,29 +752,30 @@ dependencies = [
     { name = "nanoid" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/55/48d393b8853311dd02caf3ceba0497fb19211e728ac0d1adba85257cd80a/keycardai_mcp-2.3.6.tar.gz", hash = "sha256:ab4036accf8e2178c8d092d3d9bc0f8bd0bf11b5f8fa28f1c0e54c03c214e7d8", size = 237176, upload-time = "2026-11-04T00:44:16.074Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/29/bbba7c1e0fddd66652bb8cddb4b31c7b45e78d99cdf09d1d6be06778db59/keycardai_mcp-2.3.12.tar.gz", hash = "sha256:d222c2488ec0ad8b43c1444712280b5d2f04d871a60b17c3dce9fe5ad3432ed8", size = 239753, upload-time = "2026-11-26T09:17:34.148Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/de/0a21c0c4e95c48e5e2aa9ab0e3973a53136ffba69929dfbea79a3d70db55/keycardai_mcp-2.3.6-py3-none-any.whl", hash = "sha256:63fa61fca6217c1a539ae4d48bca6d1a46e241b6cffc35763322ec10b396afd3", size = 148345, upload-time = "2026-11-04T00:44:14.7Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/4a/9b20859fbafd4c1e0e2a8e478dd6bce9be0879bcea0d9ee596f59915f9fb/keycardai_mcp-2.3.12-py3-none-any.whl", hash = "sha256:704af9d38b8aaa0983cf391ee8edd6e49cec9dcd7c5703982f68b1734742604b", size = 149174, upload-time = "2026-11-26T09:17:32.886Z" },
 ]
 
 [[package]]
 name = "keycardai-oauth"
-version = "0.35.0"
+version = "0.47.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
-    { name = "joserfc" },
+    { name = "joserfc", version = "1.7.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "joserfc", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/98/45b0e16ecc1486ed232d315c4503fe10013366760e62d668e1b74b3e663e/keycardai_oauth-0.35.0.tar.gz", hash = "sha256:7010d260be97d5c68c52ddcb233e60dba95a7d2612d78481e32597a9c31c4a1d", size = 263056, upload-time = "2026-11-04T01:46:06.914Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8f/0e/3235f02892039b4f2cbbe55a6004881bd0fb09d936208da73e2c98e167c2/keycardai_oauth-0.47.0.tar.gz", hash = "sha256:2d078bc30d067a71cc940c8e2ec762f6859887ecd70a1ac8b423c038c068c0ae", size = 368336, upload-time = "2026-11-26T18:57:34.014Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/47/837739fbfb7470aa39636e3a6664055972dde1102a6efa39460b85a45770/keycardai_oauth-0.35.0-py3-none-any.whl", hash = "sha256:be6cc4d26e68aa72fed36281376fcb4d12000ae508d3c6143ecca310277b1d89", size = 117709, upload-time = "2026-11-04T01:46:05.737Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/ac/7c511cc6f47519548c0f1ac32453833d3d24efeab3fd82392e323562f9df/keycardai_oauth-0.47.0-py3-none-any.whl", hash = "sha256:20f972078023c974c4e46b33377c8e234c9677f1e473835f3982213d9091416b", size = 156271, upload-time = "2026-11-26T18:57:32.665Z" },
 ]
 
 [[package]]
 name = "keycardai-starlette"
-version = "0.14.2"
+version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -762,9 +783,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "starlette" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/ba/4ba43b669ec93a0ce2348f63ffaf8cf5b478534e29d9adf5f464b89c2ef0/keycardai_starlette-0.14.2.tar.gz", hash = "sha256:c5cd5225f0aa51f91c636f8b22acae37ca3d1cbc4be7a55590da621c5587b2b5", size = 72924, upload-time = "2026-09-16T22:26:03.74Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/de/aaf9af5591ad0696628e80fef53375f0887c66bf5b2484cfeaf109ada71e/keycardai_starlette-0.18.0.tar.gz", hash = "sha256:fd0d452a6d8a0dbb72b9b490822bb774c7081998a06729ee602aa5ea14ea83c7", size = 98597, upload-time = "2026-11-26T19:58:56.703Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/90/0b/1a61b7c984f1aaec7a7c6ac8f804708a54a479f388137c5e195eb0bc06df/keycardai_starlette-0.14.2-py3-none-any.whl", hash = "sha256:0d304c83f015c7983c8c655591b1218fb5c865546cb0d4c48db90f3d90c8a7ad", size = 25794, upload-time = "2026-09-16T22:26:02.748Z" },
+    { url = "https://files.pythonhosted.org/packages/39/f0/42c70fefc39a5667ca9a334dff83c1c448cbf1acbb2adc3d2993c866c6bc/keycardai_starlette-0.18.0-py3-none-any.whl", hash = "sha256:c90c57375cf695b11d7c254624dfc4759b74b6731fb97c98cd92d0816ec9b0d1", size = 39184, upload-time = "2026-11-26T19:58:55.81Z" },
 ]
 
 [[package]]
@@ -799,6 +820,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "keycardai-mcp" },
+    { name = "keycardai-starlette" },
     { name = "python-dotenv" },
     { name = "starlette" },
     { name = "uvicorn" },
@@ -806,7 +828,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "keycardai-mcp", specifier = ">=2.3.6,<3" },
+    { name = "keycardai-mcp", specifier = ">=2.3.12,<3" },
+    { name = "keycardai-starlette", specifier = ">=0.18.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "starlette", specifier = ">=0.27.0" },
     { name = "uvicorn", specifier = ">=0.29.0" },

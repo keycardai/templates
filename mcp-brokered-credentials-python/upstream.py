@@ -3,47 +3,23 @@
 import contextlib
 
 import httpx
+from keycardai.oauth import AsyncClient
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.mcpserver import Context
-from keycardai.mcp.server.auth import AuthProvider
-from keycardai.oauth.server import AccessContext, exchange_tokens_for_resources
 
 LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 
 @contextlib.asynccontextmanager
-async def linear_client_for_user(auth_provider: AuthProvider, ctx: Context):
-    # auth_provider._get_or_create_client() is private; keycardai-mcp does not yet
-    # expose a public exchange_tokens() method. Track: add AuthProvider.exchange_tokens().
-    user = ctx.request_context.request.user
-    bearer_token: str = user.access_token
-    auth_info = {
-        "access_token": bearer_token,
-        "zone_id": getattr(user, "zone_id", None),
-        "client_id": getattr(user, "client_id", None),
-    }
-
-    oauth_client = await auth_provider._get_or_create_client(auth_info)
-    if oauth_client is None:
-        raise RuntimeError("Keycard OAuth client not initialized — check KEYCARD_URL and credentials")
-
-    access_ctx = await exchange_tokens_for_resources(
-        client=oauth_client,
-        resources=[LINEAR_MCP_URL],
-        subject_token=bearer_token,
-        access_context=AccessContext(),
-        application_credential=auth_provider.application_credential,
-        auth_info=auth_info,
+async def linear_client_for_user(oauth_client: AsyncClient, ctx: Context):
+    token = await oauth_client.exchange_token(
+        subject_token=ctx.request_context.request.user.access_token,
+        resource=LINEAR_MCP_URL,
     )
 
-    if access_ctx.has_errors():
-        raise RuntimeError(f"Token exchange for {LINEAR_MCP_URL} failed: {access_ctx.get_errors()}")
-
-    linear_token = access_ctx.access(LINEAR_MCP_URL).access_token
-
     async with httpx.AsyncClient(
-        headers={"Authorization": f"Bearer {linear_token}"},
+        headers={"Authorization": f"Bearer {token.access_token}"},
         timeout=30.0,
     ) as http_client:
         async with streamable_http_client(

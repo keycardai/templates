@@ -97,15 +97,17 @@ Write `[org] id`, `[zone] id` and `[credentials]` as in the other Python templat
 
 ```bash
 uv sync
-uv run uvicorn target_agent:app --host 0.0.0.0 --port <target-port> &
-uv run uvicorn caller_agent:app --host 0.0.0.0 --port <caller-port> &
-curl -sf http://localhost:<target-port>/healthz
-curl -sf http://localhost:<caller-port>/.well-known/agent-card.json
+CALLER_PORT=<caller-port> TARGET_PORT=<target-port> bash scripts/ci-verify.sh
 ```
 
 A `POST /a2a/jsonrpc` without a bearer on either agent MUST answer 401 with a `WWW-Authenticate: Bearer` challenge. A token audienced at the caller MUST be refused by the target (401, `error="invalid_token"`). With a user token for the caller, one `SendMessage` through the caller returns the target's report whose `sub` is the user, whose `act.sub` is `<name>-caller`, and whose `aud` is the target's URL only.
 
-`scripts/ci-verify.sh` runs the boot part of this (health, cards, 401 without a bearer) and is what CI runs.
+`scripts/ci-verify.sh` checks health, agent cards, protected-resource metadata,
+and the unauthenticated 401 on both agents. `GET /.well-known/oauth-protected-resource`
+returns the registered base URL as `resource`. `GET /.well-known/oauth-authorization-server`
+returns the zone's OAuth metadata. The base URL is not the JSON-RPC path, so
+the SDK does not include `resource_metadata` in that challenge. Run the
+authenticated `SendMessage` and wrong-audience checks separately.
 
 ## 4. What the agent MUST NOT do
 

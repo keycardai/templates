@@ -2,12 +2,12 @@ import json
 import re
 
 from mcp.server.mcpserver import Context, MCPServer
-from keycardai.mcp.server.auth import AuthProvider
+from keycardai.oauth import AsyncClient
 
 from upstream import linear_client_for_user
 
 
-def register_search_tool(mcp: MCPServer, auth_provider: AuthProvider) -> None:
+def register_search_tool(mcp: MCPServer, oauth_client: AsyncClient) -> None:
     @mcp.tool(
         description=(
             "Search the upstream Linear MCP server's tool catalog by regex. "
@@ -21,7 +21,7 @@ def register_search_tool(mcp: MCPServer, auth_provider: AuthProvider) -> None:
         except re.error as exc:
             raise Exception(f"Invalid regex pattern: {exc}") from exc
 
-        async with linear_client_for_user(auth_provider, ctx) as client:
+        async with linear_client_for_user(oauth_client, ctx) as client:
             result = await client.list_tools()
             matched = [
                 {

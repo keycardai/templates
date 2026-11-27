@@ -2,12 +2,12 @@ import json
 from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
-from keycardai.mcp.server.auth import AuthProvider
+from keycardai.oauth import AsyncClient
 
 from upstream import linear_client_for_user
 
 
-def register_execute_tool(mcp: MCPServer, auth_provider: AuthProvider) -> None:
+def register_execute_tool(mcp: MCPServer, oauth_client: AsyncClient) -> None:
     @mcp.tool(
         description=(
             "Execute a tool on the upstream Linear MCP server. "
@@ -19,7 +19,7 @@ def register_execute_tool(mcp: MCPServer, auth_provider: AuthProvider) -> None:
         name: str,
         arguments: dict[str, Any] | None = None,
     ) -> str:
-        async with linear_client_for_user(auth_provider, ctx) as client:
+        async with linear_client_for_user(oauth_client, ctx) as client:
             result = await client.call_tool(name, arguments=arguments or {})
 
             content = [

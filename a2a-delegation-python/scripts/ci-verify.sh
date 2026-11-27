@@ -22,8 +22,13 @@ for base in "$TARGET_BASE_URL" "$CALLER_BASE_URL"; do
   curl -sf "$base/healthz" | python3 -m json.tool
   echo "==> $base/.well-known/agent-card.json"
   curl -sf "$base/.well-known/agent-card.json" | python3 -m json.tool
+  echo "==> $base/.well-known/oauth-protected-resource"
+  curl -sf "$base/.well-known/oauth-protected-resource" | jq -e --arg resource "$base" 'select(.resource == $resource)'
   echo "==> $base/a2a/jsonrpc without a bearer"
-  curl -s -o /dev/null -w '%{http_code}\n' -D -  -X POST "$base/a2a/jsonrpc" \
+  headers=$(curl -sS -o /dev/null -D - -X POST "$base/a2a/jsonrpc" \
     -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' \
-    -d '{"jsonrpc":"2.0","id":"1","method":"GetTask","params":{"id":"missing"}}'
+    -d '{"jsonrpc":"2.0","id":"1","method":"GetTask","params":{"id":"missing"}}')
+  printf '%s\n' "$headers"
+  [[ "$headers" == HTTP/*' 401 '* ]]
+  printf '%s\n' "$headers" | grep -qi '^www-authenticate: bearer'
 done

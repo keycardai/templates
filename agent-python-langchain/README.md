@@ -48,6 +48,11 @@ Its defaults already point at `http://localhost:2024` with assistant id `agent`.
 Order matters: `langgraph dev` reads `.env` at startup, and `signin.py` must stay
 running because the agent's interrupt links point at it.
 
+The sign-in helper binds the application's client ID and secret when it
+constructs its OAuth client. With `--as-login-app`, it binds the public
+`KEYCARD_LOGIN_CLIENT_ID` without a secret. The PKCE callback uses that
+same client to exchange the authorization code.
+
 Then open http://localhost:3000 and ask "what's on my calendar today?"
 
 ### Without a UI
