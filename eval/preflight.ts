@@ -14,8 +14,13 @@ interface OAuthIssuer {
   protocols?: { oauth2?: { issuer?: string } };
 }
 
+interface IdentityProvider extends OAuthIssuer {
+  identifier?: string;
+  owner_type?: string;
+}
+
 interface EvalZoneState {
-  identityProvider: "Organization Zone" | "missing" | "different" | "unverified";
+  identityProvider: "Organization Zone" | "Keycard ID" | "missing" | "different" | "not-keycard-id" | "unverified";
   requiresInvitation: boolean;
   testUserPresent: boolean;
 }
@@ -26,6 +31,8 @@ export function findEvalZoneDrift(actual: EvalZoneState): string[] {
     errors.push(`Identity Provider (user_identity_provider_id): expected ${expectedEvalZone.identityProvider} for user sign-in; none is set.`);
   } else if (actual.identityProvider === "different") {
     errors.push(`Identity Provider (user_identity_provider_id): expected ${expectedEvalZone.identityProvider} for user sign-in.`);
+  } else if (actual.identityProvider === "not-keycard-id") {
+    errors.push(`Identity Provider (user_identity_provider_id): expected ${expectedEvalZone.organizationZoneIdentityProvider} for user sign-in in the Organization Zone.`);
   }
   if (actual.requiresInvitation !== expectedEvalZone.requiresInvitation) {
     errors.push(`Invitation requirement (requires_invitation): expected ${expectedEvalZone.requiresInvitation}.`);
@@ -66,7 +73,7 @@ async function readIdentityProvider(
 ): Promise<{ identityProvider: EvalZoneState["identityProvider"]; warning?: string }> {
   if (!zone.user_identity_provider_id) return { identityProvider: "missing" };
 
-  const provider = await read<OAuthIssuer>(`${zonePath}/providers/${encodeURIComponent(zone.user_identity_provider_id)}`, token, "the Identity Provider");
+  const provider = await read<IdentityProvider>(`${zonePath}/providers/${encodeURIComponent(zone.user_identity_provider_id)}`, token, "the Identity Provider");
   const providerIssuer = provider.protocols?.oauth2?.issuer?.replace(/\/+$/, "");
 
   try {
@@ -75,7 +82,10 @@ async function readIdentityProvider(
     const organization = await read<{ zone_id?: string }>(`/organizations/${encodeURIComponent(orgId)}`, token, "the eval zone's organization");
     if (!organization?.zone_id) throw new PreflightError("the organization response has no zone_id.");
     // The eval can run in the Organization Zone itself, whose Identity Provider is Keycard ID.
-    if (organization.zone_id === zoneId) return { identityProvider: "Organization Zone" };
+    if (organization.zone_id === zoneId) {
+      const isKeycardId = provider.owner_type === "platform" && provider.identifier === "keycard-id" && Boolean(providerIssuer);
+      return { identityProvider: isKeycardId ? "Keycard ID" : "not-keycard-id" };
+    }
     const orgZone = await read<OAuthIssuer>(`/zones/${encodeURIComponent(organization.zone_id)}`, token, "the Organization Zone");
     const orgIssuer = orgZone?.protocols?.oauth2?.issuer?.replace(/\/+$/, "");
     if (!orgIssuer) throw new PreflightError("the Organization Zone's OAuth issuer is unavailable.");

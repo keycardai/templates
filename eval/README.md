@@ -115,7 +115,7 @@ EVAL_HEADLESS=false keycard run -- npm run eval -- --template mcp-server-typescr
 
 When the browser opens, sign in with the email/password from your vault resources, signing up at the Keycard ID Zone first if the account doesn't exist yet, and verify the email. The first sign-in creates the test user in the eval zone. After that, all subsequent runs are fully headless.
 
-In GitHub Actions, the preflight job checks the eval zone before any template runs and doesn't change it. It expects the zone to have an Identity Provider and the user identified by `EVAL_TEST_USER_EMAIL` to exist in it. If the eval zone is a custom zone instead of the Organization Zone, its Identity Provider must also be the Organization Zone; when the job can't read the organization or the Organization Zone's issuer to check that, it warns instead of failing.
+In GitHub Actions, the preflight job checks the eval zone before any template runs and doesn't change it. It expects the user identified by `EVAL_TEST_USER_EMAIL` to exist in the zone and the Identity Provider to be Keycard ID in the Organization Zone, or the Organization Zone itself in a custom zone. When the job can't read the organization or the Organization Zone's issuer to verify which provider is configured, it warns instead of failing.
 
 ## Run
 

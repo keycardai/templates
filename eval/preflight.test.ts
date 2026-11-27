@@ -39,6 +39,8 @@ test("reads the configured provider issuer, organization zone issuer, and exact 
 
   const issuer = "https://org-zone.example.com";
   let providerIssuer = issuer;
+  let providerOwner = "customer";
+  let providerIdentifier = "custom-provider";
   let userIdentityProviderId: string | undefined = "eval-provider";
   let organizationId: string | undefined = "fixture-org";
   let organizationReadable = true;
@@ -62,7 +64,11 @@ test("reads the configured provider issuer, organization zone issuer, and exact 
         return Response.json({ organization_id: organizationId, user_identity_provider_id: userIdentityProviderId });
       case "/zones/eval-zone/providers/eval-provider":
         if (!providerReadable) return new Response(null, { status: 403 });
-        return Response.json({ name: "Organization Zone", protocols: { oauth2: { issuer: providerIssuer } } });
+        return Response.json({
+          identifier: providerIdentifier,
+          owner_type: providerOwner,
+          protocols: { oauth2: { issuer: providerIssuer } },
+        });
       case "/organizations/fixture-org":
       case "/organizations/fallback-org":
         if (!organizationReadable) return new Response(null, { status: 403 });
@@ -99,9 +105,25 @@ test("reads the configured provider issuer, organization zone issuer, and exact 
 
   organizationZoneId = "eval-zone";
   providerIssuer = "https://id.keycard.ai";
+  providerOwner = "platform";
+  providerIdentifier = "keycard-id";
   seen.clear();
   assert.deepEqual(await checkEvalZone(), pass);
   assert.ok(!seen.has("/zones/org-zone"));
+
+  const keycardIdError = {
+    errors: ["Identity Provider (user_identity_provider_id): expected Keycard ID for user sign-in in the Organization Zone."],
+    warnings: [],
+  };
+  providerIdentifier = "other-platform-provider";
+  assert.deepEqual(await checkEvalZone(), keycardIdError);
+  providerIdentifier = "keycard-id";
+  providerOwner = "customer";
+  providerIssuer = "https://sso.example.com";
+  assert.deepEqual(await checkEvalZone(), keycardIdError);
+  providerOwner = "platform";
+  providerIssuer = "";
+  assert.deepEqual(await checkEvalZone(), keycardIdError);
   organizationZoneId = "org-zone";
 
   providerIssuer = "https://other-zone.example.com";
