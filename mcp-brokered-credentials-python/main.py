@@ -12,7 +12,7 @@ Or via keycard run:
 
 import contextlib
 import os
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from dotenv import find_dotenv, load_dotenv
 from keycardai.oauth import AsyncClient
@@ -30,11 +30,18 @@ load_dotenv(find_dotenv(usecwd=True))
 
 KEYCARD_URL = os.environ.get("KEYCARD_URL")
 PORT = int(os.environ.get("PORT", "8000"))
-RESOURCE_ID = os.environ.get("KEYCARD_RESOURCE_ID") or f"http://localhost:{PORT}/mcp"
+RESOURCE_ID = os.environ.get("KEYCARD_RESOURCE_ID")
+if not RESOURCE_ID:
+    if os.environ.get("MCP_SERVER_URL"):
+        raise RuntimeError(
+            "MCP_SERVER_URL is no longer read. "
+            "Set KEYCARD_RESOURCE_ID to the registered resource URL (e.g. <base>/mcp)."
+        )
+    RESOURCE_ID = f"http://localhost:{PORT}/mcp"
 resource_url = urlsplit(RESOURCE_ID)
 if resource_url.scheme not in {"http", "https"} or not resource_url.netloc:
     raise ValueError("KEYCARD_RESOURCE_ID must be an HTTP(S) URL")
-MCP_PATH = resource_url.path or "/"
+MCP_PATH = unquote(resource_url.path) or "/"
 SERVER_NAME = "mcp-brokered-credentials-python"
 
 if not KEYCARD_URL:

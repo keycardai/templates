@@ -55,3 +55,37 @@ curl -sf "$BASE$metadata_path" | jq -e --arg resource "$RESOURCE_ID" 'select(.re
 
 echo "==> /.well-known/oauth-authorization-server"
 curl -sf "$BASE/.well-known/oauth-authorization-server" | jq -e 'select(.issuer)'
+
+echo "==> percent-encoded MCP path reaches the dispatcher"
+MCP_SERVER_URL="$BASE" KEYCARD_RESOURCE_ID="$BASE/my%20mcp" uv run python - <<'PY'
+from unittest.mock import patch
+
+from keycardai.starlette import KeycardAuthBackend
+from starlette.testclient import TestClient
+
+from main import app
+
+with (
+    patch.object(KeycardAuthBackend, "authenticate", return_value=None),
+    TestClient(app, base_url="http://localhost:8000") as client,
+):
+    response = client.post(
+        "/my%20mcp",
+        headers={"Accept": "application/json, text/event-stream"},
+        json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25", "capabilities": {},
+                "clientInfo": {"name": "ci", "version": "1"},
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+PY
+
+echo "==> legacy MCP_SERVER_URL without KEYCARD_RESOURCE_ID fails at startup"
+if startup_output=$(MCP_SERVER_URL="$BASE" KEYCARD_RESOURCE_ID= uv run python -c 'import main' 2>&1); then
+  echo "Expected startup to fail when only MCP_SERVER_URL is configured" >&2
+  exit 1
+fi
+printf '%s\n' "$startup_output" | grep -F 'MCP_SERVER_URL is no longer read. Set KEYCARD_RESOURCE_ID'
