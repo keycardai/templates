@@ -58,7 +58,7 @@ export async function getOrCreateEvalZone(runId: string): Promise<{
   // browser flow logs in directly instead of hitting sign-up/verify each run. The zone
   // comes from EVAL_ZONE_ID + EVAL_ZONE_ISSUER_URL (CI secrets), with keycard.toml
   // [zone].id as a local fallback.
-  const persistentId = process.env.EVAL_ZONE_ID || (await getZoneIdFromToml());
+  const persistentId = process.env.EVAL_ZONE_ID?.trim() || (await getZoneIdFromToml());
   if (persistentId && persistentId !== "<eval-zone-id>") {
     const issuerUrl = process.env.EVAL_ZONE_ISSUER_URL || `https://${persistentId}.keycard.cloud`;
     return {

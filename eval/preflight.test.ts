@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { checkEvalZone, findEvalZoneDrift } from "./preflight.js";
 import { expectedEvalZone } from "./zone-expected.js";
+import { getOrCreateEvalZone } from "./zone.js";
 
 test("the expected zone config passes", () => {
   assert.deepEqual(findEvalZoneDrift(expectedEvalZone), []);
@@ -94,6 +95,13 @@ test("reads the configured provider issuer, organization zone issuer, and exact 
     "/zones/org-zone",
     "/zones/eval-zone/users",
   ]));
+
+  process.env.EVAL_ZONE_ID = ` ${env.EVAL_ZONE_ID}\n`;
+  assert.deepEqual(await checkEvalZone(), pass);
+  const evalZone = await getOrCreateEvalZone("fixture-run");
+  assert.equal(evalZone.zone.id, env.EVAL_ZONE_ID);
+  assert.equal(evalZone.ephemeral, false);
+  process.env.EVAL_ZONE_ID = env.EVAL_ZONE_ID;
 
   providerIssuer = `${issuer}/`;
   assert.deepEqual(await checkEvalZone(), pass);
