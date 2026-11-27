@@ -269,6 +269,8 @@ PORT=<port>
 
 `KEYCARD_URL` and `KEYCARD_RESOURCE_ID` are read by the MCP server itself (the proxy needs the zone URL to call Keycard's STS). `package.json` loads `.env` via `node --env-file-if-exists=.env`, so no dotenv dependency is required.
 
+The example above is for local development. For Fly.io or EKS, use the public MCP endpoint (for example, `https://my-proxy.example.com/mcp`) as the Resource `identifier` in §1f, set the deployment's `KEYCARD_RESOURCE_ID` to that exact URL, and configure clients to connect to it. Do not use the internal listener address or localhost for a public deployment.
+
 `.env` MUST NOT contain `KEYCARD_CLIENT_ID` or `KEYCARD_CLIENT_SECRET` — they are brokered at runtime by `keycard run` (see gotcha 5).
 
 ### keycard.toml
@@ -468,7 +470,7 @@ When one of these fails, surface the matching diagnostic verbatim rather than pr
 
 6. **Linear consent screen not appearing.** If the user authenticates via `/mcp` but never sees a Linear consent prompt, the dependency wiring (§1f-bis) is missing — without it the proxy cannot access the Linear resource at all. Verify with `GET /zones/<zone-id>/applications/<proxy-application-id>/dependencies` — the Linear resource must appear in `items`. If not, re-run the PUT.
 
-7. **`invalid_target` or `Requested authorization for unknown resource ...` on the proxy's own `/mcp`.** Same root cause as the base template — the Resource identifier must be `http://localhost:<port>/mcp` with the correct port and the `/mcp` suffix. Check the registered Resource in `https://console.keycard.ai → Resources`.
+7. **`invalid_target` or `Requested authorization for unknown resource ...` on the proxy's own `/mcp`.** Check the registered Resource in `https://console.keycard.ai → Resources`. It must match `KEYCARD_RESOURCE_ID` and the full URL clients use, including `/mcp`: `http://localhost:<port>/mcp` for local use or the public HTTPS URL for a deployment.
 
 ---
 

@@ -126,6 +126,8 @@ PORT=8000
 
 Commit `.env.example` with placeholder values for other developers. `.env` is already in `.gitignore`.
 
+The example above is for local development. For a public deployment, use the public MCP endpoint (for example, `https://my-mcp.example.com/mcp`) as the Resource `identifier` in §1c, set the deployment's `KEYCARD_RESOURCE_ID` to that exact URL, and configure clients to connect to it. Do not use the internal listener address or localhost for a public deployment.
+
 ### keycard.toml
 
 The template ships a minimal `keycard.toml` at the project root with only `[org]`, `[zone]`, and an empty `[credentials]` block:

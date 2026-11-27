@@ -53,7 +53,7 @@ The proxy listens on `http://localhost:8000/mcp`.
 
 ### On a cloud platform
 
-Set `KEYCARD_URL` and `PORT` in the platform's env config. The proxy discovers workload-identity credentials from the environment automatically — no `keycard run` wrapper needed. See [Deploying](#deploying) for platform-specific details.
+Set `KEYCARD_URL` and `PORT` in the platform's environment. Register the public MCP URL (for example, `https://my-proxy.example.com/mcp`) as a Resource in Keycard, set `KEYCARD_RESOURCE_ID` to that exact URL, and use the same URL in MCP clients. The localhost default is for local development only. The proxy discovers workload-identity credentials automatically, so no `keycard run` wrapper is needed. See [Deploying](#deploying) for platform-specific details.
 
 ## Configure
 
@@ -64,16 +64,18 @@ Set `KEYCARD_URL` and `PORT` in the platform's env config. The proxy discovers w
 | `KEYCARD_CLIENT_SECRET` | _(auto-discovered)_ | Brokered by `keycard run` from `urn:<name>:client_secret`. |
 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | _(auto-discovered)_ | Force a specific credential provider: `eks_workload_identity`, `fly_workload_identity`, or `web_identity`. |
 | `KEYCARD_RESOURCE_ID` | `http://localhost:$PORT/mcp` | The exact registered HTTP(S) Resource URL. Its path is the MCP route, and only tokens with this audience are accepted. |
+| `PORT` | `8000` | Local HTTP port. |
 
 The server uses `@keycardai/express` to publish protected-resource metadata and issue bearer challenges for the same Resource. With the default URL, `GET /.well-known/oauth-protected-resource/mcp` returns the metadata, and an unauthenticated `POST /mcp` returns HTTP 401 with `WWW-Authenticate: Bearer resource_metadata="http://localhost:8000/.well-known/oauth-protected-resource/mcp"`. If you set a different public Resource URL, connect to that exact path and query. `GET /.well-known/oauth-authorization-server` still serves zone discovery.
 
 To verify discovery and the challenge without an MCP token, export `KEYCARD_URL` and any port or Resource overrides, then run `npm run build && npm run ci:verify`.
 For this smoke test only, you can export placeholder `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` values. The test does not exchange tokens or call Linear.
-| `PORT` | `8000` | Local HTTP port. |
 
 The proxy discovers credentials automatically at startup (see [`SPEC.md` §3](./SPEC.md#3-runtime-credential-discovery) for the full priority order). Locally, `keycard run` injects `KEYCARD_CLIENT_ID` / `KEYCARD_CLIENT_SECRET`. On Fly.io or EKS the proxy detects the platform and uses its workload-identity token — no static secrets needed.
 
 ## Deploying
+
+Use the public Resource configuration under [On a cloud platform](#on-a-cloud-platform) for both Fly.io and EKS.
 
 ### Fly.io
 
