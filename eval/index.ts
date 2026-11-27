@@ -50,6 +50,10 @@ if (!templateArg) {
   console.error("Usage: npm run eval -- --template <template-name>");
   process.exit(1);
 }
+if (templateArg.startsWith("_") || path.basename(path.resolve(templateArg)).startsWith("_")) {
+  console.error(`Cannot eval "${templateArg}": template names starting with "_" are reserved.`);
+  process.exit(1);
+}
 
 const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", templateArg);
 const RUN_ID = `${Date.now()}`;

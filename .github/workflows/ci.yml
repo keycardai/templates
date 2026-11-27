@@ -40,7 +40,7 @@ jobs:
 
           discover() {
             # $1 is the marker file that identifies the language.
-            find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
+            find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name '_*' ! -name 'scripts' ! -name 'eval' \
               -exec test -f "{}/$1" \; -print \
               | sed 's|^\./||' | sort | jq -R . | jq -sc .
           }
@@ -68,7 +68,7 @@ jobs:
               echo "go=$(discover go.mod)"
               echo "ruby=$(discover Gemfile)"
               echo "java=$(discover build.gradle.kts)"
-              echo "python=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name 'scripts' ! -name 'eval' \
+              echo "python=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name '_*' ! -name 'scripts' ! -name 'eval' \
                 -exec test -f '{}/pyproject.toml' \; \
                 ! -exec test -f '{}/package.json' \; -print \
                 | sed 's|^\./||' | sort | jq -R . | jq -sc .)"

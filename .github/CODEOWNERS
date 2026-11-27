@@ -1,1 +1,15 @@
 * @keycardai/engineering
+
+# Replace the fallback owner on each entry with that template's owning team or person.
+/_skeleton/ @keycardai/engineering
+/a2a-delegation-python/ @keycardai/engineering
+/agent-python-langchain/ @keycardai/engineering
+/autonomous-agent-snowflake-wif/ @keycardai/engineering
+/mcp-brokered-credentials-python/ @keycardai/engineering
+/mcp-brokered-credentials-typescript/ @keycardai/engineering
+/mcp-delegated-access-go/ @keycardai/engineering
+/mcp-server-go/ @keycardai/engineering
+/mcp-server-java/ @keycardai/engineering
+/mcp-server-python-mcp/ @keycardai/engineering
+/mcp-server-ruby/ @keycardai/engineering
+/mcp-server-typescript-express/ @keycardai/engineering
