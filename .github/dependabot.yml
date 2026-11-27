@@ -69,3 +69,22 @@ updates:
       prefix: "chore(deps)"
     labels:
       - dependencies
+
+  - package-ecosystem: gradle
+    directories:
+      - /mcp-server-java
+    schedule:
+      interval: weekly
+      day: sunday
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-name: "ai.keycard:*"
+    groups:
+      keycard-gradle:
+        patterns:
+          - "ai.keycard:*"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies

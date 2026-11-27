@@ -40,19 +40,7 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
   }, checks);
 
-  await check(".well-known/oauth-protected-resource returns JSON", async () => {
-    const resp = await fetch(`${base}/.well-known/oauth-protected-resource`);
-    if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
-    const body = await resp.json();
-    if (!body.resource) throw new Error(`Missing 'resource' field in response`);
-  }, checks);
-
-  await check(".well-known/oauth-authorization-server returns JSON", async () => {
-    const resp = await fetch(`${base}/.well-known/oauth-authorization-server`);
-    if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
-    const body = await resp.json();
-    if (!body.issuer) throw new Error(`Missing 'issuer' field in response`);
-  }, checks);
+  let resourceMetadataUrl = `${base}/.well-known/oauth-protected-resource`;
 
   await check("unauthenticated POST /mcp returns 401", async () => {
     const resp = await fetch(`${base}/mcp`, {
@@ -65,9 +53,25 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     });
     if (resp.status !== 401) throw new Error(`Expected 401, got ${resp.status}`);
     const wwwAuth = resp.headers.get("www-authenticate");
-    if (!wwwAuth?.includes("resource_metadata")) {
+    const match = wwwAuth?.match(/resource_metadata="([^"]+)"/i);
+    if (!match) {
       throw new Error(`Missing resource_metadata in WWW-Authenticate: ${wwwAuth}`);
     }
+    resourceMetadataUrl = match[1];
+  }, checks);
+
+  await check(".well-known/oauth-protected-resource returns JSON", async () => {
+    const resp = await fetch(resourceMetadataUrl);
+    if (!resp.ok) throw new Error(`Expected 200 from ${resourceMetadataUrl}, got ${resp.status}`);
+    const body = await resp.json();
+    if (!body.resource) throw new Error(`Missing 'resource' field in response`);
+  }, checks);
+
+  await check(".well-known/oauth-authorization-server returns JSON", async () => {
+    const resp = await fetch(`${base}/.well-known/oauth-authorization-server`);
+    if (!resp.ok) throw new Error(`Expected 200, got ${resp.status}`);
+    const body = await resp.json();
+    if (!body.issuer) throw new Error(`Missing 'issuer' field in response`);
   }, checks);
 
   await check("authenticated POST /mcp is accepted (not 401)", async () => {
