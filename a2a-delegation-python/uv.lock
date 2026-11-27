@@ -616,14 +616,33 @@ wheels = [
 
 [[package]]
 name = "joserfc"
-version = "1.7.5"
+version = "1.7.7"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/19/94/80fea1514b7c6d7d37804d3fe9ca81455f633347fc98731bd71ffe1faa17/joserfc-1.7.5.tar.gz", hash = "sha256:d5ff536e658e17664f8c1b1ab60dc4aa62aa973fcef1edd33cc44bda45d6f5ea", size = 234990, upload-time = "2026-08-29T13:05:42.057Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/15/48ff246732232d35ee234228def22b52455fcc55577f06146602399a29b0/joserfc-1.7.7.tar.gz", hash = "sha256:471d0fd12a5a0d1c0942de280f39efe6f597878315033270b504d4d006d25510", size = 237446, upload-time = "2026-10-19T00:30:29.974Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/c5/82addfd375e5ee6520644e0553e4aadde92d668c4fc99cc716d337fe7bb3/joserfc-1.7.5-py3-none-any.whl", hash = "sha256:add2c2c84e8373b084d526a8b53daba5d7a513a118cd2dcd9fc9f979d0922159", size = 71269, upload-time = "2026-08-29T13:05:40.718Z" },
+    { url = "https://files.pythonhosted.org/packages/df/9f/934db284aa22f37af59708e382903860d4b81329c137b1b0ed2745daeb65/joserfc-1.7.7-py3-none-any.whl", hash = "sha256:06979cfbab78bc802f14c0358f32969826cc26720e13cb38926ffdc86bc0cb2c", size = 71758, upload-time = "2026-10-19T00:30:28.498Z" },
+]
+
+[[package]]
+name = "joserfc"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14'",
+    "python_full_version >= '3.11' and python_full_version < '3.14'",
+]
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/31/5c3f27e82c92a7bbe1f028033ff19e0251540395c9be244c01a50de42bdb/joserfc-1.8.0.tar.gz", hash = "sha256:cbf03cb2c6db8cc5289f1ef8718842e53dba244b4c0de5fefa0c0eaee4bde8db", size = 241023, upload-time = "2026-11-03T10:45:57.948Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/7e/7ffaae13415e8f51c8e8d5d1845f2de7a27ebf2717e97a38d7e7446d6030/joserfc-1.8.0-py3-none-any.whl", hash = "sha256:176b836ac7ed9a46a88629e24076314b475f33a75d0bad7f26146e572eed7c79", size = 73147, upload-time = "2026-11-03T10:45:56.531Z" },
 ]
 
 [[package]]
@@ -654,17 +673,18 @@ wheels = [
 
 [[package]]
 name = "keycardai-oauth"
-version = "0.35.0"
+version = "0.37.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
-    { name = "joserfc" },
+    { name = "joserfc", version = "1.7.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "joserfc", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/98/45b0e16ecc1486ed232d315c4503fe10013366760e62d668e1b74b3e663e/keycardai_oauth-0.35.0.tar.gz", hash = "sha256:7010d260be97d5c68c52ddcb233e60dba95a7d2612d78481e32597a9c31c4a1d", size = 263056, upload-time = "2026-11-04T01:46:06.914Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/ef/14e99f148bbb5ec7e608021a856c9d137e92a6cbf519ca80c634568192fb/keycardai_oauth-0.37.1.tar.gz", hash = "sha256:c69d530ec6f6ffd0ad9cce106f453257d255a49c47cda2fa88107d51dc142f04", size = 316407, upload-time = "2026-11-22T22:55:46.571Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/47/837739fbfb7470aa39636e3a6664055972dde1102a6efa39460b85a45770/keycardai_oauth-0.35.0-py3-none-any.whl", hash = "sha256:be6cc4d26e68aa72fed36281376fcb4d12000ae508d3c6143ecca310277b1d89", size = 117709, upload-time = "2026-11-04T01:46:05.737Z" },
+    { url = "https://files.pythonhosted.org/packages/74/71/651e78eacd437c9c714e7ddcf611ced51b6f8cffe0af423ccbe7411f5d3a/keycardai_oauth-0.37.1-py3-none-any.whl", hash = "sha256:eb8f5e84f19cee9249a2cc77e7b9a910196c5cb27579c7f420cb31c9a3f09228", size = 134995, upload-time = "2026-11-22T22:55:45.376Z" },
 ]
 
 [[package]]

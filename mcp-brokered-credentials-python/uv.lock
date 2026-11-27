@@ -678,14 +678,34 @@ wheels = [
 
 [[package]]
 name = "joserfc"
-version = "1.7.4"
+version = "1.7.7"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/e0/27a6a081ae25420eda6768ceae05d7022a7f2447f420588843f2a44e4298/joserfc-1.7.4.tar.gz", hash = "sha256:b3bc561672ae541b17a9237053b48a03dacddd92d68047b3ecdfb4b5714a88ed", size = 234027, upload-time = "2026-07-19T15:43:02.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/15/48ff246732232d35ee234228def22b52455fcc55577f06146602399a29b0/joserfc-1.7.7.tar.gz", hash = "sha256:471d0fd12a5a0d1c0942de280f39efe6f597878315033270b504d4d006d25510", size = 237446, upload-time = "2026-10-19T00:30:29.974Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/bf/249dcd99b3376375910b7fa922383b57792975c8758f50d44612e749226c/joserfc-1.7.4-py3-none-any.whl", hash = "sha256:32d46c2cd5e3203c13e87a6c61333cab310b1ba80cd54b4c4f386a848a122463", size = 71000, upload-time = "2026-07-19T15:43:01.299Z" },
+    { url = "https://files.pythonhosted.org/packages/df/9f/934db284aa22f37af59708e382903860d4b81329c137b1b0ed2745daeb65/joserfc-1.7.7-py3-none-any.whl", hash = "sha256:06979cfbab78bc802f14c0358f32969826cc26720e13cb38926ffdc86bc0cb2c", size = 71758, upload-time = "2026-10-19T00:30:28.498Z" },
+]
+
+[[package]]
+name = "joserfc"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version == '3.11.*' or (python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten')",
+]
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/31/5c3f27e82c92a7bbe1f028033ff19e0251540395c9be244c01a50de42bdb/joserfc-1.8.0.tar.gz", hash = "sha256:cbf03cb2c6db8cc5289f1ef8718842e53dba244b4c0de5fefa0c0eaee4bde8db", size = 241023, upload-time = "2026-11-03T10:45:57.948Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/7e/7ffaae13415e8f51c8e8d5d1845f2de7a27ebf2717e97a38d7e7446d6030/joserfc-1.8.0-py3-none-any.whl", hash = "sha256:176b836ac7ed9a46a88629e24076314b475f33a75d0bad7f26146e572eed7c79", size = 73147, upload-time = "2026-11-03T10:45:56.531Z" },
 ]
 
 [[package]]
@@ -718,7 +738,7 @@ wheels = [
 
 [[package]]
 name = "keycardai-mcp"
-version = "2.3.6"
+version = "2.3.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -732,24 +752,25 @@ dependencies = [
     { name = "nanoid" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/55/48d393b8853311dd02caf3ceba0497fb19211e728ac0d1adba85257cd80a/keycardai_mcp-2.3.6.tar.gz", hash = "sha256:ab4036accf8e2178c8d092d3d9bc0f8bd0bf11b5f8fa28f1c0e54c03c214e7d8", size = 237176, upload-time = "2026-11-04T00:44:16.074Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/d6/1bd2e4dff8d89e88a0e181c77e7f67527140a395da2a0118e480aec2bdf8/keycardai_mcp-2.3.7.tar.gz", hash = "sha256:d72305771de284c5eb7f2d12c2d7e1d7655039cd72b4a96c8a4c08278a29d343", size = 238131, upload-time = "2026-11-05T22:44:19.903Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/de/0a21c0c4e95c48e5e2aa9ab0e3973a53136ffba69929dfbea79a3d70db55/keycardai_mcp-2.3.6-py3-none-any.whl", hash = "sha256:63fa61fca6217c1a539ae4d48bca6d1a46e241b6cffc35763322ec10b396afd3", size = 148345, upload-time = "2026-11-04T00:44:14.7Z" },
+    { url = "https://files.pythonhosted.org/packages/92/46/dec5153c13db8a6aa328fc4b0a1c412ebd2ca7edece5a1223e5d32c521e7/keycardai_mcp-2.3.7-py3-none-any.whl", hash = "sha256:b7a2fcc59029645df8ea2698fac210a980cd6472677ad15ea74d545f69bf4ac3", size = 148669, upload-time = "2026-11-05T22:44:18.78Z" },
 ]
 
 [[package]]
 name = "keycardai-oauth"
-version = "0.35.0"
+version = "0.37.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
-    { name = "joserfc" },
+    { name = "joserfc", version = "1.7.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "joserfc", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/98/45b0e16ecc1486ed232d315c4503fe10013366760e62d668e1b74b3e663e/keycardai_oauth-0.35.0.tar.gz", hash = "sha256:7010d260be97d5c68c52ddcb233e60dba95a7d2612d78481e32597a9c31c4a1d", size = 263056, upload-time = "2026-11-04T01:46:06.914Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/ef/14e99f148bbb5ec7e608021a856c9d137e92a6cbf519ca80c634568192fb/keycardai_oauth-0.37.1.tar.gz", hash = "sha256:c69d530ec6f6ffd0ad9cce106f453257d255a49c47cda2fa88107d51dc142f04", size = 316407, upload-time = "2026-11-22T22:55:46.571Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/67/47/837739fbfb7470aa39636e3a6664055972dde1102a6efa39460b85a45770/keycardai_oauth-0.35.0-py3-none-any.whl", hash = "sha256:be6cc4d26e68aa72fed36281376fcb4d12000ae508d3c6143ecca310277b1d89", size = 117709, upload-time = "2026-11-04T01:46:05.737Z" },
+    { url = "https://files.pythonhosted.org/packages/74/71/651e78eacd437c9c714e7ddcf611ced51b6f8cffe0af423ccbe7411f5d3a/keycardai_oauth-0.37.1-py3-none-any.whl", hash = "sha256:eb8f5e84f19cee9249a2cc77e7b9a910196c5cb27579c7f420cb31c9a3f09228", size = 134995, upload-time = "2026-11-22T22:55:45.376Z" },
 ]
 
 [[package]]
@@ -808,7 +829,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "keycardai-mcp", specifier = ">=2.3.6,<3" },
+    { name = "keycardai-mcp", specifier = ">=2.3.7,<3" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "starlette", specifier = ">=0.27.0" },
     { name = "uvicorn", specifier = ">=0.29.0" },
