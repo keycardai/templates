@@ -45,7 +45,9 @@ Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the 
 
 ## Contributing
 
-We welcome new templates. See [CONTRIBUTING.md](./CONTRIBUTING.md) — the bar is intentionally low: a directory, a `README.md`, a `SPEC.md`, and code that runs.
+We welcome new templates. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the
+template format and CI, eval, and review steps. Coding agents should also
+follow [AGENTS.md](./AGENTS.md).
 
 ## License
 
