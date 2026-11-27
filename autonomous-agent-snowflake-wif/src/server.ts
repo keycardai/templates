@@ -46,7 +46,7 @@ export async function startServer(
   const { requestHandler, userBuilder, issuer, audience } = config.a2a;
   const keycard = createKeycardMiddleware({
     zoneUrl: issuer,
-    resourceIdentifier: audience ?? config.agentBaseUrl,
+    resourceIdentifier: audience || config.agentBaseUrl,
   });
   app.use(keycard.metadataRouter());
   app.use(

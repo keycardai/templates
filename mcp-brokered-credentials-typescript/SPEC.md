@@ -150,7 +150,7 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 Carry the result forward as `<proxy-resource-id>`.
 
-Export the exact HTTP(S) identifier just created as `KEYCARD_RESOURCE_ID` (see §2). If unset, it defaults to `http://localhost:<PORT>/mcp`. The configured path is the MCP endpoint; use the same full URL when connecting clients. `createKeycardMiddleware` from `@keycardai/express` uses this identifier for protected-resource metadata, the 401 challenge and the verifier audience.
+Export the exact HTTP(S) identifier just created as `KEYCARD_RESOURCE_ID` (see §2). If unset or empty, it defaults to `http://localhost:<PORT>/mcp`. The configured path is the MCP endpoint; use the same full URL when connecting clients. `createKeycardMiddleware` from `@keycardai/express` uses this identifier for protected-resource metadata, the 401 challenge and the verifier audience.
 
 ### 1f-bis. Wire Linear as a dependency of the proxy application
 

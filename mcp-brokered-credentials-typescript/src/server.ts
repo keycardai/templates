@@ -16,7 +16,7 @@ if (!process.env.KEYCARD_URL) {
 
 const KEYCARD_URL: string = process.env.KEYCARD_URL;
 const SERVER_NAME = "mcp-brokered-credentials-typescript";
-const RESOURCE_ID = process.env.KEYCARD_RESOURCE_ID ?? `http://localhost:${PORT}/mcp`;
+const RESOURCE_ID = process.env.KEYCARD_RESOURCE_ID || `http://localhost:${PORT}/mcp`;
 const resourceUrl = new URL(RESOURCE_ID);
 if (!["http:", "https:"].includes(resourceUrl.protocol)) {
   throw new Error("KEYCARD_RESOURCE_ID must be an HTTP(S) URL");

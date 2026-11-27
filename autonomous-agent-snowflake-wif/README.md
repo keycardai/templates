@@ -89,7 +89,7 @@ The agent will:
 |---|---|---|---|
 | `AGENT_BASE_URL` | yes | — | Public URL where this agent is reachable |
 | `KEYCARD_URL` | yes | — | Keycard zone URL (`https://<id>.keycard.cloud`) |
-| `KEYCARD_RESOURCE_ID` | no | `AGENT_BASE_URL` | The agent's registered Resource identifier. Inbound A2A calls require a token minted for this Resource. |
+| `KEYCARD_RESOURCE_ID` | no | `AGENT_BASE_URL` if unset or empty | The agent's registered Resource identifier. Inbound A2A calls require a token minted for this Resource. |
 
 The agent requests Snowflake access with the OAuth SDK's `ClientCredentialsClient`. Its `WebIdentity` credential is configured once and signs assertions for the discovered token endpoint. To verify the HTTP endpoints without a Snowflake account, run `npm run build && KEYCARD_URL=<zone-url> npm run ci:verify`.
 | `SNOWFLAKE_ACCOUNT` | yes | — | Snowflake account identifier (`ORGNAME-ACCTNAME`) |

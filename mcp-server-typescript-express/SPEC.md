@@ -91,7 +91,7 @@ keycard agent api -X POST /zones/<zone-id>/resources --org <org-id> -d '{
 
 - The resource `identifier` MUST include the `/mcp` suffix — that is the path MCP clients hit, and the authorization server rejects token requests for resources whose identifier does not match the protected URL exactly (`invalid_target` / `Requested authorization for unknown resource ...`).
 - `application_id` wires the "provided by" relationship between the Resource and its Application. It must be set at Resource-creation time.
-- Export the exact HTTP(S) identifier just created as `KEYCARD_RESOURCE_ID` (see §2). If unset, it defaults to `http://localhost:<PORT>/mcp`. The configured path is the MCP endpoint; use the same full URL when connecting clients. The Express SDK uses this identifier for the protected-resource metadata, the 401 challenge and the verifier audience.
+- Export the exact HTTP(S) identifier just created as `KEYCARD_RESOURCE_ID` (see §2). If unset or empty, it defaults to `http://localhost:<PORT>/mcp`. The configured path is the MCP endpoint; use the same full URL when connecting clients. The Express SDK uses this identifier for the protected-resource metadata, the 401 challenge and the verifier audience.
 
 On 403, network error, or missing session:
 
