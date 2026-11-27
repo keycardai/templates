@@ -57,7 +57,7 @@ The reply text ends with the target's report, for example
 |---|---|
 | `GET /healthz` | Health check |
 | `GET /.well-known/agent-card.json` | A2A 1.0 agent card |
-| `GET /.well-known/oauth-protected-resource` | OAuth resource metadata (RFC 9728) |
+| `GET /.well-known/oauth-protected-resource` | OAuth resource metadata (RFC 9728), with the registered agent base URL as `resource` |
 | `GET /.well-known/oauth-authorization-server` | OAuth AS metadata (RFC 8414) |
 | `POST /a2a/jsonrpc` | A2A JSON-RPC; a missing or foreign-audience bearer gets HTTP 401 with a `WWW-Authenticate: Bearer` challenge |
 
@@ -65,10 +65,15 @@ The reply text ends with the target's report, for example
 
 | Piece | keycardai-a2a |
 |---|---|
-| Inbound verification bound to the agent's resource | `AuthProvider(audience=<own URL>)` + `KeycardAuthBackend(require_authentication=True)` on the `/a2a` mount |
+| Inbound verification bound to the agent's resource | `AuthProvider(resource_identifier=<own URL>)` shares its binding with the metadata routes and the required bearer backend on `/a2a` |
 | Verified caller in the executor | `KeycardServerCallContextBuilder` + `keycard_user(context)` |
 | Agent card | `build_agent_card_from_config(AgentServiceConfig(...))` |
 | Discovery | `ServiceDiscovery.get_service_card(target)` |
 | Exchange and invoke | `DelegationClient.invoke_service(target, text, subject_token=user_token)` |
 
 The contract is `specs/a2a/a2a-delegation.md` in keycard-sdk-spec. The SDK does not return the assembled `act` chain; the target reads it from the token it verified.
+
+The resource is the agent's base URL, not its JSON-RPC path. The SDK omits
+`resource_metadata` from the JSON-RPC challenge because the paths differ.
+Run `bash scripts/ci-verify.sh` to check both agents' health, cards, metadata,
+and unauthenticated challenges.

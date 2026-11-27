@@ -90,13 +90,16 @@ def build_app(config: AgentServiceConfig, executor: AgentExecutor) -> Starlette:
     auth_provider = AuthProvider(
         zone_url=KEYCARD_URL,
         server_name=config.service_name,
-        server_url=config.identity_url,
-        audience=config.identity_url,
+        resource_identifier=config.identity_url,
     )
     verifier = auth_provider.get_token_verifier()
     strict_auth = Middleware(
         AuthenticationMiddleware,
-        backend=KeycardAuthBackend(verifier, require_authentication=True),
+        backend=KeycardAuthBackend(
+            verifier,
+            require_authentication=True,
+            resource_binding=auth_provider.resource_binding,
+        ),
         on_error=keycard_on_error,
     )
 
@@ -114,7 +117,7 @@ def build_app(config: AgentServiceConfig, executor: AgentExecutor) -> Starlette:
         routes=[
             Route("/healthz", healthz, methods=["GET"]),
             *create_agent_card_routes(agent_card=agent_card),
-            auth_metadata_mount(KEYCARD_URL),
+            auth_metadata_mount(auth_provider.issuer, resource_binding=auth_provider.resource_binding),
             Mount(
                 "/a2a",
                 routes=create_jsonrpc_routes(

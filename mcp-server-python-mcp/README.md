@@ -35,8 +35,7 @@ keycard run -- uv run uvicorn main:app --port 8000
 | Variable | Description | Default |
 |---|---|---|
 | `KEYCARD_URL` | Zone issuer URL, e.g. `https://<id>.keycard.cloud` | required |
-| `KEYCARD_RESOURCE_ID` | The registered Resource identifier, e.g. `http://localhost:8000/mcp`. When set, tokens minted for any other resource are rejected. | _(unset)_ |
-| `MCP_SERVER_URL` | Base URL this server is reachable at | `http://localhost:8000/` |
+| `KEYCARD_RESOURCE_ID` | The registered Resource's HTTP(S) URL. Its path sets the MCP endpoint, and the exact URL sets the token audience and OAuth discovery. | `http://localhost:<PORT>/mcp` |
 | `PORT` | HTTP port | `8000` |
 
 ## Endpoints
@@ -44,9 +43,19 @@ keycard run -- uv run uvicorn main:app --port 8000
 | Path | Description |
 |---|---|
 | `GET /healthz` | Health check — `{"ok": true}` |
-| `GET /.well-known/oauth-protected-resource` | OAuth resource metadata (RFC 9728) |
+| `GET /.well-known/oauth-protected-resource/mcp` | OAuth resource metadata (RFC 9728) for the default resource |
 | `GET /.well-known/oauth-authorization-server` | OAuth AS metadata (RFC 8414) |
 | `POST /mcp` | MCP Streamable HTTP transport |
+
+An unauthenticated `POST /mcp` returns HTTP 401 with a Bearer
+`WWW-Authenticate` challenge. Its `resource_metadata` URL and the metadata
+document's `resource` both come from `KEYCARD_RESOURCE_ID`. If you configure
+a different path, such as `/tools/mcp`, use it for the MCP request and fetch
+`/.well-known/oauth-protected-resource/tools/mcp` for discovery.
+
+Run `bash scripts/ci-verify.sh` after `uv sync` to check startup, health,
+OAuth metadata, and the 401 challenge. Export `PORT` and `KEYCARD_RESOURCE_ID`
+before running it if you use nondefault values.
 
 ## Add a tool
 

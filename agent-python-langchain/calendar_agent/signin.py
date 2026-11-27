@@ -42,7 +42,6 @@ import webbrowser
 from dotenv import load_dotenv
 
 from keycardai.oauth import Client, build_authorize_url
-from keycardai.oauth.http.auth import BasicAuth, NoneAuth
 from keycardai.oauth.types.models import ClientConfig
 from keycardai.oauth.utils.pkce import PKCEGenerator
 
@@ -77,18 +76,18 @@ def main() -> None:
     serve_only = "--serve" in sys.argv
     if as_login_app:
         client_id = os.environ.get("KEYCARD_LOGIN_CLIENT_ID", "langchain-demo-login")
-        auth = NoneAuth()
+        client_secret = None
     else:
         client_id = os.environ.get("KEYCARD_CLIENT_ID")
         client_secret = os.environ.get("KEYCARD_CLIENT_SECRET")
         if not (client_id and client_secret):
             sys.exit("Missing KEYCARD_CLIENT_ID / KEYCARD_CLIENT_SECRET (see .env.example)")
-        auth = BasicAuth(client_id, client_secret)
     redirect_uri = f"http://localhost:{PORT}/callback"
 
     oauth_client = Client(
         issuer=zone_url,
-        auth=auth,
+        client_id=client_id,
+        client_secret=client_secret,
         config=ClientConfig(enable_metadata_discovery=True, auto_register_client=False),
     )
     print(f"Signing in as {'login app' if as_login_app else 'agent app'}: {client_id}")
@@ -149,7 +148,6 @@ def main() -> None:
                     code=code,
                     redirect_uri=redirect_uri,
                     code_verifier=code_verifier,
-                    client_id=client_id,
                 )
             except Exception as exc:
                 self._html(502, f"Token exchange failed: {exc}")

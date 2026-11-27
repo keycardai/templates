@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${PORT:-8000}"
+export PORT="${PORT:-8000}"
 BASE="http://localhost:$PORT"
+RESOURCE_ID="${KEYCARD_RESOURCE_ID:-$BASE/mcp}"
+resource_path=$(python3 -c '
+import sys
+from urllib.parse import urlsplit
+
+identifier = sys.argv[1]
+url = urlsplit(identifier)
+print((url.path or "/") + ("?" + url.query if "?" in identifier else ""))
+' "$RESOURCE_ID")
 
 uv run uvicorn main:app --host 0.0.0.0 --port "$PORT" &
 PID=$!
@@ -17,8 +26,32 @@ done
 echo "==> /healthz"
 curl -sf "$BASE/healthz" | python3 -m json.tool
 
-echo "==> /.well-known/oauth-protected-resource"
-curl -sf "$BASE/.well-known/oauth-protected-resource" | python3 -m json.tool
+echo "==> unauthenticated POST $resource_path returns 401"
+headers=$(curl -sS -D - -o /dev/null -X POST "$BASE$resource_path" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{}')
+printf '%s\n' "$headers"
+metadata_path=$(printf '%s\n' "$headers" | python3 -c '
+import re
+import sys
+from urllib.parse import urlsplit
+
+headers = sys.stdin.read()
+if headers.splitlines()[0].split()[1] != "401":
+    sys.exit("Expected HTTP 401")
+match = re.search(r"^www-authenticate: Bearer\b[^\r\n]*resource_metadata=\"([^\"]+)\"", headers, re.I | re.M)
+identifier = sys.argv[1]
+resource = urlsplit(identifier)
+path = "/.well-known/oauth-protected-resource" + ("" if resource.path == "/" else resource.path)
+if "?" in identifier:
+    path += "?" + resource.query
+scheme = identifier.split("://", 1)[0]
+if not match or match[1] != f"{scheme}://{resource.netloc}{path}":
+    sys.exit("Expected a Bearer challenge advertising the bound metadata URL")
+print(path)
+' "$RESOURCE_ID")
+
+echo "==> $metadata_path"
+curl -sf "$BASE$metadata_path" | jq -e --arg resource "$RESOURCE_ID" 'select(.resource == $resource)'
 
 echo "==> /.well-known/oauth-authorization-server"
-curl -sf "$BASE/.well-known/oauth-authorization-server" | python3 -m json.tool
+curl -sf "$BASE/.well-known/oauth-authorization-server" | jq -e 'select(.issuer)'

@@ -288,6 +288,11 @@ uv run langgraph dev --no-browser        # agent server, <agent-port>
 `signin.py --serve` listens without signing anyone in, which is what makes the
 in-chat sign-in demonstrable.
 
+The sign-in helper constructs one OAuth client for the PKCE flow. The normal
+mode uses `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET`; `--as-login-app`
+uses only the public `KEYCARD_LOGIN_CLIENT_ID` (default: `langchain-demo-login`).
+The callback exchanges the code with the identity already bound to that client.
+
 ## 4. Smoke tests
 
 1. **Server is up**: `curl -s http://127.0.0.1:<agent-port>/ok` returns

@@ -1,4 +1,4 @@
-"""Linear MCP proxy — Keycard-brokered credentials.
+"""Linear MCP proxy with Keycard-brokered credentials.
 
 Proxies Linear's official MCP server at https://mcp.linear.app/mcp.
 Exchanges the user's Keycard bearer token for a Linear-scoped OAuth token
@@ -12,17 +12,29 @@ Or via keycard run:
 
 import contextlib
 import os
+from urllib.parse import urlsplit
 
 from dotenv import find_dotenv, load_dotenv
+from keycardai.oauth import AsyncClient
+from keycardai.oauth.types.models import ClientConfig
+from keycardai.starlette import AuthProvider, protected_router
+from mcp.server.mcpserver import MCPServer
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+from tools.execute import register_execute_tool
+from tools.search import register_search_tool
 
 load_dotenv(find_dotenv(usecwd=True))
 
 KEYCARD_URL = os.environ.get("KEYCARD_URL")
-# The proxy's registered Resource identifier; when set, the verifier rejects
-# tokens minted for any other resource.
-RESOURCE_ID = os.environ.get("KEYCARD_RESOURCE_ID")
-SERVER_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:8000/")
 PORT = int(os.environ.get("PORT", "8000"))
+RESOURCE_ID = os.environ.get("KEYCARD_RESOURCE_ID") or f"http://localhost:{PORT}/mcp"
+resource_url = urlsplit(RESOURCE_ID)
+if resource_url.scheme not in {"http", "https"} or not resource_url.netloc:
+    raise ValueError("KEYCARD_RESOURCE_ID must be an HTTP(S) URL")
+MCP_PATH = resource_url.path or "/"
 SERVER_NAME = "mcp-brokered-credentials-python"
 
 if not KEYCARD_URL:
@@ -31,29 +43,23 @@ if not KEYCARD_URL:
         "Set it in .env or run via `keycard run -- uvicorn main:app`."
     )
 
-from mcp.server.mcpserver import MCPServer
-from keycardai.mcp.server.auth import AuthProvider
-from keycardai.starlette import KeycardAuthBackend, keycard_on_error
-from keycardai.starlette.routers.metadata import auth_metadata_mount
-from starlette.applications import Starlette
-from starlette.middleware import Middleware
-from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
-
-from tools.search import register_search_tool
-from tools.execute import register_execute_tool
-
 auth_provider = AuthProvider(
     zone_url=KEYCARD_URL,
-    audience=RESOURCE_ID,
-    mcp_server_name=SERVER_NAME,
-    mcp_server_url=SERVER_URL,
+    resource_identifier=RESOURCE_ID,
+    server_name=SERVER_NAME,
 )
 
 mcp = MCPServer(SERVER_NAME)
-register_search_tool(mcp, auth_provider)
-register_execute_tool(mcp, auth_provider)
+oauth_client = AsyncClient(
+    issuer=auth_provider.issuer,
+    credential=auth_provider.application_credential,
+    config=ClientConfig(
+        client_name=SERVER_NAME,
+        auto_register_client=auth_provider.application_credential is None,
+    ),
+)
+register_search_tool(mcp, oauth_client)
+register_execute_tool(mcp, oauth_client)
 
 
 async def healthz(request):
@@ -62,22 +68,23 @@ async def healthz(request):
 
 @contextlib.asynccontextmanager
 async def lifespan(app):
-    async with mcp.session_manager.run():
-        yield
+    try:
+        async with mcp.session_manager.run():
+            yield
+    finally:
+        await oauth_client.aclose()
 
-
-verifier = auth_provider.get_token_verifier()
-strict_auth = Middleware(
-    AuthenticationMiddleware,
-    backend=KeycardAuthBackend(verifier, require_authentication=True),
-    on_error=keycard_on_error,
-)
 
 app = Starlette(
     routes=[
         Route("/healthz", healthz, methods=["GET"]),
-        auth_metadata_mount(auth_provider.issuer),
-        Mount("/mcp", app=mcp.streamable_http_app(streamable_http_path="/"), middleware=[strict_auth]),
+        *protected_router(
+            issuer=auth_provider.issuer,
+            app=mcp.streamable_http_app(streamable_http_path=MCP_PATH),
+            verifier=auth_provider.get_token_verifier(),
+            resource_binding=auth_provider.resource_binding,
+            require_authentication=True,
+        ),
     ],
     lifespan=lifespan,
 )
