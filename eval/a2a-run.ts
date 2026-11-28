@@ -26,14 +26,11 @@ import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
-import { cleanupStaleProvisonings } from "./provision.js";
+import { EvalProvisioning } from "./provision.js";
+import { evalOrigin } from "./run-identity.js";
 import {
   provisionA2AAgent,
-  teardownA2AProvisioning,
   provisionA2ADelegation,
-  teardownA2ADelegation,
-  type ProvisionedA2AAgent,
-  type ProvisionedA2ADelegation,
 } from "./provision-a2a.js";
 import { runBuildAgent } from "./agent.js";
 import type { BuildAgentUsage } from "./build-agent-usage.js";
@@ -95,8 +92,7 @@ export async function runA2AEval(opts: {
 
   let zoneId: string | undefined;
   let ephemeral = false;
-  let token: string | undefined;
-  let provisioned: ProvisionedA2AAgent | undefined;
+  let provisioning: EvalProvisioning | undefined;
   let agentProcess: ReturnType<typeof spawn> | undefined;
 
   let cleanedUp = false;
@@ -104,11 +100,6 @@ export async function runA2AEval(opts: {
     if (cleanedUp) return;
     cleanedUp = true;
     await stopProcessGroup(agentProcess);
-    if (provisioned && !ephemeral && token) {
-      await teardownA2AProvisioning(provisioned, token)
-        .catch((e) => console.error("Resource cleanup failed:", e));
-      console.log("   Cleaned up app + resources");
-    }
     if (zoneId && ephemeral) {
       console.log(`\nCleaning up zone ${zoneId}...`);
       await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
@@ -117,14 +108,18 @@ export async function runA2AEval(opts: {
     // the eval zone. Leave neither behind.
     await fs.rm(path.join(opts.templateDir, ".env"), { force: true }).catch(() => undefined);
     await fs.rm(path.join(opts.templateDir, "agent_keys"), { recursive: true, force: true }).catch(() => undefined);
+    if (!ephemeral) await provisioning?.cleanup();
   };
-  process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
+  process.on("SIGINT", async () => {
+    await cleanup().catch(console.error);
+    process.exit(1);
+  });
 
   let passed = false;
   try {
     console.log("1. Creating eval zone...");
     const evalZone = await getOrCreateEvalZone(opts.runId);
-    token = evalZone.token;
+    const { token } = evalZone;
     ephemeral = evalZone.ephemeral;
     zoneId = evalZone.zone.id;
     console.log(`   Zone: ${evalZone.zone.id} (${evalZone.zone.issuerUrl})`);
@@ -138,14 +133,16 @@ export async function runA2AEval(opts: {
 
     console.log("\n2. Provisioning resources...");
     await execFileAsync("bash", ["-c", `lsof -ti :${port} | xargs kill -9 2>/dev/null; true`]);
-    await cleanupStaleProvisonings(evalZone.zone.id, token);
-    provisioned = await provisionA2AAgent({
+    provisioning = new EvalProvisioning(evalZone.zone.id, token);
+    await provisioning.sweepStale();
+    const provisioned = await provisionA2AAgent({
       zoneId: evalZone.zone.id,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       runId: opts.runId,
       token,
+      provisioning,
       templateDir: opts.templateDir,
-      agentBaseUrl: agentUrl,
+      agentBaseUrl: evalOrigin(opts.runId, port),
       port,
     });
 
@@ -251,6 +248,7 @@ async function runA2ADelegationEval(opts: {
   const targetPort = callerPort + 1;
   const callerUrl = `http://localhost:${callerPort}`;
   const targetUrl = `http://localhost:${targetPort}`;
+  const targetResourceIdentifier = evalOrigin(opts.runId, targetPort);
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
   const java = opts.language === "java";
 
@@ -258,8 +256,7 @@ async function runA2ADelegationEval(opts: {
   let javaWorkspace: string | undefined;
   let zoneId: string | undefined;
   let ephemeral = false;
-  let token: string | undefined;
-  let provisioned: ProvisionedA2ADelegation | undefined;
+  let provisioning: EvalProvisioning | undefined;
   const agents: Array<ReturnType<typeof spawn>> = [];
   let cleanedUp = false;
 
@@ -269,22 +266,24 @@ async function runA2ADelegationEval(opts: {
     for (const agent of agents) {
       await stopProcessGroup(agent);
     }
-    if (provisioned && !ephemeral && token) {
-      await teardownA2ADelegation(provisioned, token)
-        .catch((e) => console.error("Resource cleanup failed:", e));
-      console.log("   Cleaned up apps + resources");
-    }
     if (zoneId && ephemeral) {
       console.log(`\nCleaning up zone ${zoneId}...`);
       await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
     }
-    if (javaWorkspace) {
-      await fs.rm(javaWorkspace, { recursive: true, force: true });
-    } else if (!java) {
-      await fs.rm(path.join(templateDir, ".env"), { force: true }).catch(() => undefined);
+    try {
+      if (javaWorkspace) {
+        await fs.rm(javaWorkspace, { recursive: true, force: true });
+      } else if (!java) {
+        await fs.rm(path.join(templateDir, ".env"), { force: true }).catch(() => undefined);
+      }
+    } finally {
+      if (!ephemeral) await provisioning?.cleanup();
     }
   };
-  process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
+  process.on("SIGINT", async () => {
+    await cleanup().catch(console.error);
+    process.exit(1);
+  });
 
   const start = async (label: string, command: string, args: string[], env: NodeJS.ProcessEnv) => {
     const agent = spawn(command, args, {
@@ -316,7 +315,7 @@ async function runA2ADelegationEval(opts: {
 
     console.log("1. Creating eval zone...");
     const evalZone = await getOrCreateEvalZone(opts.runId);
-    token = evalZone.token;
+    const { token } = evalZone;
     ephemeral = evalZone.ephemeral;
     zoneId = evalZone.zone.id;
     console.log(`   Zone: ${evalZone.zone.id} (${evalZone.zone.issuerUrl})`);
@@ -330,15 +329,17 @@ async function runA2ADelegationEval(opts: {
 
     console.log("\n2. Provisioning two applications and two resources...");
     await execFileAsync("bash", ["-c", `lsof -ti :${callerPort},:${targetPort} | xargs kill -9 2>/dev/null; true`]);
-    await cleanupStaleProvisonings(evalZone.zone.id, token);
-    provisioned = await provisionA2ADelegation({
+    provisioning = new EvalProvisioning(evalZone.zone.id, token);
+    await provisioning.sweepStale();
+    const provisioned = await provisionA2ADelegation({
       zoneId: evalZone.zone.id,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       runId: opts.runId,
       token,
+      provisioning,
       templateDir,
-      callerBaseUrl: callerUrl,
-      targetBaseUrl: targetUrl,
+      callerBaseUrl: evalOrigin(opts.runId, callerPort),
+      targetBaseUrl: targetResourceIdentifier,
       writeCallerCredentials: !java,
     });
 
@@ -386,9 +387,9 @@ async function runA2ADelegationEval(opts: {
       // Java uses the process environment, including the credentials omitted from .env.
       const agentEnv = {
         ...process.env,
-        KEYCARD_URL: provisioned.zoneIssuerUrl,
+        KEYCARD_URL: evalZone.zone.issuerUrl,
         CALLER_BASE_URL: provisioned.callerResourceIdentifier,
-        TARGET_BASE_URL: provisioned.targetResourceIdentifier,
+        TARGET_BASE_URL: targetResourceIdentifier,
       };
       await start("target", script, ["target"], { ...agentEnv, PORT: String(targetPort) });
       await start("caller", script, ["caller"], {
@@ -411,6 +412,7 @@ async function runA2ADelegationEval(opts: {
     const result = await verifyA2ADelegation({
       callerUrl,
       targetUrl,
+      targetResourceIdentifier,
       userAccessToken: identity.accessToken,
       userIdentifier,
       callerApplicationIdentifier: provisioned.callerApplicationIdentifier,

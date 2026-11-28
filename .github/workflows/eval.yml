@@ -85,6 +85,7 @@ jobs:
           CI_KEYCARD_CLIENT_SECRET: ${{ secrets.EVAL_KEYCARD_CLIENT_SECRET || secrets.CI_KEYCARD_CLIENT_SECRET }}
           CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
           EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
+          EVAL_ORG_ID: ${{ secrets.EVAL_ORG_ID }}
           EVAL_ZONE_ID: ${{ secrets.EVAL_ZONE_ID }}
         run: npx tsx preflight.ts
 
@@ -97,11 +98,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      # All jobs share one eval zone (EVAL_ZONE_ID) and every template
-      # registers the same localhost resource identifier, so parallel jobs
-      # collide: 409 on resource create, and one job's cleanup tears down the
-      # app another job is mid-OAuth with. Serialize.
-      max-parallel: 1
+      max-parallel: 3
       matrix:
         template: ${{ fromJson(needs.discover.outputs.templates) }}
     env:
@@ -110,6 +107,7 @@ jobs:
       CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
       EVAL_TEST_USER_EMAIL: ${{ secrets.EVAL_TEST_USER_EMAIL }}
       EVAL_TEST_USER_PASSWORD: ${{ secrets.EVAL_TEST_USER_PASSWORD }}
+      EVAL_ORG_ID: ${{ secrets.EVAL_ORG_ID }}
       EVAL_ZONE_ID: ${{ secrets.EVAL_ZONE_ID }}
       EVAL_ZONE_ISSUER_URL: ${{ secrets.EVAL_ZONE_ISSUER_URL }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
