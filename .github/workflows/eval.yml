@@ -10,10 +10,21 @@ on:
       template:
         description: "Template to eval (leave blank for all)"
         required: false
+  workflow_call:
+    inputs:
+      templates:
+        description: "JSON array of template directory names to eval"
+        required: true
+        type: string
+      ref:
+        description: "Commit SHA to check out"
+        required: true
+        type: string
 
 concurrency:
   group: template-eval-zone
   cancel-in-progress: false
+  queue: max
 
 jobs:
   check-release:
@@ -48,11 +59,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: find
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TEMPLATE: ${{ inputs.template }}
+          TEMPLATES: ${{ inputs.templates }}
         run: |
-          # A named dispatch is operator intent, so it bypasses eval/eval-skip.txt;
+          # A workflow_call or named dispatch bypasses eval/eval-skip.txt;
           # only the discovered full matrix is filtered.
-          if [ -n "${{ inputs.template }}" ]; then
-            echo "templates=[\"${{ inputs.template }}\"]" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_call" ]; then
+            dirs=$(jq -ce 'if type == "array" then . else error("templates must be a JSON array") end' <<< "$TEMPLATES")
+            echo "templates=$dirs" >> "$GITHUB_OUTPUT"
+          elif [ -n "$TEMPLATE" ]; then
+            dirs=$(jq -cn --arg t "$TEMPLATE" '[$t]')
+            echo "templates=$dirs" >> "$GITHUB_OUTPUT"
           else
             skip=$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' eval/eval-skip.txt)
             dirs=$(find . -maxdepth 1 -mindepth 1 -type d ! -name '.*' ! -name '_*' ! -name 'scripts' ! -name 'eval' \
@@ -114,6 +133,8 @@ jobs:
       EVAL_HEADLESS: "true"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-node@v4
         with:
