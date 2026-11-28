@@ -77,7 +77,15 @@ npx playwright install chromium
 Edit `eval/keycard.toml` and replace the placeholders:
 
 - `[org] id`: your Keycard organization ID (Console → Settings)
-- `[zone] id`: a dedicated eval zone ID (create one in Console, configure zone auth with no external IDP and no invite requirement)
+- `[zone] id`: the organization's Organization Zone ID (the `zone_id` on the organization; see [Zone sign-in](#zone-sign-in))
+
+### Zone sign-in
+
+Password login works only in the Keycard ID Zone: since svc-iam ID-809 (October 27, 2026) every other zone has `password_login_enabled` off, and the Management API refuses to turn it back on. A custom zone with no Identity Provider fails every authorize request with `No User Identity Provider configured in Zone`.
+
+The eval therefore runs in the organization's Organization Zone, which comes with Keycard ID as its Identity Provider. Use an organization dedicated to the eval, with SSO off: the eval provisions apps, resources and an impersonation policy there, and a user who must sign in through SSO gets sent to the SSO provider instead of a password form.
+
+The test user is a Keycard account (signed up at the Keycard ID Zone, email verified) that is invited to the organization as a member. A browser sign-in passes through two hops: the Organization Zone, then the ID Zone's login form. `browser.ts` submits the identifier and password wherever they're asked for and approves each consent screen on the way.
 
 ### 2. Provision vault resources
 
@@ -105,7 +113,7 @@ Run once with a visible browser to sign up the test user in the eval zone:
 EVAL_HEADLESS=false keycard run -- npm run eval -- --template mcp-server-typescript-express
 ```
 
-When the browser opens, sign up with the email/password from your vault resources. Verify your email. After that, all subsequent runs are fully headless.
+When the browser opens, sign in with the email/password from your vault resources, signing up at the Keycard ID Zone first if the account doesn't exist yet, and verify the email. The first sign-in creates the test user in the eval zone. After that, all subsequent runs are fully headless.
 
 ## Run
 
