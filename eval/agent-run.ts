@@ -23,6 +23,7 @@ import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { cleanupStaleProvisonings } from "./provision.js";
 import { provisionAgent, teardownAgentProvisioning, type ProvisionedAgent } from "./provision-agent.js";
 import { runBuildAgent } from "./agent.js";
+import type { BuildAgentUsage } from "./build-agent-usage.js";
 import { startCalendarStub, type CalendarStub } from "./calendar-stub.js";
 import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
 import { verifyAgent } from "./verify-agent.js";
@@ -53,6 +54,7 @@ export async function runAgentEval(opts: {
   templateDir: string;
   templateName: string;
   runId: string;
+  usage: BuildAgentUsage;
 }): Promise<boolean> {
   const agentPort = Number(process.env.EVAL_AGENT_PORT ?? 2024);
   const stubPort = Number(process.env.EVAL_STUB_PORT ?? 8901);
@@ -145,6 +147,7 @@ export async function runAgentEval(opts: {
       templateDir: opts.templateDir,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       resourceIdentifier: provisioned.resourceIdentifier,
+      usage: opts.usage,
       language: "python" as const,
       notes: BUILD_NOTES,
     };

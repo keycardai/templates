@@ -11,11 +11,13 @@
 
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import { writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./provision.js";
 import { runBuildAgent } from "./agent.js";
+import { BUILD_AGENT_MODEL, emptyBuildAgentUsage, formatBuildAgentUsage } from "./build-agent-usage.js";
 import { authenticateViaOAuth } from "./browser.js";
 import { verifyServer } from "./verify.js";
 import { stopProcessGroup } from "./stop.js";
@@ -57,6 +59,26 @@ if (templateArg.startsWith("_") || path.basename(path.resolve(templateArg)).star
 
 const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", templateArg);
 const RUN_ID = `${Date.now()}`;
+const buildAgentUsage = emptyBuildAgentUsage();
+
+function writeUsage(file: string | number | undefined, content: string, flag: "a" | "w"): void {
+  if (file === undefined || file === "") return;
+  try {
+    writeFileSync(file, content, { flag });
+  } catch (err) {
+    console.warn("Could not write build agent usage:", err);
+  }
+}
+
+// All eval flows exit here, including failures after the build has used tokens.
+// The exit handler must write synchronously because process.exit() does not wait.
+process.once("exit", () => {
+  const heading = `Build agent usage for ${templateArg} (${BUILD_AGENT_MODEL})`;
+  const usage = formatBuildAgentUsage(buildAgentUsage);
+  writeUsage(process.env.EVAL_BUILD_AGENT_USAGE_FILE, JSON.stringify(buildAgentUsage) + "\n", "w");
+  writeUsage(process.env.GITHUB_STEP_SUMMARY, `\n## ${heading}\n\n${usage}\n`, "a");
+  writeUsage(process.stdout.fd, `\n${heading}\n${usage}\n`, "a");
+});
 
 // Harness constraints handed to the build agent for templates whose
 // provisioning deliberately differs from SPEC.md. Without them the agent
@@ -149,7 +171,12 @@ async function killStaleServer(): Promise<void> {
 // templates the flow below handles.
 const isAgent = await fs.access(path.join(TEMPLATE_DIR, "langgraph.json")).then(() => true).catch(() => false);
 if (isAgent) {
-  const agentPassed = await runAgentEval({ templateDir: TEMPLATE_DIR, templateName: templateArg, runId: RUN_ID });
+  const agentPassed = await runAgentEval({
+    templateDir: TEMPLATE_DIR,
+    templateName: templateArg,
+    runId: RUN_ID,
+    usage: buildAgentUsage,
+  });
   console.log(agentPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
   process.exit(agentPassed ? 0 : 1);
 }
@@ -172,6 +199,7 @@ if (isA2AAgent || isPythonA2AAgent) {
     templateDir: TEMPLATE_DIR,
     templateName: templateArg,
     runId: RUN_ID,
+    usage: buildAgentUsage,
     language: isPythonA2AAgent ? "python" : "typescript",
   });
   console.log(a2aPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
@@ -238,6 +266,7 @@ try {
     templateDir: TEMPLATE_DIR,
     zoneIssuerUrl: zone.issuerUrl,
     resourceIdentifier: provisioned.resourceIdentifier,
+    usage: buildAgentUsage,
     language,
     notes: AGENT_NOTES[templateArg],
   });

@@ -34,6 +34,7 @@ import {
   type ProvisionedA2ADelegation,
 } from "./provision-a2a.js";
 import { runBuildAgent } from "./agent.js";
+import type { BuildAgentUsage } from "./build-agent-usage.js";
 import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
 import { verifyA2AAgent, verifyA2ADelegation } from "./verify-a2a.js";
 import { stopProcessGroup } from "./stop.js";
@@ -73,6 +74,7 @@ export async function runA2AEval(opts: {
   templateDir: string;
   templateName: string;
   runId: string;
+  usage: BuildAgentUsage;
   language?: "python" | "typescript";
 }): Promise<boolean> {
   if (opts.language === "python") return runA2ADelegationEval(opts);
@@ -141,6 +143,7 @@ export async function runA2AEval(opts: {
       templateDir: opts.templateDir,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       resourceIdentifier: provisioned.agentResourceIdentifier,
+      usage: opts.usage,
       language: "typescript" as const,
       notes: BUILD_NOTES,
     };
@@ -231,6 +234,7 @@ async function runA2ADelegationEval(opts: {
   templateDir: string;
   templateName: string;
   runId: string;
+  usage: BuildAgentUsage;
 }): Promise<boolean> {
   const callerPort = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const targetPort = callerPort + 1;
@@ -314,6 +318,7 @@ async function runA2ADelegationEval(opts: {
       templateDir: opts.templateDir,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       resourceIdentifier: provisioned.callerResourceIdentifier,
+      usage: opts.usage,
       language: "python" as const,
       notes: DELEGATION_BUILD_NOTES,
     };

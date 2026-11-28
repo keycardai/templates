@@ -186,8 +186,46 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Run eval
+        id: run-eval
         working-directory: eval
+        env:
+          EVAL_BUILD_AGENT_USAGE_FILE: ${{ runner.temp }}/build-agent-usage.json
         run: npx tsx index.ts --template ${{ matrix.template }}
+
+      - name: Upload build agent usage
+        if: ${{ !cancelled() && (steps.run-eval.outcome == 'success' || steps.run-eval.outcome == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-agent-usage-${{ github.run_attempt }}-${{ matrix.template }}
+          path: ${{ runner.temp }}/build-agent-usage.json
+
+  summary:
+    name: Summarize build agent usage
+    needs: [discover, eval]
+    if: ${{ !cancelled() && (needs.eval.result == 'success' || needs.eval.result == 'failure') }}
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-agent-usage-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/build-agent-usage
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "eval/package-lock.json"
+      - name: Install eval dependencies
+        working-directory: eval
+        run: npm ci
+      - name: Write run usage summary
+        working-directory: eval
+        env:
+          EVAL_TEMPLATES: ${{ needs.discover.outputs.templates }}
+          USAGE_DIR: ${{ runner.temp }}/build-agent-usage
+        run: npx tsx summarize-build-agent-usage.ts "$USAGE_DIR"
 
   # Posts a failed scheduled run to Slack. The step skips while the
   # EVAL_SLACK_WEBHOOK_URL secret is unset, so the job stays green without it.

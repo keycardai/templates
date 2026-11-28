@@ -14,6 +14,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { addBuildAgentUsage, BUILD_AGENT_MODEL, type BuildAgentUsage } from "./build-agent-usage.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +27,7 @@ export async function runBuildAgent(opts: {
   templateDir: string;
   zoneIssuerUrl: string;
   resourceIdentifier: string;
+  usage: BuildAgentUsage;
   language?: "python" | "typescript" | "go" | "ruby" | "java";
   /** Extra constraints for templates whose harness setup differs from SPEC.md. */
   notes?: string;
@@ -88,12 +90,13 @@ Your task:
 
   for (let turn = 0; turn < 25; turn++) {
     const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: BUILD_AGENT_MODEL,
       max_tokens: 4096,
       system: systemPrompt,
       tools,
       messages,
     });
+    addBuildAgentUsage(opts.usage, response.usage);
 
     const assistantContent: Anthropic.ContentBlock[] = [];
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
