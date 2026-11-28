@@ -21,12 +21,13 @@ default GitHub Actions job timeout and leaves fresh provisioning untouched.
 Resource URLs use a per-job hostname under `.localhost` so the registered
 identifiers are distinct without changing routes such as `/mcp`. CI derives
 the hostname from the template name, GitHub run ID, and run attempt; local
-runs use a random suffix. The machine's resolver must resolve
-`*.localhost` to loopback. The browser callback and MCP transport probes stay
-on `localhost`; the OAuth resource and protected-resource metadata use the
-job URL. This preserves the MCP transport's local Host validation. The eval
-reuses one public dynamic client registration per zone. The read-only zone
-preflight runs before any job provisions resources.
+runs use a random suffix. Harness probes and the browser callback use literal
+`localhost`; OAuth audiences and resource metadata retain the job URL. The
+LangChain calendar tools and Python A2A caller use their configured resource
+URLs as destinations, so those templates still need a resolver that maps
+`*.localhost` to loopback. The eval reuses one public dynamic client
+registration per zone. The read-only zone preflight runs before any job
+provisions resources.
 
 ## Agent templates (outbound auth)
 

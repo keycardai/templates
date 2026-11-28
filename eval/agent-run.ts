@@ -60,6 +60,7 @@ export async function runAgentEval(opts: {
   const agentPort = Number(process.env.EVAL_AGENT_PORT ?? 2024);
   const stubPort = Number(process.env.EVAL_STUB_PORT ?? 8901);
   const agentUrl = `http://localhost:${agentPort}`;
+  const calendarResourceIdentifier = evalOrigin(opts.runId, stubPort);
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
   const anthropicApiKey = required("ANTHROPIC_API_KEY");
   const anthropicModel = process.env.EVAL_AGENT_MODEL ?? "claude-sonnet-4-6";
@@ -111,7 +112,7 @@ export async function runAgentEval(opts: {
     stub = await startCalendarStub({
       port: stubPort,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
-      resourceIdentifier: evalOrigin(opts.runId, stubPort),
+      resourceIdentifier: calendarResourceIdentifier,
     });
     console.log(`   Stub calendar: ${stub.url} (verifying against the zone JWKS)`);
 
@@ -125,7 +126,7 @@ export async function runAgentEval(opts: {
       token,
       provisioning,
       templateDir: opts.templateDir,
-      calendarResourceIdentifier: stub.url,
+      calendarResourceIdentifier,
       agentResourceIdentifier: evalOrigin(opts.runId, agentPort),
       anthropicApiKey,
       anthropicModel,

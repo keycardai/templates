@@ -58,7 +58,11 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     if (!match) {
       throw new Error(`Missing resource_metadata in WWW-Authenticate: ${wwwAuth}`);
     }
-    resourceMetadataUrl = match[1];
+    const advertised = new URL(match[1]);
+    const local = new URL(base);
+    local.pathname = advertised.pathname;
+    local.search = advertised.search;
+    resourceMetadataUrl = local.toString();
   }, checks);
 
   await check(".well-known/oauth-protected-resource returns JSON", async () => {

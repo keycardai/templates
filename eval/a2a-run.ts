@@ -76,7 +76,7 @@ export async function runA2AEval(opts: {
 }): Promise<boolean> {
   if (opts.language === "python") return runA2ADelegationEval(opts);
   const port = Number(process.env.EVAL_A2A_PORT ?? 9000);
-  const agentUrl = evalOrigin(opts.runId, port);
+  const agentUrl = `http://localhost:${port}`;
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
 
   let zoneId: string | undefined;
@@ -131,7 +131,7 @@ export async function runA2AEval(opts: {
       token,
       provisioning,
       templateDir: opts.templateDir,
-      agentBaseUrl: agentUrl,
+      agentBaseUrl: evalOrigin(opts.runId, port),
       port,
     });
 
@@ -235,8 +235,9 @@ async function runA2ADelegationEval(opts: {
 }): Promise<boolean> {
   const callerPort = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const targetPort = callerPort + 1;
-  const callerUrl = evalOrigin(opts.runId, callerPort);
-  const targetUrl = evalOrigin(opts.runId, targetPort);
+  const callerUrl = `http://localhost:${callerPort}`;
+  const targetUrl = `http://localhost:${targetPort}`;
+  const targetResourceIdentifier = evalOrigin(opts.runId, targetPort);
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
 
   let zoneId: string | undefined;
@@ -302,8 +303,8 @@ async function runA2ADelegationEval(opts: {
       token,
       provisioning,
       templateDir: opts.templateDir,
-      callerBaseUrl: callerUrl,
-      targetBaseUrl: targetUrl,
+      callerBaseUrl: evalOrigin(opts.runId, callerPort),
+      targetBaseUrl: targetResourceIdentifier,
     });
 
     console.log("\n3. Pre-warming the template's uv environment...");
@@ -354,6 +355,7 @@ async function runA2ADelegationEval(opts: {
     const result = await verifyA2ADelegation({
       callerUrl,
       targetUrl,
+      targetResourceIdentifier,
       userAccessToken: identity.accessToken,
       userIdentifier,
       callerApplicationIdentifier: provisioned.callerApplicationIdentifier,

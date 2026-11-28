@@ -28,7 +28,7 @@ export interface StubRequestRecord {
 }
 
 export interface CalendarStub {
-  /** Base URL the template's KEYCARD_RESOURCE points at. */
+  /** Local URL for harness probes. */
   url: string;
   requests: StubRequestRecord[];
   close: () => Promise<void>;
@@ -201,7 +201,7 @@ export async function startCalendarStub(opts: {
   });
 
   return {
-    url: opts.resourceIdentifier,
+    url: `http://localhost:${opts.port}`,
     requests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

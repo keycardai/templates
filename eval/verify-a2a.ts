@@ -13,7 +13,7 @@
 import { check, type VerifyResult } from "./verify.js";
 
 export interface VerifyA2AOptions {
-  /** Base URL the agent serves on (AGENT_BASE_URL). */
+  /** Local URL for harness probes. */
   agentUrl: string;
   /** Zone token audienced at the agent's own resource. */
   accessToken: string;
@@ -140,6 +140,7 @@ export async function verifyA2AAgent(opts: VerifyA2AOptions): Promise<VerifyResu
 export interface VerifyA2ADelegationOptions {
   callerUrl: string;
   targetUrl: string;
+  targetResourceIdentifier: string;
   /** Zone token for the impersonated user, audienced at the caller's resource. */
   userAccessToken: string;
   /** Identifier impersonation minted the token for; the target must report it as sub. */
@@ -248,7 +249,9 @@ export async function verifyA2ADelegation(opts: VerifyA2ADelegationOptions): Pro
   await check("the token the target received is audienced to the target only", async () => {
     if (!report) throw new Error("no target report");
     const aud = Array.isArray(report.aud) ? report.aud : report.aud ? [report.aud] : [];
-    if (aud.length !== 1 || aud[0] !== targetUrl) throw new Error(`aud ${JSON.stringify(report.aud)}, expected ["${targetUrl}"]`);
+    if (aud.length !== 1 || aud[0] !== opts.targetResourceIdentifier) {
+      throw new Error(`aud ${JSON.stringify(report.aud)}, expected ["${opts.targetResourceIdentifier}"]`);
+    }
   }, checks);
 
   return { passed: checks.every((c) => c.passed), checks };
