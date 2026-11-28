@@ -4,6 +4,7 @@
 /_skeleton/ @keycardai/engineering
 /a2a-delegation-java/ @keycardai/engineering
 /a2a-delegation-python/ @keycardai/engineering
+/a2a-delegation-typescript/ @keycardai/engineering
 /agent-python-langchain/ @keycardai/engineering
 /autonomous-agent-snowflake-wif/ @keycardai/engineering
 /delegated-access-typescript-cloudflare/ @keycardai/engineering

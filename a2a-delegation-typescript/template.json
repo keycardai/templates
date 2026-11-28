@@ -1,0 +1,8 @@
+{
+  "name": "a2a-delegation-typescript",
+  "language": "TypeScript",
+  "framework": "A2A / Express",
+  "flows": ["a2a-delegation"],
+  "sdk_packages": ["@keycardai/a2a", "@keycardai/express"],
+  "description": "Exchange a user token to call another agent that reports the verified subject, actor and audience."
+}

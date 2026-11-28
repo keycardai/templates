@@ -70,6 +70,12 @@ const JAVA_DELEGATION_BUILD_NOTES = [
   "The harness starts both roles from build/install/a2a-delegation-java/bin/a2a-delegation-java.",
 ].join("\n");
 
+const TYPESCRIPT_DELEGATION_BUILD_NOTES = [
+  "Provisioning is complete and .env and keycard.toml are final. The harness passes the caller credentials directly to the caller at runtime.",
+  "Do not look for credentials, run keycard CLI commands, call the zone or any HTTP endpoint, or start either agent.",
+  "Your entire job is to run npm ci and npm run build, then print the marker.",
+].join("\n");
+
 function required(name: string): string {
   const val = process.env[name];
   if (!val) throw new Error(`Required env var ${name} is not set`);
@@ -85,6 +91,9 @@ export async function runA2AEval(opts: {
 }): Promise<boolean> {
   if (opts.language === "python" || opts.language === "java") {
     return runA2ADelegationEval({ ...opts, language: opts.language });
+  }
+  if (path.basename(opts.templateDir) === "a2a-delegation-typescript") {
+    return runA2ADelegationEval({ ...opts, language: "typescript" });
   }
   const port = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const agentUrl = `http://localhost:${port}`;
@@ -242,7 +251,7 @@ async function runA2ADelegationEval(opts: {
   templateName: string;
   runId: string;
   usage: BuildAgentUsage;
-  language: "python" | "java";
+  language: "python" | "java" | "typescript";
 }): Promise<boolean> {
   const callerPort = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const targetPort = callerPort + 1;
@@ -251,6 +260,7 @@ async function runA2ADelegationEval(opts: {
   const targetResourceIdentifier = evalOrigin(opts.runId, targetPort);
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
   const java = opts.language === "java";
+  const typescript = opts.language === "typescript";
 
   let templateDir = opts.templateDir;
   let javaWorkspace: string | undefined;
@@ -340,13 +350,18 @@ async function runA2ADelegationEval(opts: {
       templateDir,
       callerBaseUrl: evalOrigin(opts.runId, callerPort),
       targetBaseUrl: targetResourceIdentifier,
-      writeCallerCredentials: !java,
+      writeCallerCredentials: !java && !typescript,
     });
 
-    const [command, args] = java ? ["./gradlew", ["installDist"]] : ["uv", ["sync"]];
-    console.log(java ? "\n3. Pre-warming the template with Gradle..." : "\n3. Pre-warming the template's uv environment...");
-    await execFileAsync(command, args, { cwd: templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
-    console.log(java ? "   ./gradlew installDist complete" : "   uv sync complete");
+    if (!typescript) {
+      const [command, args] = java ? ["./gradlew", ["installDist"]] : ["uv", ["sync"]];
+      const install = [command, ...args].join(" ");
+      console.log(`\n3. Pre-warming the template with ${install}...`);
+      await execFileAsync(command, args, { cwd: templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
+      console.log(`   ${install} complete`);
+    } else {
+      console.log("\n3. No pre-warm needed for npm...");
+    }
 
     console.log("\n4. Running agent (verify config + build)...");
     const buildOptions = {
@@ -355,7 +370,7 @@ async function runA2ADelegationEval(opts: {
       resourceIdentifier: provisioned.callerResourceIdentifier,
       usage: opts.usage,
       language: opts.language,
-      notes: java ? JAVA_DELEGATION_BUILD_NOTES : DELEGATION_BUILD_NOTES,
+      notes: java ? JAVA_DELEGATION_BUILD_NOTES : typescript ? TYPESCRIPT_DELEGATION_BUILD_NOTES : DELEGATION_BUILD_NOTES,
     };
     let build = await runBuildAgent(buildOptions);
     if (!build.success) {
@@ -395,6 +410,23 @@ async function runA2ADelegationEval(opts: {
       await start("caller", script, ["caller"], {
         ...agentEnv,
         PORT: String(callerPort),
+        KEYCARD_CLIENT_ID: provisioned.callerClientId,
+        KEYCARD_CLIENT_SECRET: provisioned.callerClientSecret,
+      });
+    } else if (typescript) {
+      const agentEnv = {
+        ...process.env,
+        KEYCARD_URL: evalZone.zone.issuerUrl,
+        CALLER_BASE_URL: provisioned.callerResourceIdentifier,
+        TARGET_BASE_URL: targetResourceIdentifier,
+        CALLER_PORT: String(callerPort),
+        TARGET_PORT: String(targetPort),
+      };
+      const startTypeScript = (role: "caller" | "target", env: NodeJS.ProcessEnv) =>
+        start(role, "node", ["dist/index.js", role], env);
+      await startTypeScript("target", agentEnv);
+      await startTypeScript("caller", {
+        ...agentEnv,
         KEYCARD_CLIENT_ID: provisioned.callerClientId,
         KEYCARD_CLIENT_SECRET: provisioned.callerClientSecret,
       });

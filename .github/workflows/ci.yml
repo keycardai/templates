@@ -178,7 +178,7 @@ jobs:
           ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ (matrix.template == 'delegated-access-typescript-cloudflare' || matrix.template == 'autonomous-agent-snowflake-wif') && '22' || '20' }}
+          node-version: ${{ (matrix.template == 'delegated-access-typescript-cloudflare' || matrix.template == 'autonomous-agent-snowflake-wif' || matrix.template == 'a2a-delegation-typescript') && '22' || '20' }}
           cache: "npm"
           cache-dependency-path: "${{ matrix.template }}/package*.json"
 
