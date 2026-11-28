@@ -72,7 +72,10 @@ updates:
 
   - package-ecosystem: gradle
     directories:
+      - /a2a-delegation-java
+      - /mcp-delegated-access-java
       - /mcp-server-java
+      - /mcp-server-java-spring-ai
     schedule:
       interval: weekly
       day: sunday

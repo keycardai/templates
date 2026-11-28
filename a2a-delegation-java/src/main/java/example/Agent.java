@@ -8,6 +8,12 @@ import ai.keycard.mcp.RequireBearerAuthFilter;
 import ai.keycard.oauth.AccessToken;
 import ai.keycard.oauth.ClientSecret;
 import ai.keycard.oauth.KeycardException;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.Strictness;
 import com.google.protobuf.util.JsonFormat;
 import com.nimbusds.jose.util.JSONObjectUtils;
 import jakarta.servlet.DispatcherType;
@@ -24,16 +30,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
+import org.a2aproject.sdk.grpc.SendMessageRequest;
 import org.a2aproject.sdk.grpc.utils.JSONRPCUtils;
 import org.a2aproject.sdk.grpc.utils.ProtoJsonUtils;
 import org.a2aproject.sdk.grpc.utils.ProtoUtils;
-import org.a2aproject.sdk.jsonrpc.common.wrappers.A2ARequest;
-import org.a2aproject.sdk.jsonrpc.common.wrappers.SendMessageRequest;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonProcessingException;
 import org.a2aproject.sdk.spec.AgentCapabilities;
 import org.a2aproject.sdk.spec.AgentCard;
 import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.AgentSkill;
 import org.a2aproject.sdk.spec.HTTPAuthSecurityScheme;
+import org.a2aproject.sdk.spec.InvalidParamsError;
+import org.a2aproject.sdk.spec.InvalidRequestError;
+import org.a2aproject.sdk.spec.JSONParseError;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MethodNotFoundError;
 import org.a2aproject.sdk.spec.Part;
@@ -175,6 +184,7 @@ public final class Agent {
 
         private static final long serialVersionUID = 1L;
         private static final int MAX_REQUEST_BYTES = 1024 * 1024;
+        private static final Gson JSON = new GsonBuilder().setStrictness(Strictness.STRICT).create();
         private final transient BiFunction<AccessToken, Message, String> answer;
 
         JsonRpc(BiFunction<AccessToken, Message, String> answer) {
@@ -194,33 +204,63 @@ public final class Agent {
             }
             response.setContentType("application/json");
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            A2ARequest<?> rpc;
+            JsonElement payload;
             try {
-                rpc = JSONRPCUtils.parseRequestBody(new String(body, StandardCharsets.UTF_8), null);
-            } catch (Exception e) {
+                payload = JSON.fromJson(new String(body, StandardCharsets.UTF_8), JsonElement.class);
+            } catch (JsonSyntaxException e) {
+                payload = null;
+            }
+            if (payload == null) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
-                        null, new MethodNotFoundError(null, "Could not read the JSON-RPC request", null)));
+                        null, new JSONParseError()));
                 return;
             }
+
+            JsonObject rpc = payload.isJsonObject() ? payload.getAsJsonObject() : new JsonObject();
+            Object id = requestId(rpc.get("id"));
+            String method = stringValue(rpc.get("method"));
+            JsonElement params = rpc.get("params");
+            if (id == null || !"2.0".equals(stringValue(rpc.get("jsonrpc"))) || method == null
+                    || (params != null && !params.isJsonObject() && !params.isJsonArray())) {
+                response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(id, new InvalidRequestError()));
+                return;
+            }
+
             String version = request.getHeader("A2A-Version");
             if (version == null) {
                 version = request.getParameter("A2A-Version");
             }
             if (!VERSION.equals(version)) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
-                        rpc.getId(), new VersionNotSupportedError(null, "Only A2A 1.0 is supported", null)));
+                        id, new VersionNotSupportedError(null, "Only A2A 1.0 is supported", null)));
                 return;
             }
-            if (!(rpc instanceof SendMessageRequest send)) {
+            if (!"SendMessage".equals(method)) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
-                        rpc.getId(), new MethodNotFoundError(null, "Only SendMessage is supported", null)));
+                        id, new MethodNotFoundError(null, "Only SendMessage is supported", null)));
+                return;
+            }
+            if (params == null || !params.isJsonObject()) {
+                response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
+                        id, new InvalidRequestError("SendMessage requires a params object")));
+                return;
+            }
+
+            Message message;
+            try {
+                SendMessageRequest.Builder send = SendMessageRequest.newBuilder();
+                JSONRPCUtils.parseJsonString(params.toString(), send, id);
+                message = ProtoUtils.FromProto.messageSendParams(send).message();
+            } catch (JsonProcessingException | InvalidParamsError e) {
+                response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
+                        id, new InvalidRequestError("Invalid SendMessage parameters")));
                 return;
             }
 
             AccessToken user = KeycardRequest.accessToken(request).orElseThrow();
             String text;
             try {
-                text = answer.apply(user, send.getParams().message());
+                text = answer.apply(user, message);
             } catch (KeycardException | IllegalStateException e) {
                 response.sendError(HttpServletResponse.SC_BAD_GATEWAY, "Delegation failed");
                 return;
@@ -231,7 +271,19 @@ public final class Agent {
                     .messageId(UUID.randomUUID().toString())
                     .build();
             response.getWriter().write(JSONRPCUtils.toJsonRPCResultResponse(
-                    send.getId(), ProtoUtils.ToProto.taskOrMessage(reply)));
+                    id, ProtoUtils.ToProto.taskOrMessage(reply)));
+        }
+
+        private static Object requestId(JsonElement value) {
+            if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
+                return value.getAsNumber();
+            }
+            return stringValue(value);
+        }
+
+        private static String stringValue(JsonElement value) {
+            return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()
+                    ? value.getAsString() : null;
         }
     }
 }

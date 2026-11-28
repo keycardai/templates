@@ -14,6 +14,8 @@ dependencies {
     // The official a2a-java types and codec for agent cards and JSON-RPC messages.
     implementation("org.a2aproject.sdk:a2a-java-sdk-spec-grpc:1.5.1.Final")
     implementation("com.google.protobuf:protobuf-java-util:4.36.2")
+    implementation("com.google.code.gson:gson:2.15.0")
+    implementation("com.nimbusds:nimbus-jose-jwt:10.10")
     runtimeOnly("org.slf4j:slf4j-simple:2.0.17")
 }
 
