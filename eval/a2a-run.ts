@@ -21,6 +21,7 @@
 
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
@@ -65,7 +66,7 @@ const DELEGATION_BUILD_NOTES = [
 ].join("\n");
 
 const JAVA_DELEGATION_BUILD_NOTES = [
-  "Provisioning is complete and .env and keycard.toml are final. Do not change them or print the credentials.",
+  "Provisioning is complete and .env and keycard.toml are final. The harness passes the caller credentials directly to the caller at runtime. Do not look for them or add them.",
   "Do not run keycard CLI commands, call the zone or any HTTP endpoint, or start either agent.",
   "Your entire job is to build with ./gradlew installDist and then print the marker.",
   "The harness starts both roles from build/install/a2a-delegation-java/bin/a2a-delegation-java.",
@@ -250,7 +251,10 @@ async function runA2ADelegationEval(opts: {
   const callerUrl = `http://localhost:${callerPort}`;
   const targetUrl = `http://localhost:${targetPort}`;
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
+  const java = opts.language === "java";
 
+  let templateDir = opts.templateDir;
+  let javaWorkspace: string | undefined;
   let zoneId: string | undefined;
   let ephemeral = false;
   let token: string | undefined;
@@ -273,13 +277,17 @@ async function runA2ADelegationEval(opts: {
       console.log(`\nCleaning up zone ${zoneId}...`);
       await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
     }
-    await fs.rm(path.join(opts.templateDir, ".env"), { force: true }).catch(() => undefined);
+    if (javaWorkspace) {
+      await fs.rm(javaWorkspace, { recursive: true, force: true });
+    } else if (!java) {
+      await fs.rm(path.join(templateDir, ".env"), { force: true }).catch(() => undefined);
+    }
   };
   process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
 
   const start = (label: string, command: string, args: string[], env: NodeJS.ProcessEnv) => {
     const agent = spawn(command, args, {
-      cwd: opts.templateDir,
+      cwd: templateDir,
       env,
       detached: true,
     });
@@ -291,6 +299,19 @@ async function runA2ADelegationEval(opts: {
 
   let passed = false;
   try {
+    if (java) {
+      javaWorkspace = await fs.mkdtemp(path.join(tmpdir(), "template-eval-java-"));
+      templateDir = path.join(javaWorkspace, opts.templateName);
+      const excluded = new Set([".gradle", "build", "keycard.toml"]);
+      await fs.cp(opts.templateDir, templateDir, {
+        recursive: true,
+        filter: (source) => {
+          const name = path.basename(source);
+          return !excluded.has(name) && !/^\.env(?:\.|$)/.test(name);
+        },
+      });
+    }
+
     console.log("1. Creating eval zone...");
     const evalZone = await getOrCreateEvalZone(opts.runId);
     token = evalZone.token;
@@ -313,20 +334,20 @@ async function runA2ADelegationEval(opts: {
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       runId: opts.runId,
       token,
-      templateDir: opts.templateDir,
+      templateDir,
       callerBaseUrl: callerUrl,
       targetBaseUrl: targetUrl,
+      writeCallerCredentials: !java,
     });
 
-    const java = opts.language === "java";
     const [command, args] = java ? ["./gradlew", ["installDist"]] : ["uv", ["sync"]];
     console.log(java ? "\n3. Pre-warming the template with Gradle..." : "\n3. Pre-warming the template's uv environment...");
-    await execFileAsync(command, args, { cwd: opts.templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
+    await execFileAsync(command, args, { cwd: templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
     console.log(java ? "   ./gradlew installDist complete" : "   uv sync complete");
 
     console.log("\n4. Running agent (verify config + build)...");
     const buildOptions = {
-      templateDir: opts.templateDir,
+      templateDir,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       resourceIdentifier: provisioned.callerResourceIdentifier,
       usage: opts.usage,
@@ -360,7 +381,7 @@ async function runA2ADelegationEval(opts: {
     console.log("\n6. Starting the target and the caller...");
     if (java) {
       const script = `./build/install/${opts.templateName}/bin/${opts.templateName}`;
-      // The Java agents take the provisioned .env values through the process environment.
+      // Java uses the process environment, including the credentials omitted from .env.
       const agentEnv = {
         ...process.env,
         KEYCARD_URL: provisioned.zoneIssuerUrl,
