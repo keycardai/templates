@@ -173,12 +173,13 @@ and skips live-zone checks on those PRs. When Template CI finishes,
    dependency manifests or lockfiles under existing template directories (never
    `.github`, `eval`, `_skeleton`, or `scripts`), not listed in
    `eval/eval-skip.txt`, and with a green Template CI run. It also downloads
-   and validates the `dependabot-metadata` artifact from `Template CI` to set
-   `automerge`: Keycard SDK bumps (verified against the ecosystem's Keycard
-   patterns), security group bumps, and third-party semver-patch/minor bumps
-   auto-merge when green; third-party semver-major bumps (or PRs with missing,
-   invalid, or mixed/unknown metadata) still run verify and eval but never
-   auto-merge.
+   and validates the `dependabot-metadata` artifact from `Template CI` (falling
+   back to the verified Dependabot head commit's YAML metadata block if the
+   artifact is missing) to set `automerge`: Keycard SDK bumps (verified against
+   the ecosystem's Keycard patterns), security group bumps, and third-party
+   semver-patch/minor bumps auto-merge when green; third-party semver-major
+   bumps (or PRs with missing, invalid, or mixed/unknown metadata) still run
+   verify and eval but never auto-merge.
 2. **Verify and eval**: calls `Template CI` and then `Template Eval` for the
    touched template(s) at the PR head SHA with secrets.
 3. **Result** ([`.github/scripts/bump-result.sh`](./.github/scripts/bump-result.sh)):
