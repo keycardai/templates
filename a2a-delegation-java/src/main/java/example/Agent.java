@@ -37,6 +37,7 @@ import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MethodNotFoundError;
 import org.a2aproject.sdk.spec.Part;
 import org.a2aproject.sdk.spec.TextPart;
+import org.a2aproject.sdk.spec.VersionNotSupportedError;
 import org.eclipse.jetty.ee10.servlet.FilterHolder;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
@@ -193,9 +194,18 @@ public final class Agent {
                         null, new MethodNotFoundError(null, "Could not read the JSON-RPC request", null)));
                 return;
             }
-            if (!(rpc instanceof SendMessageRequest send) || !VERSION.equals(request.getHeader("A2A-Version"))) {
+            String version = request.getHeader("A2A-Version");
+            if (version == null) {
+                version = request.getParameter("A2A-Version");
+            }
+            if (!VERSION.equals(version)) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
-                        rpc.getId(), new MethodNotFoundError(null, "Only SendMessage under A2A 1.0 is supported", null)));
+                        rpc.getId(), new VersionNotSupportedError(null, "Only A2A 1.0 is supported", null)));
+                return;
+            }
+            if (!(rpc instanceof SendMessageRequest send)) {
+                response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
+                        rpc.getId(), new MethodNotFoundError(null, "Only SendMessage is supported", null)));
                 return;
             }
 
