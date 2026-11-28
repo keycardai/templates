@@ -16,7 +16,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { EvalProvisioning, provision } from "./provision.js";
-import { evalHostname, evalOrigin, evalRunId } from "./run-identity.js";
+import { evalHostname, evalRunId } from "./run-identity.js";
 import { runBuildAgent } from "./agent.js";
 import { BUILD_AGENT_MODEL, emptyBuildAgentUsage, formatBuildAgentUsage } from "./build-agent-usage.js";
 import { authenticateViaOAuth } from "./browser.js";
@@ -167,7 +167,9 @@ const SERVER_START: ServerStart = {
   port: SERVER_PORT,
   healthPath: override.healthPath ?? DEFAULT_HEALTH_PATH,
 };
-const SERVER_URL = evalOrigin(RUN_ID, SERVER_START.port);
+// Probe the listener with its local Host header. FastMCP's transport rejects
+// other hosts, even though the token audience and discovery use the job URL.
+const SERVER_URL = `http://localhost:${SERVER_START.port}`;
 
 async function killStaleServer(): Promise<void> {
   await execFileAsync("bash", ["-c", `lsof -ti :${SERVER_START.port} | xargs kill -9 2>/dev/null; true`]);

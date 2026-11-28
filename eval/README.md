@@ -18,9 +18,11 @@ Resource URLs use a per-job hostname under `.localhost` so the registered
 identifiers are distinct without changing routes such as `/mcp`. CI derives
 the hostname from the template name, GitHub run ID, and run attempt; local
 runs use a random suffix. The machine's resolver must resolve
-`*.localhost` to loopback. The browser callback stays on `localhost`, and
-the eval reuses one public dynamic client registration per zone. The
-read-only zone preflight runs before any job provisions resources.
+`*.localhost` to loopback. The browser callback and MCP transport probes stay
+on `localhost`; the OAuth resource and protected-resource metadata use the
+job URL. This preserves the MCP transport's local Host validation. The eval
+reuses one public dynamic client registration per zone. The read-only zone
+preflight runs before any job provisions resources.
 
 ## Agent templates (outbound auth)
 
