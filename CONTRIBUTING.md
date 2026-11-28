@@ -151,6 +151,40 @@ Start with an existing flow and use the narrowest hint if needed:
 
 See the [eval README](./eval/README.md) for local setup and runtime details.
 
+## Dependency bumps
+
+[`.github/dependabot.yml`](./.github/dependabot.yml) runs daily per template
+with three groups: `keycard` (Keycard SDK updates with no cooldown),
+`third-party` (minor and patch updates with a 30/7/3-day major/minor/patch
+cooldown; majors open individually), and `security` (security updates, never
+held by cooldown). `mcp-server-ruby` has no `Gemfile.lock` and uses `>=`
+floors, so it is covered by the nightly eval rather than Dependabot.
+
+Because Dependabot `pull_request` runs receive no Actions secrets,
+[Template CI](./.github/workflows/ci.yml) builds only the touched template(s)
+and skips live-zone checks on those PRs. When Template CI finishes,
+[Dependency Bump](./.github/workflows/dependency-bump.yml) runs via
+`workflow_run` (or manual `workflow_dispatch` with a `pr` number for retries):
+
+1. **Trust gate** ([`.github/scripts/bump-gate.sh`](./.github/scripts/bump-gate.sh)):
+   requires an open PR targeting `main` from this repository, authored by
+   `dependabot[bot]` with every commit authored by `dependabot[bot]`, matching
+   the CI run head SHA, changing only allowed dependency manifests or lockfiles
+   under existing template directories (never `.github`, `eval`, `_skeleton`,
+   or `scripts`), not listed in `eval/eval-skip.txt`, and with a green
+   Template CI run.
+2. **Verify and eval**: calls `Template CI` and then `Template Eval` for the
+   touched template(s) at the PR head SHA with secrets.
+3. **Result**: sets the `dependency-bump/verify-eval` commit status. When both
+   pass and the PR head SHA is unchanged, it squash-merges the PR. On failure,
+   it leaves the PR open and creates or updates a single PR comment naming the
+   failed stage and linking the run.
+
+Bump evals share the `template-eval-zone` concurrency group in
+[`eval.yml`](./.github/workflows/eval.yml) (`cancel-in-progress: false`,
+`queue: max`), so bump, nightly, and manual eval runs are serialized one at a
+time against the eval zone without cancelling queued runs.
+
 ## Add a language: Java as the example
 
 1. In [`ci.yml`](./.github/workflows/ci.yml), extend `discover` to expose
