@@ -1,0 +1,15 @@
+{
+  "name": "autonomous-agent-snowflake-wif",
+  "language": "TypeScript",
+  "flows": [
+    "workload-identity"
+  ],
+  "framework": "`pi-agent-core`, `pi-ai`",
+  "sdk_packages": [
+    "@keycardai/a2a",
+    "@keycardai/express",
+    "@keycardai/mcp",
+    "@keycardai/oauth"
+  ],
+  "description": "Query Snowflake from an autonomous agent using workload identity federation instead of a shared secret."
+}

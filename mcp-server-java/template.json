@@ -1,0 +1,12 @@
+{
+  "name": "mcp-server-java",
+  "language": "Java",
+  "flows": [
+    "mcp-server"
+  ],
+  "framework": "Jetty (Servlet)",
+  "sdk_packages": [
+    "ai.keycard:keycard-mcp"
+  ],
+  "description": "Serve a greeting tool over MCP with Keycard OAuth protection."
+}

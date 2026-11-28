@@ -1,0 +1,13 @@
+{
+  "name": "mcp-server-python-mcp",
+  "language": "Python",
+  "flows": [
+    "mcp-server"
+  ],
+  "framework": "MCP v2 (`MCPServer`), Starlette",
+  "sdk_packages": [
+    "keycardai-mcp",
+    "keycardai-starlette"
+  ],
+  "description": "Serve a greeting tool over MCP with Keycard OAuth protection."
+}

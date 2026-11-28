@@ -1,0 +1,13 @@
+{
+  "name": "mcp-server-ruby",
+  "language": "Ruby",
+  "flows": [
+    "mcp-server"
+  ],
+  "framework": "Rack",
+  "sdk_packages": [
+    "keycardai-mcp",
+    "keycardai-oauth"
+  ],
+  "description": "Serve a greeting tool over MCP with Keycard OAuth protection."
+}

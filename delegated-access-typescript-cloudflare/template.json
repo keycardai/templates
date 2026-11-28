@@ -1,0 +1,13 @@
+{
+  "name": "delegated-access-typescript-cloudflare",
+  "language": "TypeScript",
+  "flows": [
+    "workload-identity"
+  ],
+  "framework": "Cloudflare Workers",
+  "sdk_packages": [
+    "@keycardai/cloudflare",
+    "@keycardai/oauth"
+  ],
+  "description": "Use a Worker's keypair identity to exchange a user's token and call a protected downstream resource."
+}

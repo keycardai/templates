@@ -1,0 +1,13 @@
+{
+  "name": "a2a-delegation-java",
+  "language": "Java",
+  "flows": [
+    "a2a-delegation"
+  ],
+  "framework": "Jetty (Servlet), a2a-java",
+  "sdk_packages": [
+    "ai.keycard:keycard-a2a",
+    "ai.keycard:keycard-mcp"
+  ],
+  "description": "Delegate a user's A2A request to a target agent that reports the verified identity claims."
+}

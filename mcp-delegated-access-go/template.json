@@ -1,0 +1,12 @@
+{
+  "name": "mcp-delegated-access-go",
+  "language": "Go",
+  "flows": [
+    "delegated-access"
+  ],
+  "framework": "`net/http`",
+  "sdk_packages": [
+    "github.com/keycardai/go-sdk"
+  ],
+  "description": "Exchange an authenticated MCP user's token for a resource-scoped token."
+}

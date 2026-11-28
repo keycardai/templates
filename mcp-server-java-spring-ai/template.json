@@ -1,0 +1,13 @@
+{
+  "name": "mcp-server-java-spring-ai",
+  "language": "Java",
+  "flows": [
+    "mcp-server",
+    "agent-frameworks"
+  ],
+  "framework": "Spring AI (WebMVC)",
+  "sdk_packages": [
+    "ai.keycard:keycard-spring-boot-starter"
+  ],
+  "description": "Expose a Spring AI MCP tool with Keycard authentication and scope enforcement."
+}
