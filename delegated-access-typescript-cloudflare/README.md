@@ -30,6 +30,8 @@ curl -fsS -H "Authorization: Bearer ${USER_ACCESS_TOKEN}" http://127.0.0.1:8787/
 Health returns `ok`. Use a user token minted for the Worker's resource, not
 for the downstream resource. The authenticated request returns the downstream
 status and body. Without a bearer token, `/call` returns `401` and a Bearer challenge.
+Each Worker isolate initializes the Keycard handler and token cache lazily on
+its first request other than `GET /healthz` and reuses them across requests.
 
 ## Configuration
 
