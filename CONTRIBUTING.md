@@ -239,6 +239,10 @@ time against the eval zone without cancelling queued runs.
    name matches the directory name. The harness passes `PORT` and Keycard
    config in the process environment. Verify the first template in both
    workflows.
+4. In [`scripts/catalog.mjs`](./scripts/catalog.mjs), add the language to
+   `languages` and map it to its manifest in `manifests`. The order of
+   `languages` sets the row order of the coverage matrix. Run
+   `node scripts/catalog.mjs` to regenerate the catalog.
 
 ## Review and merge
 
