@@ -279,6 +279,26 @@ test("rejects disallowed files, forbidden directories, root files, and renames f
   }
 });
 
+test("flags Gradle wrapper script and jar changes as needing human review", () => {
+  for (const file of [
+    "mcp-server-java/gradlew",
+    "mcp-server-java/gradlew.bat",
+    "mcp-server-java/gradle/wrapper/gradle-wrapper.jar",
+  ]) {
+    const out = runGate({
+      fixtures: {
+        "repos/keycardai/templates/pulls/42/files?per_page=100": [
+          { filename: "mcp-server-java/gradle/wrapper/gradle-wrapper.properties" },
+          { filename: file },
+        ],
+      },
+    });
+    assert.equal(out.ok, "false");
+    assert.equal(out.pr, "42");
+    assert.match(out.reason, /needs human review/);
+  }
+});
+
 test("rejects templates listed in eval/eval-skip.txt", () => {
   const tmpRoot = mkdtempSync(join(tmpdir(), "bump-gate-skip-"));
   try {

@@ -189,6 +189,13 @@ main() {
       return 0
     fi
 
+    case "$base" in
+      gradlew|gradlew.bat|gradle-wrapper.jar)
+        emit_output "$pr_number" "$target_sha" "[]" "false" "Gradle wrapper file needs human review: ${file}"
+        return 0
+        ;;
+    esac
+
     if ! is_allowed_basename "$base"; then
       emit_output "$pr_number" "$target_sha" "[]" "false" "Changed file is not an allowed dependency file: ${file}"
       return 0
