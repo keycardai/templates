@@ -63,9 +63,6 @@ export async function runCloudflareEval(opts: {
   const { templateDir, runId } = opts;
   const checks: Check[] = [];
   const abort = new AbortController();
-  const interrupt = () => abort.abort(new Error("Cloudflare eval interrupted"));
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", interrupt);
   let provisioning: ReturnType<typeof cloudflareProvisioning> | undefined;
   let ephemeralZoneId: string | undefined;
   let wrangler: ChildProcess | undefined;
@@ -76,6 +73,42 @@ export async function runCloudflareEval(opts: {
   let varsCreated = false;
   let originalToml: string | undefined;
   let completed = false;
+  let pendingSetup: Promise<unknown> | undefined;
+  let cleanupPromise: Promise<boolean> | undefined;
+
+  function trackSetup<T>(operation: Promise<T>): Promise<T> {
+    pendingSetup = operation;
+    return operation;
+  }
+
+  function cleanup(): Promise<boolean> {
+    return cleanupPromise ??= (async () => {
+      // Include anything created by a setup operation already in progress.
+      await pendingSetup?.catch(() => undefined);
+      const results = await Promise.allSettled([
+        stopProcessGroup(tunnel),
+        stopProcessGroup(wrangler),
+        provisioning?.cleanup(),
+        ephemeralZoneId ? deleteZone(ephemeralZoneId) : undefined,
+        varsCreated ? fs.rm(varsPath, { force: true }) : undefined,
+        originalToml !== undefined ? fs.writeFile(tomlPath, originalToml) : undefined,
+      ]);
+      results.push(...await Promise.allSettled([stub?.close()]));
+      return results.every((result) => result.status === "fulfilled" && result.value !== false);
+    })();
+  }
+
+  function interrupt() {
+    if (abort.signal.aborted) return;
+    abort.abort(new Error("Cloudflare eval interrupted"));
+    console.error("Cloudflare eval interrupted; cleaning up");
+    void cleanup().then((clean) => {
+      if (!clean) console.error("Cloudflare eval cleanup failed");
+      process.exit(1);
+    });
+  }
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
 
   try {
     const email = process.env.EVAL_TEST_USER_EMAIL;
@@ -87,9 +120,12 @@ export async function runCloudflareEval(opts: {
     const downstreamResource = `http://127.0.0.1:${stubPort}/calendars/primary/events`;
     const clientId = `eval-cf-${runId}`;
     console.log("1. Selecting the eval zone and removing stale runs...");
-    const { zone, token, ephemeral } = await getOrCreateEvalZone(runId);
+    const { zone, token, ephemeral } = await trackSetup(getOrCreateEvalZone(runId).then((result) => {
+      if (result.ephemeral) ephemeralZoneId = result.zone.id;
+      return result;
+    }));
+    abort.signal.throwIfAborted();
     if (ephemeral) {
-      ephemeralZoneId = zone.id;
       throw new Error("Cloudflare eval needs the persistent eval zone and an existing test user");
     }
     await cleanupStaleProvisonings(zone.id, token);
@@ -98,9 +134,11 @@ export async function runCloudflareEval(opts: {
 
     console.log("2. Provisioning the application and resources...");
     provisioning = cloudflareProvisioning(zone.id, token);
-    const app = await provisioning.provision({ runId, workerResource, downstreamResource });
+    const app = await trackSetup(provisioning.provision({ runId, workerResource, downstreamResource }));
+    abort.signal.throwIfAborted();
     originalToml = await fs.readFile(tomlPath, "utf8");
-    await writeKeycardToml(templateDir, zone.id);
+    abort.signal.throwIfAborted();
+    await trackSetup(writeKeycardToml(templateDir, zone.id));
     abort.signal.throwIfAborted();
 
     console.log("3. Building the template from SPEC.md...");
@@ -129,14 +167,20 @@ export async function runCloudflareEval(opts: {
       KEYCARD_WORKER_RESOURCE: workerResource,
       KEYCARD_RESOURCE_URL: downstreamResource,
     };
-    const vars = await fs.open(varsPath, "wx", 0o600);
-    varsCreated = true;
-    try {
-      await vars.writeFile(Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}\n`).join(""));
-    } finally {
-      await vars.close();
-    }
-    stub = await startCalendarStub({ port: stubPort, zoneIssuerUrl: zone.issuerUrl, resourceIdentifier: downstreamResource });
+    await trackSetup((async () => {
+      const vars = await fs.open(varsPath, "wx", 0o600);
+      varsCreated = true;
+      try {
+        await vars.writeFile(Object.entries(env).map(([key, value]) => `${key}=${JSON.stringify(value)}\n`).join(""));
+      } finally {
+        await vars.close();
+      }
+    })());
+    abort.signal.throwIfAborted();
+    const calendar = await trackSetup(startCalendarStub({
+      port: stubPort, zoneIssuerUrl: zone.issuerUrl, resourceIdentifier: downstreamResource,
+    }).then((calendar) => (stub = calendar)));
+    abort.signal.throwIfAborted();
     const workerProcess = start("./node_modules/.bin/wrangler", [
       "dev", "--local", "--config", opts.wranglerConfig, "--ip", "127.0.0.1", "--port", String(port),
     ], templateDir);
@@ -167,9 +211,11 @@ export async function runCloudflareEval(opts: {
       return await matchesPublicKey(jwksUri, publicKey).catch(() => false) ? true : undefined;
     }, abort.signal);
     checks.push({ label: "Tunnel JWKS matches the generated RS256 public key", ok: true });
+    abort.signal.throwIfAborted();
 
     console.log("5. Registering the public-key credential and minting the user token...");
-    await provisioning.registerPublicKey(app.applicationId, clientId, jwksUri);
+    await trackSetup(provisioning.registerPublicKey(app.applicationId, clientId, jwksUri));
+    abort.signal.throwIfAborted();
     checks.push({ label: "Zone registered the public-key credential", ok: true });
     const user = await impersonateUser({
       zoneIssuerUrl: zone.issuerUrl,
@@ -181,7 +227,7 @@ export async function runCloudflareEval(opts: {
     abort.signal.throwIfAborted();
 
     console.log("6. Verifying delegated access and capturing the SDK assertion in Node...");
-    checks.push(...await verifyWorker({ workerResource, downstreamResource, userToken: user.accessToken, userIdentifier, requests: stub.requests }));
+    checks.push(...await verifyWorker({ workerResource, downstreamResource, userToken: user.accessToken, userIdentifier, requests: calendar.requests }));
     checks.push(...await verifyClientAssertion(templateDir, env));
     abort.signal.throwIfAborted();
     completed = true;
@@ -189,16 +235,7 @@ export async function runCloudflareEval(opts: {
     console.error(err instanceof Error ? err.message : "Cloudflare eval failed");
     checks.push({ label: "Cloudflare eval completed", ok: false });
   } finally {
-    const cleanup = await Promise.allSettled([
-      stopProcessGroup(tunnel),
-      stopProcessGroup(wrangler),
-      provisioning?.cleanup(),
-      ephemeralZoneId ? deleteZone(ephemeralZoneId) : undefined,
-      varsCreated ? fs.rm(varsPath, { force: true }) : undefined,
-      originalToml !== undefined ? fs.writeFile(tomlPath, originalToml) : undefined,
-    ]);
-    const stubCleanup = await Promise.allSettled([stub?.close()]);
-    const clean = [...cleanup, ...stubCleanup].every((result) => result.status === "fulfilled" && result.value !== false);
+    const clean = await cleanup();
     checks.push({ label: "Cleaned up Cloudflare eval processes, provisioning, and local vars", ok: clean });
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
