@@ -165,6 +165,7 @@ public final class Agent {
     private static final class JsonRpc extends HttpServlet {
 
         private static final long serialVersionUID = 1L;
+        private static final int MAX_REQUEST_BYTES = 1024 * 1024;
         private final transient BiFunction<AccessToken, Message, String> answer;
 
         JsonRpc(BiFunction<AccessToken, Message, String> answer) {
@@ -173,12 +174,20 @@ public final class Agent {
 
         @Override
         protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+            if (request.getContentLengthLong() > MAX_REQUEST_BYTES) {
+                response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+                return;
+            }
+            byte[] body = request.getInputStream().readNBytes(MAX_REQUEST_BYTES + 1);
+            if (body.length > MAX_REQUEST_BYTES) {
+                response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+                return;
+            }
             response.setContentType("application/json");
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            String body = new String(request.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             A2ARequest<?> rpc;
             try {
-                rpc = JSONRPCUtils.parseRequestBody(body, null);
+                rpc = JSONRPCUtils.parseRequestBody(new String(body, StandardCharsets.UTF_8), null);
             } catch (Exception e) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
                         null, new MethodNotFoundError(null, "Could not read the JSON-RPC request", null)));
