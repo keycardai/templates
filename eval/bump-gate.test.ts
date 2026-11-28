@@ -53,6 +53,10 @@ function makeTempRepoRoot(skipContent = "") {
   writeFileSync(join(root, "mcp-server-go/go.mod"), "module example\n");
   mkdirSync(join(root, "mcp-server-java"), { recursive: true });
   writeFileSync(join(root, "mcp-server-java/build.gradle.kts"), "// gradle\n");
+  for (const template of ["agent-python-langchain", "a2a-delegation-python"]) {
+    mkdirSync(join(root, template));
+    writeFileSync(join(root, template, "pyproject.toml"), "[project]\n");
+  }
   mkdirSync(join(root, "eval"), { recursive: true });
   writeFileSync(join(root, "eval/eval-skip.txt"), skipContent);
   return root;
@@ -583,4 +587,149 @@ test("automerge policy: commit-message YAML fallback handles minor, major, Keyca
   });
   assert.equal(keycardMajorFallback.ok, "true");
   assert.equal(keycardMajorFallback.automerge, "true");
+});
+
+const pythonFloors = [
+  [86, "agent-python-langchain", "pytest", "8.0", "9.2.0", "major"],
+  [87, "agent-python-langchain", "python-dotenv", "1.0.0", "1.2.4", "minor"],
+  [91, "a2a-delegation-python", "a2a-sdk[http-server]", "1.2.0", "1.3.1", "minor"],
+  [94, "agent-python-langchain", "langchain-anthropic", "1.6", "1.7.13", "minor"],
+  [99, "agent-python-langchain", "langchain", "1.0", "1.5.2", "minor"],
+  [102, "agent-python-langchain", "langgraph-cli[inmem]", "0.4", "0.4.44", "patch"],
+] as const;
+
+function runPythonFloorGate(
+  template: string,
+  dependency: string,
+  patch: string | null,
+  message: string,
+  options: {
+    ecosystem?: "uv" | "pip";
+    verified?: boolean;
+    updateType?: string;
+    artifact?: boolean;
+    commitPatch?: string;
+    commitCount?: number;
+  } = {},
+) {
+  const ecosystem = options.ecosystem ?? "uv";
+  const branch = `dependabot/${ecosystem}/${template}/requirement`;
+  const pr = makePr({ head: { sha: SHA, ref: branch, repo: { full_name: "keycardai/templates" } } });
+  const files = (manifestPatch: string | null) => [
+    { filename: `${template}/pyproject.toml`, patch: manifestPatch },
+    ...(template === "a2a-delegation-python" ? [{ filename: `${template}/uv.lock` }] : []),
+  ];
+  return runGate({
+    runHeadBranch: branch,
+    metadata: options.artifact === false ? null : {
+      head_sha: SHA,
+      dependency_names: dependency,
+      update_type: options.updateType ?? "",
+      package_ecosystem: ecosystem,
+    },
+    fixtures: {
+      [`repos/keycardai/templates/pulls?state=open&head=keycardai:${branch}&per_page=10`]: [pr],
+      "repos/keycardai/templates/pulls/42/commits?per_page=100": Array.from(
+        { length: options.commitCount ?? 1 }, () => makeBotCommit(),
+      ),
+      "repos/keycardai/templates/pulls/42/files?per_page=100": files(patch),
+      "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+      [`repos/keycardai/templates/commits/${SHA}`]: makeBotCommit({
+        commit: { verification: { verified: options.verified ?? true }, message },
+        files: files(options.commitPatch ?? null),
+      }),
+    },
+  });
+}
+
+function floorPatch(dependency: string, oldFloor: string, newFloor: string) {
+  return `-    "${dependency}>=${oldFloor}",\n+    "${dependency}>=${newFloor}",`;
+}
+
+function floorMessage(dependency: string, version: string) {
+  return [
+    "",
+    "---",
+    "updated-dependencies:",
+    `- dependency-name: ${dependency}`,
+    `  dependency-version: ${version}`,
+    `  dependency-type: direct:${dependency === "pytest" ? "development" : "production"}`,
+    "...",
+    "",
+    "Signed-off-by: dependabot[bot] <support@github.com>",
+  ].join("\n");
+}
+
+for (const [pr, template, dependency, oldFloor, newFloor, type] of pythonFloors) {
+  const expected = type === "major" ? "false" : "true";
+  const reason = type === "major" ? "Third-party semver-major update needs human review" : "";
+
+  test(`PR #${pr}: infer ${type} for ${dependency} from the manifest diff`, () => {
+    const out = runPythonFloorGate(template, dependency, floorPatch(dependency, oldFloor, newFloor), "");
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, expected);
+    assert.equal(out.automerge_reason, reason);
+  });
+
+  test(`PR #${pr}: infer ${type} for ${dependency} from the verified commit diff`, () => {
+    const out = runPythonFloorGate(template, dependency, null, floorMessage(dependency, newFloor), {
+      artifact: false,
+      commitPatch: floorPatch(dependency, oldFloor, newFloor),
+    });
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, expected);
+    assert.equal(out.automerge_reason, reason);
+  });
+}
+
+test("Python floor inference keeps explicit and unparseable updates under review", () => {
+  const template = "agent-python-langchain";
+  const dependency = "langgraph-cli[inmem]";
+  const message = floorMessage(dependency, "0.4.44");
+
+  const preOneMajor = runPythonFloorGate(template, dependency, floorPatch(dependency, "0.4", "0.5"), message, { ecosystem: "pip" });
+  assert.equal(preOneMajor.automerge_reason, "Third-party semver-major update needs human review");
+
+  const explicitMajor = runPythonFloorGate(template, dependency, floorPatch(dependency, "0.4", "0.4.44"), message, {
+    updateType: "version-update:semver-major",
+  });
+  assert.equal(explicitMajor.automerge_reason, "Third-party semver-major update needs human review");
+
+  const unparseable = runPythonFloorGate(template, dependency, floorPatch(dependency, "0.4", "0.4.44rc1"), message);
+  const unverified = runPythonFloorGate(template, dependency, null, message, {
+    verified: false,
+    commitPatch: floorPatch(dependency, "0.4", "0.4.44"),
+  });
+  for (const out of [unparseable, unverified]) {
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, "false");
+    assert.match(out.automerge_reason, /treating as major/);
+  }
+});
+
+test("Python floor inference does not mistake a locked version for the old floor", () => {
+  const template = "agent-python-langchain";
+  const dependency = "pytest";
+  const message = [
+    "Updates the requirements on [pytest](https://github.com/pytest-dev/pytest) to permit the latest version.",
+    "- [Commits](https://github.com/pytest-dev/pytest/compare/9.0.0...9.2.0)",
+    floorMessage(dependency, "9.2.0"),
+  ].join("\n");
+  const major = runPythonFloorGate(template, dependency, null, message, {
+    commitPatch: floorPatch(dependency, "8.0", "9.2.0"),
+  });
+  assert.equal(major.ok, "true");
+  assert.equal(major.automerge, "false");
+  assert.equal(major.automerge_reason, "Third-party semver-major update needs human review");
+
+  const missing = runPythonFloorGate(template, dependency, null, message);
+  const multiCommit = runPythonFloorGate(template, dependency, null, message, {
+    commitPatch: floorPatch(dependency, "9.0", "9.2.0"),
+    commitCount: 2,
+  });
+  for (const out of [missing, multiCommit]) {
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, "false");
+    assert.match(out.automerge_reason, /treating as major/);
+  }
 });
