@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/keycardai/go-sdk v0.45.3
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 )
 
 require (
