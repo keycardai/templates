@@ -106,8 +106,7 @@ main() {
   target_sha="$pr_head_sha"
 
   if [ "$event_name" = "workflow_run" ] && [ "$pr_head_sha" != "${WORKFLOW_RUN_HEAD_SHA:-}" ]; then
-    target_sha="${WORKFLOW_RUN_HEAD_SHA:-$pr_head_sha}"
-    emit_output "$pr_number" "$target_sha" "[]" "false" "PR head SHA (${pr_head_sha}) does not match Template CI run head SHA (${WORKFLOW_RUN_HEAD_SHA:-})"
+    emit_output "" "" "[]" "false" "Stale Template CI run: PR head SHA (${pr_head_sha}) no longer matches run head SHA (${WORKFLOW_RUN_HEAD_SHA:-})"
     return 0
   fi
 
@@ -127,7 +126,7 @@ main() {
   fi
 
   local commits_lines=""
-  if ! commits_lines=$(gh api --paginate "repos/${repo}/pulls/${pr_number}/commits?per_page=100" --jq '.[] | (.author.login // "__MISSING__")'); then
+  if ! commits_lines=$(gh api --paginate "repos/${repo}/pulls/${pr_number}/commits?per_page=100" --jq '.[] | [(.author.login // "__MISSING__"), (.committer.login // "__MISSING__"), ((.commit.verification.verified // false) | tostring)] | @tsv'); then
     emit_output "$pr_number" "$target_sha" "[]" "false" "Could not fetch commits for PR #${pr_number}"
     return 0
   fi
@@ -137,14 +136,22 @@ main() {
     return 0
   fi
 
-  local author=""
-  while IFS= read -r author; do
+  local author="" committer="" verified=""
+  while IFS=$'\t' read -r author committer verified; do
     if [ "$author" != "dependabot[bot]" ]; then
       local display_author="${author}"
       if [ "$display_author" = "__MISSING__" ]; then
         display_author="unknown"
       fi
       emit_output "$pr_number" "$target_sha" "[]" "false" "PR contains commit not authored by dependabot[bot] (author: ${display_author})"
+      return 0
+    fi
+    if [ "$verified" != "true" ] || { [ "$committer" != "web-flow" ] && [ "$committer" != "dependabot[bot]" ]; }; then
+      local display_committer="${committer}"
+      if [ "$display_committer" = "__MISSING__" ]; then
+        display_committer="unknown"
+      fi
+      emit_output "$pr_number" "$target_sha" "[]" "false" "PR contains unverified commit (committer: ${display_committer}, verified: ${verified})"
       return 0
     fi
   done <<< "$commits_lines"
@@ -222,10 +229,17 @@ main() {
   if [ "$event_name" = "workflow_run" ]; then
     local conclusion="${WORKFLOW_RUN_CONCLUSION:-}"
     local ci_url="${WORKFLOW_RUN_HTML_URL:-}"
-    if [ "$conclusion" != "success" ]; then
-      emit_output "$pr_number" "$target_sha" "$templates_json" "false" "Template CI concluded ${conclusion} (${ci_url})"
-      return 0
-    fi
+    case "$conclusion" in
+      success) ;;
+      cancelled|skipped|stale)
+        emit_output "" "" "$templates_json" "false" "Ignoring ${conclusion} Template CI run (${ci_url})"
+        return 0
+        ;;
+      *)
+        emit_output "$pr_number" "$target_sha" "$templates_json" "false" "Template CI concluded ${conclusion} (${ci_url})"
+        return 0
+        ;;
+    esac
   else
     local ci_runs_json=""
     if ! ci_runs_json=$(gh api "repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${target_sha}&event=pull_request&per_page=20"); then
@@ -248,10 +262,17 @@ main() {
       emit_output "$pr_number" "$target_sha" "$templates_json" "false" "Template CI is still ${ci_status} (${ci_url})"
       return 0
     fi
-    if [ "$ci_conclusion" != "success" ]; then
-      emit_output "$pr_number" "$target_sha" "$templates_json" "false" "Template CI concluded ${ci_conclusion} (${ci_url})"
-      return 0
-    fi
+    case "$ci_conclusion" in
+      success) ;;
+      cancelled|skipped|stale)
+        emit_output "" "" "$templates_json" "false" "Ignoring ${ci_conclusion} Template CI run (${ci_url})"
+        return 0
+        ;;
+      *)
+        emit_output "$pr_number" "$target_sha" "$templates_json" "false" "Template CI concluded ${ci_conclusion} (${ci_url})"
+        return 0
+        ;;
+    esac
   fi
 
   emit_output "$pr_number" "$target_sha" "$templates_json" "true" ""

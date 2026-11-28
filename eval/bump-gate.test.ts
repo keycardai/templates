@@ -37,14 +37,32 @@ function makePr(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeBotCommit(overrides: Record<string, unknown> = {}) {
+  return {
+    author: { login: "dependabot[bot]" },
+    committer: { login: "web-flow" },
+    commit: { verification: { verified: true } },
+    ...overrides,
+  };
+}
+
+function makeTempRepoRoot(skipContent = "") {
+  const root = mkdtempSync(join(tmpdir(), "bump-gate-repo-"));
+  mkdirSync(join(root, "mcp-server-go"), { recursive: true });
+  writeFileSync(join(root, "mcp-server-go/go.mod"), "module example\n");
+  mkdirSync(join(root, "mcp-server-java"), { recursive: true });
+  writeFileSync(join(root, "mcp-server-java/build.gradle.kts"), "// gradle\n");
+  mkdirSync(join(root, "eval"), { recursive: true });
+  writeFileSync(join(root, "eval/eval-skip.txt"), skipContent);
+  return root;
+}
+
 function runGate(opts: RunOptions = {}) {
   const eventName = opts.eventName ?? "workflow_run";
   const defaultFixtures: Record<string, unknown> = {
     [`repos/keycardai/templates/pulls?state=open&head=keycardai:${BRANCH}&per_page=10`]: [makePr()],
     "repos/keycardai/templates/pulls/42": makePr(),
-    "repos/keycardai/templates/pulls/42/commits?per_page=100": [
-      { author: { login: "dependabot[bot]" } },
-    ],
+    "repos/keycardai/templates/pulls/42/commits?per_page=100": [makeBotCommit()],
     "repos/keycardai/templates/pulls/42/files?per_page=100": [
       { filename: "mcp-server-go/go.mod" },
       { filename: "mcp-server-go/go.sum" },
@@ -64,6 +82,7 @@ function runGate(opts: RunOptions = {}) {
   };
 
   const dir = mkdtempSync(join(tmpdir(), "bump-gate-test-"));
+  const ownedRepoRoot = opts.repoRoot ? null : makeTempRepoRoot();
   try {
     const output = join(dir, "output");
     writeFileSync(output, "");
@@ -72,7 +91,7 @@ function runGate(opts: RunOptions = {}) {
         ...process.env,
         FIXTURES: JSON.stringify(defaultFixtures),
         SCRIPT_PATH: SCRIPT,
-        REPO_ROOT: opts.repoRoot ?? REPO_ROOT,
+        REPO_ROOT: opts.repoRoot ?? ownedRepoRoot!,
         GITHUB_REPOSITORY: "keycardai/templates",
         GITHUB_OUTPUT: output,
         EVENT_NAME: eventName,
@@ -94,6 +113,9 @@ function runGate(opts: RunOptions = {}) {
     return parsed;
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    if (ownedRepoRoot) {
+      rmSync(ownedRepoRoot, { recursive: true, force: true });
+    }
   }
 }
 
@@ -145,7 +167,7 @@ test("allows nested gradle dependency files and deduplicates templates", () => {
   assert.equal(out.templates, '["mcp-server-java"]');
 });
 
-test("rejects non-dependabot PR author, non-main base, fork head repo, and head SHA mismatch", () => {
+test("rejects non-dependabot PR author, non-main base, and fork head repo", () => {
   const badAuthor = runGate({
     fixtures: {
       [`repos/keycardai/templates/pulls?state=open&head=keycardai:${BRANCH}&per_page=10`]: [
@@ -154,6 +176,7 @@ test("rejects non-dependabot PR author, non-main base, fork head repo, and head 
     },
   });
   assert.equal(badAuthor.ok, "false");
+  assert.equal(badAuthor.pr, "42");
   assert.match(badAuthor.reason, /PR author/);
 
   const badBase = runGate({
@@ -164,6 +187,7 @@ test("rejects non-dependabot PR author, non-main base, fork head repo, and head 
     },
   });
   assert.equal(badBase.ok, "false");
+  assert.equal(badBase.pr, "42");
   assert.match(badBase.reason, /PR base branch/);
 
   const badHeadRepo = runGate({
@@ -174,21 +198,26 @@ test("rejects non-dependabot PR author, non-main base, fork head repo, and head 
     },
   });
   assert.equal(badHeadRepo.ok, "false");
+  assert.equal(badHeadRepo.pr, "42");
   assert.match(badHeadRepo.reason, /PR head repository/);
-
-  const badSha = runGate({
-    runHeadSha: "2222222222222222222222222222222222222222",
-  });
-  assert.equal(badSha.ok, "false");
-  assert.match(badSha.reason, /does not match Template CI run head SHA/);
 });
 
-test("rejects PR when any commit was authored by a human or has no GitHub author", () => {
+test("no-ops when Template CI run head SHA no longer matches PR head", () => {
+  const stale = runGate({
+    runHeadSha: "2222222222222222222222222222222222222222",
+  });
+  assert.equal(stale.ok, "false");
+  assert.equal(stale.pr, "");
+  assert.equal(stale.head_sha, "");
+  assert.match(stale.reason, /no longer matches run head SHA/);
+});
+
+test("rejects PR when any commit was authored by a human, has no GitHub author, or is unverified", () => {
   const human = runGate({
     fixtures: {
       "repos/keycardai/templates/pulls/42/commits?per_page=100": [
-        { author: { login: "dependabot[bot]" } },
-        { author: { login: "Larry-Osakwe" } },
+        makeBotCommit(),
+        makeBotCommit({ author: { login: "Larry-Osakwe" } }),
       ],
     },
   });
@@ -198,13 +227,33 @@ test("rejects PR when any commit was authored by a human or has no GitHub author
   const nullAuthor = runGate({
     fixtures: {
       "repos/keycardai/templates/pulls/42/commits?per_page=100": [
-        { author: { login: "dependabot[bot]" } },
-        { author: null },
+        makeBotCommit(),
+        makeBotCommit({ author: null }),
       ],
     },
   });
   assert.equal(nullAuthor.ok, "false");
   assert.match(nullAuthor.reason, /not authored by dependabot\[bot\] \(author: unknown\)/);
+
+  const spoofedUnverified = runGate({
+    fixtures: {
+      "repos/keycardai/templates/pulls/42/commits?per_page=100": [
+        makeBotCommit({ commit: { verification: { verified: false } } }),
+      ],
+    },
+  });
+  assert.equal(spoofedUnverified.ok, "false");
+  assert.match(spoofedUnverified.reason, /unverified commit/);
+
+  const spoofedCommitter = runGate({
+    fixtures: {
+      "repos/keycardai/templates/pulls/42/commits?per_page=100": [
+        makeBotCommit({ committer: { login: "some-pusher" } }),
+      ],
+    },
+  });
+  assert.equal(spoofedCommitter.ok, "false");
+  assert.match(spoofedCommitter.reason, /unverified commit/);
 });
 
 test("rejects disallowed files, forbidden directories, root files, and renames from outside", () => {
@@ -247,12 +296,22 @@ test("rejects templates listed in eval/eval-skip.txt", () => {
   }
 });
 
-test("rejects when Template CI did not conclude success", () => {
+test("rejects with red result when Template CI concludes failure", () => {
   const out = runGate({ runConclusion: "failure" });
   assert.equal(out.ok, "false");
   assert.equal(out.pr, "42");
   assert.match(out.reason, /Template CI concluded failure/);
   assert.match(out.reason, new RegExp(CI_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("no-ops when Template CI concludes cancelled, skipped, or stale", () => {
+  for (const conclusion of ["cancelled", "skipped", "stale"]) {
+    const out = runGate({ runConclusion: conclusion });
+    assert.equal(out.ok, "false");
+    assert.equal(out.pr, "");
+    assert.equal(out.head_sha, "");
+    assert.match(out.reason, new RegExp(`Ignoring ${conclusion} Template CI run`));
+  }
 });
 
 test("workflow_dispatch checks the latest Template CI run for the PR head SHA", () => {
