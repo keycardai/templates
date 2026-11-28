@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EvalProvisioning, provision } from "./provision.js";
-import { evalOrigin, evalRunId } from "./run-identity.js";
+import { addLoopbackProxyExclusion, evalOrigin, evalRunId } from "./run-identity.js";
 
 test("jobs, reruns and local invocations get distinct resource URLs without changing the route", () => {
   const ci = { GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "1" };
@@ -17,6 +17,20 @@ test("jobs, reruns and local invocations get distinct resource URLs without chan
   assert.equal(new Set(resources).size, runs.length);
   assert.equal(resources[0], "http://mcp-server-go.123-1.localhost:8000/mcp");
   for (const resource of resources) assert.equal(new URL(resource).pathname, "/mcp");
+});
+
+test("the loopback proxy exclusion leaves wildcards intact", () => {
+  const host = "mcp-server-go.123-1.localhost";
+  const wildcard = { NO_PROXY: "*", no_proxy: "example.test, * " };
+  addLoopbackProxyExclusion(wildcard, host);
+  assert.deepEqual(wildcard, { NO_PROXY: "*", no_proxy: "example.test, * " });
+
+  const exclusions = { NO_PROXY: "example.test" };
+  addLoopbackProxyExclusion(exclusions, host);
+  assert.deepEqual(exclusions, {
+    NO_PROXY: `example.test,${host}`,
+    no_proxy: `example.test,${host}`,
+  });
 });
 
 test("partial provisioning failure deletes only the application it created", async (t) => {

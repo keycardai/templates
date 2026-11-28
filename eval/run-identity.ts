@@ -16,3 +16,12 @@ export function evalHostname(runId: string): string {
 export function evalOrigin(runId: string, port: number): string {
   return `http://${evalHostname(runId)}:${port}`;
 }
+
+export function addLoopbackProxyExclusion(env: NodeJS.ProcessEnv, loopbackHost: string): void {
+  const proxyExclusions = env.no_proxy ?? env.NO_PROXY;
+  for (const name of ["NO_PROXY", "no_proxy"]) {
+    const exclusions = env[name] ?? proxyExclusions;
+    if (exclusions?.split(",").some((entry) => entry.trim() === "*")) continue;
+    env[name] = [exclusions, loopbackHost].filter(Boolean).join(",");
+  }
+}

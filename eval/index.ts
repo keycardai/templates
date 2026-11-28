@@ -16,7 +16,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { EvalProvisioning, provision } from "./provision.js";
-import { evalHostname, evalRunId } from "./run-identity.js";
+import { addLoopbackProxyExclusion, evalHostname, evalRunId } from "./run-identity.js";
 import { runBuildAgent } from "./agent.js";
 import { BUILD_AGENT_MODEL, emptyBuildAgentUsage, formatBuildAgentUsage } from "./build-agent-usage.js";
 import { authenticateViaOAuth } from "./browser.js";
@@ -60,12 +60,7 @@ if (templateArg.startsWith("_") || path.basename(path.resolve(templateArg)).star
 
 const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", templateArg);
 const RUN_ID = evalRunId(path.basename(TEMPLATE_DIR));
-const loopbackHost = evalHostname(RUN_ID);
-const proxyExclusions = process.env.no_proxy ?? process.env.NO_PROXY;
-for (const name of ["NO_PROXY", "no_proxy"]) {
-  process.env[name] = [process.env[name] ?? proxyExclusions, loopbackHost]
-    .filter(Boolean).join(",");
-}
+addLoopbackProxyExclusion(process.env, evalHostname(RUN_ID));
 
 const buildAgentUsage = emptyBuildAgentUsage();
 
