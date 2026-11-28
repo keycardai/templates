@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import { cloudflareProvisioning } from "./provision-cloudflare.js";
 import { cleanupStaleProvisonings } from "./provision.js";
 import { stopProcessGroup } from "./stop.js";
 import {
-  matchesPublicKey, readQuickTunnelUrl, verifyClientAssertion, verifyWorker, type Check, type WorkerEnv,
+  matchesPublicKey, readQuickTunnelUrl, redactProcessOutput, verifyClientAssertion, verifyWorker, type Check, type WorkerEnv,
 } from "./verify-cloudflare.js";
 import { deleteZone, getOrCreateEvalZone } from "./zone.js";
 
@@ -27,18 +27,38 @@ async function waitFor<T>(label: string, probe: () => Promise<T | undefined>, si
   throw new Error(`Timed out waiting for ${label}`);
 }
 
-function start(command: string, args: string[], cwd: string, capture = false) {
+function start(command: string, args: string[], cwd: string) {
   let failure: string | undefined;
+  let output = "";
+  let truncated = false;
   const child = spawn(command, args, {
     cwd,
     detached: true,
     // Do not pass management, test-user, or build-agent secrets to either process.
     env: { PATH: process.env.PATH, HOME: process.env.HOME, WRANGLER_SEND_METRICS: "false" },
-    stdio: capture ? ["ignore", "pipe", "pipe"] : "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   child.on("error", (err: NodeJS.ErrnoException) => { failure = err.code ?? "spawn failed"; });
+  const capture = (chunk: Buffer) => {
+    output += chunk.toString();
+    if (output.length > 8_192) {
+      truncated = true;
+      output = output.slice(-8_192);
+    }
+  };
+  child.stdout.on("data", capture);
+  child.stderr.on("data", capture);
   return {
     child,
+    output() { return output; },
+    reportTail(label: string) {
+      const firstLineEnd = truncated ? output.indexOf("\n") : -1;
+      const tail = truncated && firstLineEnd < 0 ? "" : output.slice(firstLineEnd + 1);
+      const safeTail = redactProcessOutput(tail).trim();
+      if (safeTail) {
+        console.error(`${label} output (redacted tail):\n${safeTail.split(/\r?\n/).map((line) => `  | ${line}`).join("\n")}`);
+      }
+    },
     checkRunning(label: string) {
       if (failure || child.exitCode !== null || child.signalCode !== null) {
         throw new Error(`${label} stopped (${failure ?? child.signalCode ?? child.exitCode})`);
@@ -65,8 +85,8 @@ export async function runCloudflareEval(opts: {
   const abort = new AbortController();
   let provisioning: ReturnType<typeof cloudflareProvisioning> | undefined;
   let ephemeralZoneId: string | undefined;
-  let wrangler: ChildProcess | undefined;
-  let tunnel: ChildProcess | undefined;
+  let wrangler: ReturnType<typeof start> | undefined;
+  let tunnel: ReturnType<typeof start> | undefined;
   let stub: CalendarStub | undefined;
   const varsPath = join(templateDir, ".dev.vars");
   const tomlPath = join(templateDir, "keycard.toml");
@@ -86,8 +106,8 @@ export async function runCloudflareEval(opts: {
       // Include anything created by a setup operation already in progress.
       await pendingSetup?.catch(() => undefined);
       const results = await Promise.allSettled([
-        stopProcessGroup(tunnel),
-        stopProcessGroup(wrangler),
+        stopProcessGroup(tunnel?.child),
+        stopProcessGroup(wrangler?.child),
         provisioning?.cleanup(),
         ephemeralZoneId ? deleteZone(ephemeralZoneId) : undefined,
         varsCreated ? fs.rm(varsPath, { force: true }) : undefined,
@@ -181,10 +201,9 @@ export async function runCloudflareEval(opts: {
       port: stubPort, zoneIssuerUrl: zone.issuerUrl, resourceIdentifier: downstreamResource,
     }).then((calendar) => (stub = calendar)));
     abort.signal.throwIfAborted();
-    const workerProcess = start("./node_modules/.bin/wrangler", [
+    const workerProcess = wrangler = start("./node_modules/.bin/wrangler", [
       "dev", "--local", "--config", opts.wranglerConfig, "--ip", "127.0.0.1", "--port", String(port),
     ], templateDir);
-    wrangler = workerProcess.child;
     await waitFor("Worker /healthz", async () => {
       workerProcess.checkRunning("Wrangler");
       try {
@@ -194,15 +213,10 @@ export async function runCloudflareEval(opts: {
     }, abort.signal);
     checks.push({ label: "Worker /healthz", ok: true });
 
-    const tunnelProcess = start("cloudflared", ["tunnel", "--no-autoupdate", "--url", base], templateDir, true);
-    tunnel = tunnelProcess.child;
-    let output = "";
-    const capture = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-8_192); };
-    tunnel.stdout?.on("data", capture);
-    tunnel.stderr?.on("data", capture);
+    const tunnelProcess = tunnel = start("cloudflared", ["tunnel", "--no-autoupdate", "--url", base], templateDir);
     const tunnelUrl = await waitFor("cloudflared quick tunnel URL", async () => {
       tunnelProcess.checkRunning("cloudflared");
-      return readQuickTunnelUrl(output);
+      return readQuickTunnelUrl(tunnelProcess.output());
     }, abort.signal);
     const jwksUri = `${tunnelUrl}/.well-known/jwks.json`;
     await waitFor("the tunnel to serve the Worker's public key", async () => {
@@ -227,12 +241,14 @@ export async function runCloudflareEval(opts: {
     abort.signal.throwIfAborted();
 
     console.log("6. Verifying delegated access and capturing the SDK assertion in Node...");
-    checks.push(...await verifyWorker({ workerResource, downstreamResource, userToken: user.accessToken, userIdentifier, requests: calendar.requests }));
+    checks.push(...await verifyWorker({
+      workerResource, downstreamResource, userToken: user.accessToken, userIdentifier, clientId, requests: calendar.requests,
+    }));
     checks.push(...await verifyClientAssertion(templateDir, env));
     abort.signal.throwIfAborted();
     completed = true;
   } catch (err) {
-    console.error(err instanceof Error ? err.message : "Cloudflare eval failed");
+    console.error(err instanceof Error ? redactProcessOutput(err.message) : "Cloudflare eval failed");
     checks.push({ label: "Cloudflare eval completed", ok: false });
   } finally {
     const clean = await cleanup();
@@ -241,7 +257,12 @@ export async function runCloudflareEval(opts: {
     process.off("SIGTERM", interrupt);
   }
 
+  const passed = completed && !abort.signal.aborted && checks.every((check) => check.ok);
+  if (!passed) {
+    wrangler?.reportTail("Wrangler");
+    tunnel?.reportTail("cloudflared");
+  }
   console.log("\n=== Results ===");
   for (const { label, ok } of checks) console.log(`   ${ok ? "✓" : "✗"} ${label}`);
-  return completed && !abort.signal.aborted && checks.every((check) => check.ok);
+  return passed;
 }

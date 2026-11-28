@@ -20,6 +20,15 @@ export function readQuickTunnelUrl(output: string): string | undefined {
   return output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com(?=\s|$)/i)?.[0];
 }
 
+export function redactProcessOutput(output: string): string {
+  return output
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/-----BEGIN [^\r\n-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^\r\n-]*PRIVATE KEY-----|$)/g, "[redacted PEM]")
+    .replace(/^[A-Za-z0-9+/]{32,}={0,2}\r?$/gm, "[redacted key data]")
+    .replace(/\bBearer\s+[^\s,;"']+/gi, "Bearer [redacted]")
+    .replace(/\beyJ[\w-]*\.[\w-]+\.[\w-]+\b/g, "[redacted JWT]");
+}
+
 export async function matchesPublicKey(jwksUrl: string, expected: { n?: string; e?: string }): Promise<boolean> {
   const response = await fetch(jwksUrl, { signal: AbortSignal.timeout(5_000), redirect: "error" });
   if (!response.ok) return false;
@@ -34,9 +43,10 @@ export async function verifyWorker(opts: {
   downstreamResource: string;
   userToken: string;
   userIdentifier: string;
+  clientId: string;
   requests: StubRequestRecord[];
 }): Promise<Check[]> {
-  const { workerResource, downstreamResource, userToken, userIdentifier, requests } = opts;
+  const { workerResource, downstreamResource, userToken, userIdentifier, clientId, requests } = opts;
   const first = requests.length;
   const response = await fetch(workerResource, {
     headers: { Authorization: `Bearer ${userToken}` },
@@ -50,11 +60,16 @@ export async function verifyWorker(opts: {
   const denied = await fetch(workerResource, { signal: AbortSignal.timeout(5_000), redirect: "error" });
   await denied.body?.cancel();
   const aud = verified?.claims?.aud;
+  const clientMatches = verified?.claims?.client_id === clientId;
+  if (verified?.claims && !clientMatches) {
+    console.log("Verified stub token claim names:", JSON.stringify(Object.keys(verified.claims).sort()));
+  }
   return [
     { label: `Worker returned the stub response (HTTP ${response.status})`, ok: response.status === 200 && body?.kind === "calendar#events" },
     { label: "Stub verified the exchanged token against the zone JWKS", ok: !!verified?.claims },
     { label: "Exchanged token aud is the downstream resource", ok: aud === downstreamResource || (Array.isArray(aud) && aud.includes(downstreamResource)) },
     { label: "Exchanged token sub is the test user", ok: verified?.claims?.sub === userIdentifier },
+    { label: "Exchanged token client_id names the Worker's public-key credential", ok: clientMatches },
     { label: "Missing bearer token returns 401 with a challenge", ok: denied.status === 401 &&
         /^Bearer\b/i.test(denied.headers.get("WWW-Authenticate") ?? "") },
   ];

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchesPublicKey, readQuickTunnelUrl, verifyWorker } from "./verify-cloudflare.js";
+import { matchesPublicKey, readQuickTunnelUrl, redactProcessOutput, verifyWorker } from "./verify-cloudflare.js";
 import type { StubRequestRecord } from "./calendar-stub.js";
 import { cloudflareProvisioning } from "./provision-cloudflare.js";
 
@@ -24,15 +24,28 @@ test("requires the exact RSA public key and rejects private JWK data", async (t)
   assert.equal(await matchesPublicKey("https://sample.trycloudflare.com/.well-known/jwks.json", key), false);
 });
 
-test("checks the fresh downstream request, including the expected user and resource", async (t) => {
+test("redacts bearer tokens, assertions, and PEM keys without hiding error descriptions", () => {
+  const output = "\x1b[31mOAuthError invalid_client: assertion verification failed\x1b[0m\n" +
+    "Authorization: Bearer fixture-token\nclient_assertion=eyJfixture.payload.signature\n" +
+    "-----BEGIN PRIVATE KEY-----\nfixture-key\n-----END PRIVATE KEY-----\n";
+  assert.equal(redactProcessOutput(output),
+    "OAuthError invalid_client: assertion verification failed\n" +
+    "Authorization: Bearer [redacted]\nclient_assertion=[redacted JWT]\n[redacted PEM]\n");
+});
+
+test("checks the fresh downstream request, including the expected user, resource and credential", async (t) => {
   const downstreamResource = "https://resource.example.test/calendar";
   const opts = {
     workerResource: "https://worker.example.test/call",
     downstreamResource,
     userToken: "synthetic-user-token",
     userIdentifier: "test-user",
+    clientId: "fixture-worker-client",
   };
-  const record = { method: "GET", path: "/calendar", status: 200, claims: { sub: opts.userIdentifier, aud: [downstreamResource] } };
+  const record = {
+    method: "GET", path: "/calendar", status: 200,
+    claims: { sub: opts.userIdentifier, aud: [downstreamResource], client_id: opts.clientId },
+  };
   const requests: StubRequestRecord[] = [record];
   let current = record;
   t.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
@@ -40,9 +53,11 @@ test("checks the fresh downstream request, including the expected user and resou
     requests.push(current);
     return Response.json({ kind: "calendar#events" });
   });
-  assert.deepEqual((await verifyWorker({ ...opts, requests })).map(({ ok }) => ok), [true, true, true, true, true]);
-  current = { ...record, claims: { sub: "different-user", aud: ["https://other.example.test/"] } };
-  assert.deepEqual((await verifyWorker({ ...opts, requests })).map(({ ok }) => ok), [true, true, false, false, true]);
+  assert.deepEqual((await verifyWorker({ ...opts, requests })).map(({ ok }) => ok), [true, true, true, true, true, true]);
+  const log = t.mock.method(console, "log", () => undefined);
+  current = { ...record, claims: { sub: "different-user", aud: ["https://other.example.test/"], client_id: "harness-client" } };
+  assert.deepEqual((await verifyWorker({ ...opts, requests })).map(({ ok }) => ok), [true, true, false, false, false, true]);
+  assert.deepEqual(log.mock.calls[0]?.arguments, ["Verified stub token claim names:", '["aud","client_id","sub"]']);
 });
 
 test("removes resources with matching identifiers before provisioning replacements", async (t) => {

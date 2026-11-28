@@ -100,11 +100,13 @@ eval using that zone.
 4. The harness mints a user token for the Worker audience and calls
    `GET /call`. The local calendar stub verifies the downstream token's
    signature against the zone JWKS plus its issuer, audience, and subject.
-   The harness also requires a 401 without a token and captures a separate
+   The harness checks that `client_id` names the public-key credential,
+   requires a 401 without a token, and captures a separate
    assertion from the template's actual token cache in Node, verifying
    `iss`, `sub`, and `aud` against configuration and zone discovery.
 5. Cleanup stops the Worker, tunnel, and stub, deletes the credentials,
    application, and resources, and removes the local key file.
+   Failed runs print bounded, redacted Wrangler and cloudflared output.
 
 The device grant requires user approval, and the impersonation/token exchange
 does not yield a refresh token. Neither grant is part of this headless eval.
