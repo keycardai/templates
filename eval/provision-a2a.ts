@@ -204,6 +204,7 @@ export async function provisionA2ADelegation(opts: {
   templateDir: string;
   callerBaseUrl: string;
   targetBaseUrl: string;
+  writeCallerCredentials?: boolean;
 }): Promise<ProvisionedA2ADelegation> {
   const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir } = opts;
   const zoneProviderId = await getZoneProviderId(zoneId, token);
@@ -239,8 +240,10 @@ export async function provisionA2ADelegation(opts: {
 
   const envContent = [
     `KEYCARD_URL=${zoneIssuerUrl}`,
-    `KEYCARD_CLIENT_ID=${caller.clientId}`,
-    `KEYCARD_CLIENT_SECRET=${caller.clientSecret}`,
+    ...(opts.writeCallerCredentials === false ? [] : [
+      `KEYCARD_CLIENT_ID=${caller.clientId}`,
+      `KEYCARD_CLIENT_SECRET=${caller.clientSecret}`,
+    ]),
     `CALLER_BASE_URL=${opts.callerBaseUrl}`,
     `TARGET_BASE_URL=${opts.targetBaseUrl}`,
   ].join("\n") + "\n";

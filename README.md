@@ -34,12 +34,15 @@ for SDK experiments, local template runs, and CI tests.
 | [`mcp-server-go`](./mcp-server-go) | MCP server | Go | `net/http` |
 | [`mcp-delegated-access-go`](./mcp-delegated-access-go) | MCP server | Go | `net/http` |
 | [`delegated-access-typescript-cloudflare`](./delegated-access-typescript-cloudflare) | Delegated access | TypeScript | Cloudflare Workers |
+| [`mcp-delegated-access-java`](./mcp-delegated-access-java) | MCP server | Java | Jetty (Servlet) |
 | [`mcp-server-java`](./mcp-server-java) | MCP server | Java | Jetty (Servlet) |
+| [`mcp-server-java-spring-ai`](./mcp-server-java-spring-ai) | MCP server | Java | Spring AI (WebMVC) |
 | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
 | [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
 | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |
 | [`agent-python-langchain`](./agent-python-langchain) | Agent | Python | LangChain |
 | [`a2a-delegation-python`](./a2a-delegation-python) | Agent | Python | Starlette |
+| [`a2a-delegation-java`](./a2a-delegation-java) | Agent | Java | Jetty (Servlet), a2a-java |
 
 **MCP server** — a Keycard-protected MCP server exposing tools to Claude.
 
