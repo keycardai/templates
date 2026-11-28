@@ -15,7 +15,7 @@ dependencies {
     implementation("io.modelcontextprotocol.sdk:mcp:2.2.0")
     // Embedded Jetty supplies the Servlet API that keycard-mcp compiles against.
     implementation("org.eclipse.jetty.ee10:jetty-ee10-servlet:12.1.15")
-    runtimeOnly("org.slf4j:slf4j-simple:2.0.17")
+    runtimeOnly("org.slf4j:slf4j-simple:2.0.20")
 }
 
 application {
