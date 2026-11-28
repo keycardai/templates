@@ -11,6 +11,10 @@ on:
         description: "Template to eval (leave blank for all)"
         required: false
 
+concurrency:
+  group: template-eval-zone
+  cancel-in-progress: false
+
 jobs:
   check-release:
     if: github.event.schedule == '0 9 * * *'
@@ -25,7 +29,15 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          SDK_TAGS_FILE: ${{ runner.temp }}/sdk-tags.txt
         run: bash eval/nightly-sdk-check.sh
+      - uses: actions/upload-artifact@v4
+        if: steps.check.outputs.tags_ready == 'true'
+        with:
+          name: sdk-tags
+          path: ${{ runner.temp }}/sdk-tags.txt
+          retention-days: 90
+          overwrite: true
 
   discover:
     needs: check-release
