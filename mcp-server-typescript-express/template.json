@@ -1,0 +1,13 @@
+{
+  "name": "mcp-server-typescript-express",
+  "language": "TypeScript",
+  "flows": [
+    "mcp-server"
+  ],
+  "framework": "Express 5",
+  "sdk_packages": [
+    "@keycardai/express",
+    "@keycardai/mcp"
+  ],
+  "description": "Serve a greeting tool over MCP with Keycard OAuth protection."
+}

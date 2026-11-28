@@ -1,0 +1,14 @@
+{
+  "name": "mcp-brokered-credentials-typescript",
+  "language": "TypeScript",
+  "flows": [
+    "brokered-credentials"
+  ],
+  "framework": "Express 5",
+  "sdk_packages": [
+    "@keycardai/express",
+    "@keycardai/mcp",
+    "@keycardai/oauth"
+  ],
+  "description": "Discover and call Linear MCP tools with Keycard-brokered credentials."
+}

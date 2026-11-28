@@ -1,0 +1,12 @@
+{
+  "name": "mcp-server-go",
+  "language": "Go",
+  "flows": [
+    "mcp-server"
+  ],
+  "framework": "`net/http`",
+  "sdk_packages": [
+    "github.com/keycardai/go-sdk"
+  ],
+  "description": "Serve a greeting tool over MCP with Keycard OAuth protection."
+}

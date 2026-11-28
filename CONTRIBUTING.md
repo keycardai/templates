@@ -1,8 +1,10 @@
 # Contributing
 
 Each template is a runnable project in its own directory at the repo root.
-Before adding one, check the [template catalog](./README.md#available-templates)
-and pick the closest example for your language and Keycard flow.
+Before adding one, make sure it meets the
+[inclusion criteria](./CATALOG.md#inclusion-criteria) and use the
+[template catalog](./CATALOG.md) to pick the closest example for your language
+and Keycard flow.
 
 See the [shared SDK test zone guide](./docs/shared-test-zone.md) for manual
 testing, local template runs, and CI in another repository.
@@ -20,7 +22,8 @@ Use `<kind>-<language>-<framework>` where applicable, for example
 template, use a shorter descriptive name such as `mcp-server-go`. Names
 starting with `_` are reserved for non-templates. Replace the starter's
 placeholders, add the code and language manifest, and ignore local `.env`
-and build artifacts. Update the root README catalog and add a
+and build artifacts. Add `template.json` and run `node scripts/catalog.mjs`
+from the repo root to regenerate the README table and coverage matrix. Add a
 [CODEOWNERS](./.github/CODEOWNERS) entry for the directory below the fallback.
 Use `@keycardai/engineering` until the actual owner is known.
 
@@ -40,6 +43,11 @@ Use `@keycardai/engineering` until the actual owner is known.
   `.env` and `keycard.toml` values or their sources, a runnable smoke test
   with expected results, and explicit actions the agent must not take, such
   as inventing resource IDs or committing secrets.
+- **`template.json`**: Set `name` to the directory name, `language` to the
+  manifest's language, and `flows` to the flow IDs this template demonstrates,
+  primary flow first. Use a neighboring template's metadata as a model. Include
+  `framework`, the direct Keycard dependencies from the manifest in
+  `sdk_packages` (without versions), and a one-line `description`.
 - **`.env.example`**: Include the variables users need to configure with
   safe examples or empty secret values. Prefer working defaults for values
   like the port and document how to override them. Use placeholders only for
@@ -231,6 +239,10 @@ time against the eval zone without cancelling queued runs.
    name matches the directory name. The harness passes `PORT` and Keycard
    config in the process environment. Verify the first template in both
    workflows.
+4. In [`scripts/catalog.mjs`](./scripts/catalog.mjs), add the language to
+   `languages` and map it to its manifest in `manifests`. The order of
+   `languages` sets the row order of the coverage matrix. Run
+   `node scripts/catalog.mjs` to regenerate the catalog.
 
 ## Review and merge
 

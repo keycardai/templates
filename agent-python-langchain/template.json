@@ -1,0 +1,14 @@
+{
+  "name": "agent-python-langchain",
+  "language": "Python",
+  "flows": [
+    "workload-identity",
+    "agent-frameworks"
+  ],
+  "framework": "LangChain",
+  "sdk_packages": [
+    "keycardai-langchain",
+    "keycardai-oauth"
+  ],
+  "description": "Use Fly workload identity and broker per-tool-call access to Google Calendar in a LangChain agent."
+}

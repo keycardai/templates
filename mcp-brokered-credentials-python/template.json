@@ -1,0 +1,14 @@
+{
+  "name": "mcp-brokered-credentials-python",
+  "language": "Python",
+  "flows": [
+    "brokered-credentials"
+  ],
+  "framework": "MCP v2 (`MCPServer`), Starlette",
+  "sdk_packages": [
+    "keycardai-mcp",
+    "keycardai-oauth",
+    "keycardai-starlette"
+  ],
+  "description": "Discover and call Linear MCP tools with Keycard-brokered credentials."
+}

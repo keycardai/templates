@@ -1,0 +1,13 @@
+{
+  "name": "a2a-delegation-python",
+  "language": "Python",
+  "flows": [
+    "a2a-delegation"
+  ],
+  "framework": "Starlette",
+  "sdk_packages": [
+    "keycardai-a2a",
+    "keycardai-starlette"
+  ],
+  "description": "Delegate a user's A2A request to a target agent that reports the verified identity claims."
+}

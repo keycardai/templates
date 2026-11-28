@@ -1,0 +1,12 @@
+{
+  "name": "mcp-delegated-access-java",
+  "language": "Java",
+  "flows": [
+    "delegated-access"
+  ],
+  "framework": "Jetty (Servlet)",
+  "sdk_packages": [
+    "ai.keycard:keycard-mcp"
+  ],
+  "description": "Exchange an authenticated MCP user's token for a resource-scoped token."
+}
