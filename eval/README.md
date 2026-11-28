@@ -79,6 +79,36 @@ The boot smoke test (`agent-python-langchain/scripts/ci-verify.sh`) already
 covers startup, the graph registering, unit guards and the Fly image build. This
 eval does not repeat any of it.
 
+## Cloudflare Workers templates (delegated access)
+
+A `wrangler.jsonc`, `wrangler.json`, or `wrangler.toml` selects the headless
+Cloudflare flow. It requires the persistent eval zone and an existing
+`EVAL_TEST_USER_EMAIL` zone user. Do not run it concurrently with another
+eval using that zone.
+
+1. The harness provisions an implicit-consent application with a password
+   credential for harness-only user impersonation. Both HTTP resources use
+   the Zone Provider: the Worker owns the inbound audience and depends on
+   the downstream stub. The existing scoped impersonation permit is reused.
+2. The build agent installs and builds from SPEC.md without credentials.
+   The harness then generates a per-run RSA PKCS#8 key and writes it to the
+   gitignored `.dev.vars` file with mode 0600 before starting local Wrangler.
+3. An anonymous cloudflared quick tunnel exposes the SDK's JWKS endpoint so
+   the zone can fetch the key. The harness confirms the public JWKS before
+   registering the public-key application credential. No Cloudflare
+   account, login, deployment, or account resources are involved.
+4. The harness mints a user token for the Worker audience and calls
+   `GET /call`. The local calendar stub verifies the downstream token's
+   signature against the zone JWKS plus its issuer, audience, and subject.
+   The harness also requires a 401 without a token and captures a separate
+   assertion from the template's actual token cache in Node, verifying
+   `iss`, `sub`, and `aud` against configuration and zone discovery.
+5. Cleanup stops the Worker, tunnel, and stub, deletes the credentials,
+   application, and resources, and removes the local key file.
+
+The device grant requires user approval, and the impersonation/token exchange
+does not yield a refresh token. Neither grant is part of this headless eval.
+
 ## Setup
 
 ```bash
@@ -137,11 +167,17 @@ In GitHub Actions, the preflight job checks the eval zone before any template ru
 ```bash
 keycard run -- npm run eval -- --template mcp-server-typescript-express
 keycard run -- npm run eval -- --template agent-python-langchain
+keycard run -- npm run eval -- --template delegated-access-typescript-cloudflare
 ```
 
 The agent template needs `uv` on PATH and no vault resources beyond the three
 above. `EVAL_TEST_USER_EMAIL` doubles as the impersonation target, so that user
 must exist in the eval zone; the password is unused on this path.
+
+Cloudflare also needs Node.js 22.12 or later, `cloudflared` on PATH, and network access for its
+anonymous quick tunnel. CI verifies the checksum of a pinned binary and
+only installs it for Wrangler templates. Leave `.dev.vars` absent before
+running eval; the harness will not overwrite an existing one.
 
 ### GitHub Actions cadence
 
@@ -230,5 +266,6 @@ plus the build command the harness depends on.
 | `EVAL_ZONE_ID`, `EVAL_ZONE_ISSUER_URL` | both | The persistent eval zone. Required for agent templates: impersonation needs a zone user that already exists |
 | `EVAL_ALLOW_EPHEMERAL` | servers | Create a throwaway zone instead. Agent templates refuse it, since a fresh zone has no users to impersonate |
 | `EVAL_AGENT_PORT` | agents | Port for `langgraph dev`, default `2024` |
-| `EVAL_STUB_PORT` | agents | Port for the stub calendar, default `8901` |
+| `EVAL_STUB_PORT` | agents, Cloudflare | Port for the stub calendar, default `8901` |
+| `EVAL_WORKER_PORT` | Cloudflare | Port for local Wrangler, default `8787` |
 | `EVAL_AGENT_MODEL` | agents | Model for the agent's own turn, default `claude-sonnet-4-6` |

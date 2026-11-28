@@ -1,0 +1,6 @@
+{
+  "name": "keycard-delegated-access",
+  "main": "worker.ts",
+  "compatibility_date": "2025-11-18",
+  "dev": { "ip": "127.0.0.1", "port": 8787 }
+}
