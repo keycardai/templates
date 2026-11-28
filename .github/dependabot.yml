@@ -1,25 +1,129 @@
-# Keeps every template on the current Keycard SDK release. Only Keycard
-# packages are watched; Socket covers third-party dependencies.
-# Runs Sunday 06:00 UTC so a bump lands before the Monday 06:00 UTC eval run
-# (eval.yml) and a bad bump shows up there.
+# Keeps every template on current Keycard SDK and third-party dependencies.
+# Dependabot now handles third-party updates alongside Keycard SDKs (Socket is
+# no longer the only third-party path). Each template has its own entry so each
+# PR stays scoped to one template and can be verified, evaluated, and merged by
+# .github/workflows/dependency-bump.yml.
+#
+# Per-template groups:
+#   - keycard: Keycard SDK version updates.
+#   - third-party: minor and patch third-party version updates (majors open as
+#     single PRs).
+#   - security: security updates, kept separate from version updates so fixes
+#     are never held back. Security updates require Dependabot alerts and
+#     Dependabot security updates to be enabled in repository settings.
+#
+# Cooldown applies 30/7/3 days to third-party major/minor/patch version updates
+# and excludes Keycard SDK patterns via cooldown.exclude so GitHub's default
+# 3-day cooldown does not delay Keycard SDK releases. Cooldown never applies to
+# security updates.
+#
+# mcp-server-ruby has no Gemfile.lock and uses >= floors, so it always resolves
+# the latest Keycard SDK and is covered by the nightly eval rather than
+# Dependabot.
 version: 2
 updates:
   - package-ecosystem: npm
-    directories:
-      - /autonomous-agent-snowflake-wif
-      - /mcp-brokered-credentials-typescript
-      - /mcp-server-typescript-express
+    directory: /autonomous-agent-snowflake-wif
     schedule:
-      interval: weekly
-      day: sunday
+      interval: daily
       time: "06:00"
       timezone: Etc/UTC
-    allow:
-      - dependency-name: "@keycardai/*"
     groups:
-      keycard-npm:
+      keycard:
+        applies-to: version-updates
         patterns:
           - "@keycardai/*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@keycardai/*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "@keycardai/*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /mcp-brokered-credentials-typescript
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "@keycardai/*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@keycardai/*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "@keycardai/*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /mcp-server-typescript-express
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "@keycardai/*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@keycardai/*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "@keycardai/*"
     versioning-strategy: increase
     commit-message:
       prefix: "chore(deps)"
@@ -27,23 +131,151 @@ updates:
       - dependencies
 
   - package-ecosystem: uv
-    directories:
-      - /a2a-delegation-python
-      - /agent-python-langchain
-      - /mcp-brokered-credentials-python
-      - /mcp-server-python-mcp
+    directory: /a2a-delegation-python
     schedule:
-      interval: weekly
-      day: sunday
+      interval: daily
       time: "06:00"
       timezone: Etc/UTC
     allow:
-      - dependency-name: "keycardai-*"
-        dependency-type: "direct"
+      - dependency-type: "direct"
     groups:
-      keycard-uv:
+      keycard:
+        applies-to: version-updates
         patterns:
           - "keycardai-*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "keycardai-*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "keycardai-*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directory: /agent-python-langchain
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-type: "direct"
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "keycardai-*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "keycardai-*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "keycardai-*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directory: /mcp-brokered-credentials-python
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-type: "direct"
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "keycardai-*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "keycardai-*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "keycardai-*"
+    versioning-strategy: increase
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directory: /mcp-server-python-mcp
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    allow:
+      - dependency-type: "direct"
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "keycardai-*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "keycardai-*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "keycardai-*"
     versioning-strategy: increase
     commit-message:
       prefix: "chore(deps)"
@@ -51,42 +283,211 @@ updates:
       - dependencies
 
   - package-ecosystem: gomod
-    directories:
-      - /mcp-server-go
-      - /mcp-delegated-access-go
+    directory: /mcp-server-go
     schedule:
-      interval: weekly
-      day: sunday
+      interval: daily
       time: "06:00"
       timezone: Etc/UTC
-    allow:
-      - dependency-name: "github.com/keycardai/*"
     groups:
-      keycard-gomod:
+      keycard:
+        applies-to: version-updates
         patterns:
           - "github.com/keycardai/*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github.com/keycardai/*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "github.com/keycardai/*"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /mcp-delegated-access-go
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "github.com/keycardai/*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github.com/keycardai/*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "github.com/keycardai/*"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+
+  - package-ecosystem: gradle
+    directory: /a2a-delegation-java
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "ai.keycard:*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "ai.keycard:*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "ai.keycard:*"
     commit-message:
       prefix: "chore(deps)"
     labels:
       - dependencies
 
   - package-ecosystem: gradle
-    directories:
-      - /a2a-delegation-java
-      - /mcp-delegated-access-java
-      - /mcp-server-java
-      - /mcp-server-java-spring-ai
+    directory: /mcp-delegated-access-java
     schedule:
-      interval: weekly
-      day: sunday
+      interval: daily
       time: "06:00"
       timezone: Etc/UTC
-    allow:
-      - dependency-name: "ai.keycard:*"
     groups:
-      keycard-gradle:
+      keycard:
+        applies-to: version-updates
         patterns:
           - "ai.keycard:*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "ai.keycard:*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "ai.keycard:*"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gradle
+    directory: /mcp-server-java
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "ai.keycard:*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "ai.keycard:*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "ai.keycard:*"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gradle
+    directory: /mcp-server-java-spring-ai
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Etc/UTC
+    groups:
+      keycard:
+        applies-to: version-updates
+        patterns:
+          - "ai.keycard:*"
+      third-party:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "ai.keycard:*"
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+      exclude:
+        - "ai.keycard:*"
     commit-message:
       prefix: "chore(deps)"
     labels:

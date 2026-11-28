@@ -9,6 +9,16 @@ on:
       template:
         description: "Template to verify (leave blank for all)"
         required: false
+  workflow_call:
+    inputs:
+      templates:
+        description: "JSON array of template directory names to verify"
+        required: true
+        type: string
+      ref:
+        description: "Commit SHA to check out"
+        required: true
+        type: string
 
 jobs:
   discover:
@@ -21,21 +31,57 @@ jobs:
       java: ${{ steps.find.outputs.java }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
       - id: find
         env:
           TEMPLATE: ${{ inputs.template }}
+          TEMPLATES: ${{ inputs.templates }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Emit the dispatched template under one language and empty lists for
-          # the rest. Every language must be written on every path or the
-          # matrix job reads an empty output and silently does nothing.
-          emit_one() {
-            for lang in typescript python go ruby java; do
-              if [ "$lang" = "$1" ]; then
-                echo "$lang=[\"$TEMPLATE\"]" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          # Emit a JSON array for every language so matrix jobs never read an
+          # empty output.
+          emit_lists() {
+            local ts=() py=() go=() rb=() java=()
+            local dir
+            for dir in "$@"; do
+              if [ -f "$dir/package.json" ]; then
+                ts+=("$dir")
+              elif [ -f "$dir/go.mod" ]; then
+                go+=("$dir")
+              elif [ -f "$dir/Gemfile" ]; then
+                rb+=("$dir")
+              elif [ -f "$dir/build.gradle.kts" ]; then
+                java+=("$dir")
+              elif [ -f "$dir/pyproject.toml" ]; then
+                py+=("$dir")
               else
-                echo "$lang=[]" >> "$GITHUB_OUTPUT"
+                echo "::error::Cannot detect the language of '$dir': no package.json, go.mod, Gemfile, build.gradle.kts or pyproject.toml"
+                exit 1
               fi
             done
+
+            to_json() {
+              if [ "$#" -eq 0 ]; then
+                echo "[]"
+              else
+                printf '%s\n' "$@" | sort -u | jq -R . | jq -sc .
+              fi
+            }
+
+            {
+              echo "typescript=$(to_json "${ts[@]}")"
+              echo "python=$(to_json "${py[@]}")"
+              echo "go=$(to_json "${go[@]}")"
+              echo "ruby=$(to_json "${rb[@]}")"
+              echo "java=$(to_json "${java[@]}")"
+            } >> "$GITHUB_OUTPUT"
           }
 
           discover() {
@@ -45,23 +91,28 @@ jobs:
               | sed 's|^\./||' | sort | jq -R . | jq -sc .
           }
 
-          if [ -n "$TEMPLATE" ]; then
-            if [ -f "$TEMPLATE/package.json" ]; then
-              emit_one typescript
-            elif [ -f "$TEMPLATE/go.mod" ]; then
-              emit_one go
-            elif [ -f "$TEMPLATE/Gemfile" ]; then
-              emit_one ruby
-            elif [ -f "$TEMPLATE/build.gradle.kts" ]; then
-              emit_one java
-            elif [ -f "$TEMPLATE/pyproject.toml" ]; then
-              emit_one python
-            else
-              # Previously this fell through to python, so a template in any
-              # other language was verified with the wrong toolchain.
-              echo "::error::Cannot detect the language of '$TEMPLATE': no package.json, go.mod, Gemfile, build.gradle.kts or pyproject.toml"
-              exit 1
-            fi
+          is_real_template() {
+            local dir="$1"
+            case "$dir" in
+              ""|.*|_*|scripts|eval) return 1 ;;
+            esac
+            [ -d "$dir" ] || return 1
+            [ -f "$dir/package.json" ] || [ -f "$dir/go.mod" ] || [ -f "$dir/Gemfile" ] || [ -f "$dir/build.gradle.kts" ] || [ -f "$dir/pyproject.toml" ]
+          }
+
+          if [ -n "$TEMPLATES" ]; then
+            mapfile -t selected < <(jq -er 'if type == "array" then .[] else error("templates must be a JSON array") end' <<< "$TEMPLATES")
+            emit_lists "${selected[@]}"
+          elif [ -n "$TEMPLATE" ]; then
+            emit_lists "$TEMPLATE"
+          elif [ "$EVENT_NAME" = "pull_request" ] && [ "$PR_AUTHOR" = "dependabot[bot]" ]; then
+            touched=()
+            while IFS= read -r dir; do
+              if is_real_template "$dir"; then
+                touched+=("$dir")
+              fi
+            done < <(git diff --name-only "${PR_BASE_SHA}...${PR_HEAD_SHA}" | awk -F/ 'NF > 1 { print $1 }' | sort -u)
+            emit_lists "${touched[@]}"
           else
             {
               echo "typescript=$(discover package.json)"
@@ -83,12 +134,10 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.typescript) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -107,11 +156,15 @@ jobs:
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         run: >
           echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
-          Monday's eval.yml run on main covers this bump after merge."
+          The Dependency Bump workflow runs live-zone verify and eval after Template CI completes."
 
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -142,6 +195,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -155,12 +210,10 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.python) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -176,11 +229,15 @@ jobs:
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         run: >
           echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
-          Monday's eval.yml run on main covers this bump after merge."
+          The Dependency Bump workflow runs live-zone verify and eval after Template CI completes."
 
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -211,6 +268,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -224,12 +283,10 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.go) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
@@ -243,11 +300,15 @@ jobs:
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         run: >
           echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
-          Monday's eval.yml run on main covers this bump after merge."
+          The Dependency Bump workflow runs live-zone verify and eval after Template CI completes."
 
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -278,6 +339,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -291,12 +354,10 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.ruby) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
@@ -309,11 +370,15 @@ jobs:
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         run: >
           echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
-          Monday's eval.yml run on main covers this bump after merge."
+          The Dependency Bump workflow runs live-zone verify and eval after Template CI completes."
 
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -344,6 +409,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -357,12 +424,10 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.java) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -377,11 +442,15 @@ jobs:
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         run: >
           echo "::notice::Live-zone checks skipped: Dependabot runs get no Actions secrets.
-          Monday's eval.yml run on main covers this bump after merge."
+          The Dependency Bump workflow runs live-zone verify and eval after Template CI completes."
 
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -412,6 +481,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
