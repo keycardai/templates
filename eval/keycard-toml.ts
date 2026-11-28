@@ -17,18 +17,17 @@ function tomlId(content: string, table: string): string | undefined {
 }
 
 /**
- * The org id the eval runs under: EVAL_ORG_ID, else eval/keycard.toml's
- * [org] id, else the placeholder the template ships. The zone API does not
- * report its organization, so the harness cannot derive it from the zone.
+ * The configured org id: EVAL_ORG_ID, else eval/keycard.toml's [org] id.
  */
-async function evalOrgId(): Promise<string> {
-  if (process.env.EVAL_ORG_ID) return process.env.EVAL_ORG_ID;
+export async function evalOrgId(): Promise<string | undefined> {
+  const envId = process.env.EVAL_ORG_ID?.trim();
+  if (envId && envId !== PLACEHOLDER_ORG_ID) return envId;
   try {
     const own = await fs.readFile(new URL("keycard.toml", import.meta.url), "utf8");
     const id = tomlId(own, "org");
     if (id && id !== PLACEHOLDER_ORG_ID) return id;
   } catch { /* eval/keycard.toml optional */ }
-  return PLACEHOLDER_ORG_ID;
+  return undefined;
 }
 
 export function renderKeycardToml(opts: { orgId: string; zoneId: string; existing: string }): string {
@@ -42,7 +41,7 @@ export function renderKeycardToml(opts: { orgId: string; zoneId: string; existin
 export async function writeKeycardToml(templateDir: string, zoneId: string): Promise<string> {
   const file = path.join(templateDir, "keycard.toml");
   const existing = await fs.readFile(file, "utf8").catch(() => "");
-  const content = renderKeycardToml({ orgId: await evalOrgId(), zoneId, existing });
+  const content = renderKeycardToml({ orgId: (await evalOrgId()) ?? PLACEHOLDER_ORG_ID, zoneId, existing });
   await fs.writeFile(file, content, "utf8");
   return content;
 }
