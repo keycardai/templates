@@ -19,7 +19,7 @@
     "@keycardai/oauth": "^0.43.0",
     "@modelcontextprotocol/client": "^2.4.0",
     "express": "^5.3.0",
-    "snowflake-sdk": "^2.4.1",
+    "snowflake-sdk": "^3.4.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
