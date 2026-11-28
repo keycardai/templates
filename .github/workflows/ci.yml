@@ -100,8 +100,8 @@ jobs:
             [ -f "$dir/package.json" ] || [ -f "$dir/go.mod" ] || [ -f "$dir/Gemfile" ] || [ -f "$dir/build.gradle.kts" ] || [ -f "$dir/pyproject.toml" ]
           }
 
-          if [ "$EVENT_NAME" = "workflow_call" ]; then
-            mapfile -t selected < <(jq -er '.[]' <<< "$TEMPLATES")
+          if [ -n "$TEMPLATES" ]; then
+            mapfile -t selected < <(jq -er 'if type == "array" then .[] else error("templates must be a JSON array") end' <<< "$TEMPLATES")
             emit_lists "${selected[@]}"
           elif [ -n "$TEMPLATE" ]; then
             emit_lists "$TEMPLATE"

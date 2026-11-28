@@ -60,13 +60,12 @@ jobs:
       - uses: actions/checkout@v4
       - id: find
         env:
-          EVENT_NAME: ${{ github.event_name }}
           TEMPLATE: ${{ inputs.template }}
           TEMPLATES: ${{ inputs.templates }}
         run: |
           # A workflow_call or named dispatch bypasses eval/eval-skip.txt;
           # only the discovered full matrix is filtered.
-          if [ "$EVENT_NAME" = "workflow_call" ]; then
+          if [ -n "$TEMPLATES" ]; then
             dirs=$(jq -ce 'if type == "array" then . else error("templates must be a JSON array") end' <<< "$TEMPLATES")
             echo "templates=$dirs" >> "$GITHUB_OUTPUT"
           elif [ -n "$TEMPLATE" ]; then
