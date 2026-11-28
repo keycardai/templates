@@ -78,6 +78,7 @@ jobs:
 
   eval:
     needs: [discover, preflight]
+    if: ${{ !cancelled() && needs.discover.result == 'success' && needs.preflight.result == 'success' }}
     # Pinned image: the Playwright locked in eval/package-lock.json has
     # chromium builds only for the Ubuntu releases it knows, so the runner
     # image moves together with that lock.
@@ -183,12 +184,11 @@ jobs:
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     env:
-      EVAL_CADENCE: ${{ github.event.schedule == '0 9 * * *' && 'Nightly' || 'Weekly' }}
       EVAL_SLACK_WEBHOOK_URL: ${{ secrets.EVAL_SLACK_WEBHOOK_URL }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Post failure to Slack
         if: env.EVAL_SLACK_WEBHOOK_URL != ''
         run: |
-          jq -n --arg text ":red_circle: ${EVAL_CADENCE} Template Eval failed on ${GITHUB_REF_NAME}: ${RUN_URL}" '{text: $text}' \
+          jq -n --arg text ":red_circle: Weekly Template Eval failed on ${GITHUB_REF_NAME}: ${RUN_URL}" '{text: $text}' \
             | curl -fsS -X POST -H 'Content-Type: application/json' --data @- "$EVAL_SLACK_WEBHOOK_URL"
