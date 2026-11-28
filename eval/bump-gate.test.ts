@@ -183,8 +183,8 @@ test("rejects non-dependabot PR author, non-main base, fork head repo, and head 
   assert.match(badSha.reason, /does not match Template CI run head SHA/);
 });
 
-test("rejects PR when any commit was authored by a human", () => {
-  const out = runGate({
+test("rejects PR when any commit was authored by a human or has no GitHub author", () => {
+  const human = runGate({
     fixtures: {
       "repos/keycardai/templates/pulls/42/commits?per_page=100": [
         { author: { login: "dependabot[bot]" } },
@@ -192,8 +192,19 @@ test("rejects PR when any commit was authored by a human", () => {
       ],
     },
   });
-  assert.equal(out.ok, "false");
-  assert.match(out.reason, /not authored by dependabot\[bot\]/);
+  assert.equal(human.ok, "false");
+  assert.match(human.reason, /not authored by dependabot\[bot\]/);
+
+  const nullAuthor = runGate({
+    fixtures: {
+      "repos/keycardai/templates/pulls/42/commits?per_page=100": [
+        { author: { login: "dependabot[bot]" } },
+        { author: null },
+      ],
+    },
+  });
+  assert.equal(nullAuthor.ok, "false");
+  assert.match(nullAuthor.reason, /not authored by dependabot\[bot\] \(author: unknown\)/);
 });
 
 test("rejects disallowed files, forbidden directories, root files, and renames from outside", () => {

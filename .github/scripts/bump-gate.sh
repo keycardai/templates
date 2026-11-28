@@ -127,7 +127,7 @@ main() {
   fi
 
   local commits_lines=""
-  if ! commits_lines=$(gh api --paginate "repos/${repo}/pulls/${pr_number}/commits?per_page=100" --jq '.[].author.login // "__MISSING__"'); then
+  if ! commits_lines=$(gh api --paginate "repos/${repo}/pulls/${pr_number}/commits?per_page=100" --jq '.[] | (.author.login // "__MISSING__")'); then
     emit_output "$pr_number" "$target_sha" "[]" "false" "Could not fetch commits for PR #${pr_number}"
     return 0
   fi
