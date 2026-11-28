@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.1.0",
-    "@earendil-works/pi-agent-core": "^0.74.0",
+    "@earendil-works/pi-agent-core": "^1.4.0",
     "@earendil-works/pi-ai": "^0.74.0",
     "@keycardai/a2a": "^0.6.1",
     "@keycardai/express": "^0.12.0",
