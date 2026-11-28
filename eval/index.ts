@@ -252,6 +252,7 @@ try {
   // 2. Provision resources + write config files
   console.log("\n2. Provisioning resources...");
   provisioning = new EvalProvisioning(zone.id, token);
+  if (!ephemeral) await provisioning.sweepStale();
   const provisioned = await provision({
     zoneId: zone.id,
     zoneIssuerUrl: zone.issuerUrl,

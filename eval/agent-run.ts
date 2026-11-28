@@ -117,6 +117,7 @@ export async function runAgentEval(opts: {
 
     console.log("\n3. Provisioning resources...");
     provisioning = new EvalProvisioning(evalZone.zone.id, token);
+    await provisioning.sweepStale();
     const provisioned = await provisionAgent({
       zoneId: evalZone.zone.id,
       zoneIssuerUrl: evalZone.zone.issuerUrl,

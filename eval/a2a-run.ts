@@ -123,6 +123,7 @@ export async function runA2AEval(opts: {
     console.log("\n2. Provisioning resources...");
     await execFileAsync("bash", ["-c", `lsof -ti :${port} | xargs kill -9 2>/dev/null; true`]);
     provisioning = new EvalProvisioning(evalZone.zone.id, token);
+    await provisioning.sweepStale();
     const provisioned = await provisionA2AAgent({
       zoneId: evalZone.zone.id,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
@@ -293,6 +294,7 @@ async function runA2ADelegationEval(opts: {
     console.log("\n2. Provisioning two applications and two resources...");
     await execFileAsync("bash", ["-c", `lsof -ti :${callerPort},:${targetPort} | xargs kill -9 2>/dev/null; true`]);
     provisioning = new EvalProvisioning(evalZone.zone.id, token);
+    await provisioning.sweepStale();
     const provisioned = await provisionA2ADelegation({
       zoneId: evalZone.zone.id,
       zoneIssuerUrl: evalZone.zone.issuerUrl,

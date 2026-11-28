@@ -14,6 +14,10 @@ The `mcp-server-*` templates are servers that authenticate requests coming in.
 4. Verifies the server accepts authenticated requests and rejects unauthenticated ones
 5. Tears down the job's Application and Resource, including after a failure
 
+Before provisioning in the shared zone, each job removes abandoned per-run
+applications and resources older than 12 hours. The cutoff is twice the
+default GitHub Actions job timeout and leaves fresh provisioning untouched.
+
 Resource URLs use a per-job hostname under `.localhost` so the registered
 identifiers are distinct without changing routes such as `/mcp`. CI derives
 the hostname from the template name, GitHub run ID, and run attempt; local

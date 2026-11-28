@@ -33,6 +33,54 @@ test("the loopback proxy exclusion leaves wildcards intact", () => {
   });
 });
 
+test("the stale sweep only deletes old per-run entities and tolerates failed deletes", async (t) => {
+  const oldEndpoint = process.env.CI_KEYCARD_ENDPOINT;
+  process.env.CI_KEYCARD_ENDPOINT = "https://api.example.test";
+  t.after(() => {
+    if (oldEndpoint === undefined) delete process.env.CI_KEYCARD_ENDPOINT;
+    else process.env.CI_KEYCARD_ENDPOINT = oldEndpoint;
+  });
+
+  const old = "2026-11-27T11:59:59Z";
+  const deleted: string[] = [];
+  const warned = t.mock.method(console, "warn", () => undefined);
+  t.mock.method(globalThis, "fetch", async (input: string, init: RequestInit) => {
+    const url = new URL(input);
+    if (init.method === "DELETE") {
+      deleted.push(url.pathname);
+      return new Response(null, { status: url.pathname.endsWith("/old-app") ? 500 : 204 });
+    }
+
+    switch (url.pathname) {
+      case "/zones/fixture/resources":
+        assert.equal(url.searchParams.get("query[name]"), "eval-resource-");
+        if (url.searchParams.get("after") === "next") {
+          return Response.json({ items: [
+            { id: "old-resource", name: "eval-resource-caller-a2a-delegation-python--121-1", created_at: old },
+          ], pagination: { after_cursor: null } });
+        }
+        return Response.json({ items: [
+          { id: "fresh", name: "eval-resource-mcp-server-go--123-1", created_at: "2026-11-27T12:00:00Z" },
+          { id: "other", name: "other-eval-resource-mcp-server-go--122-1", created_at: old },
+          { id: "legacy", name: "eval-resource-1732660000000", created_at: old },
+          { id: "unknown-age", name: "eval-resource-mcp-server-go--122-1" },
+        ], pagination: { after_cursor: "next" } });
+      case "/zones/fixture/applications":
+        assert.equal(url.searchParams.get("query[name]"), "eval-app-");
+        return Response.json({ items: [
+          { id: "old-app", name: "eval-app-mcp-server-go--20953048-f8d3-4233-920b-d0237ecc4392", created_at: old },
+        ], pagination: { after_cursor: null } });
+      default:
+        assert.fail(`Unexpected request: ${url.pathname}`);
+    }
+  });
+
+  const provisioning = new EvalProvisioning("fixture", "fixture-token");
+  await provisioning.sweepStale(Date.parse("2026-11-28T00:00:00Z"));
+  assert.deepEqual(deleted, ["/zones/fixture/resources/old-resource", "/zones/fixture/applications/old-app"]);
+  assert.match(String(warned.mock.calls[0]?.arguments[0]), /Could not remove stale eval applications/);
+});
+
 test("partial provisioning failure deletes only the application it created", async (t) => {
   const oldEndpoint = process.env.CI_KEYCARD_ENDPOINT;
   process.env.CI_KEYCARD_ENDPOINT = "https://api.example.test";

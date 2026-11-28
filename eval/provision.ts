@@ -17,6 +17,17 @@ export function keycardEndpoint() {
 
 const endpoint = keycardEndpoint;
 
+type Collection = "applications" | "resources";
+
+// The eval workflow uses GitHub Actions' default six-hour job timeout.
+const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
+const RUN_NAME = /^[a-z0-9-]+--(?:\d+-\d+|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/;
+
+interface ProvisioningPage {
+  items: Array<{ id: string; name: string; created_at: string }>;
+  pagination?: { after_cursor: string | null };
+}
+
 export interface ProvisionedZone {
   /** Client credential minted for the application, so a broker can authenticate its exchange. */
   applicationClientId: string;
@@ -25,11 +36,11 @@ export interface ProvisionedZone {
 }
 
 export class EvalProvisioning {
-  private readonly entities: Array<{ collection: "applications" | "resources"; id: string }> = [];
+  private readonly entities: Array<{ collection: Collection; id: string }> = [];
 
   constructor(private readonly zoneId: string, private readonly token: string) {}
 
-  async create(collection: "applications" | "resources", body: object): Promise<string> {
+  async create(collection: Collection, body: object): Promise<string> {
     const resp = await fetch(`${endpoint()}/zones/${this.zoneId}/${collection}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
@@ -39,6 +50,41 @@ export class EvalProvisioning {
     const { id } = (await resp.json()) as { id: string };
     this.entities.push({ collection, id });
     return id;
+  }
+
+  async sweepStale(now = Date.now()): Promise<void> {
+    const headers = { Authorization: `Bearer ${this.token}` };
+    const cutoff = now - STALE_AFTER_MS;
+    for (const [collection, prefix] of [["resources", "eval-resource-"], ["applications", "eval-app-"]] as const) {
+      const base = `${endpoint()}/zones/${this.zoneId}/${collection}`;
+      const query = new URLSearchParams({ "query[name]": prefix, limit: "100" });
+      const stale: ProvisioningPage["items"] = [];
+      try {
+        while (true) {
+          const resp = await fetch(`${base}?${query}`, { headers });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const { items, pagination } = await resp.json() as ProvisioningPage;
+          stale.push(...items.filter(({ name, created_at }) =>
+            name.startsWith(prefix) && RUN_NAME.test(name.slice(prefix.length)) && Date.parse(created_at) < cutoff,
+          ));
+          const after = pagination?.after_cursor;
+          if (!after || after === query.get("after")) break;
+          query.set("after", after);
+        }
+      } catch (error) {
+        console.warn(`Could not list stale eval ${collection}:`, error);
+      }
+      for (const { id, name } of stale) {
+        try {
+          const resp = await fetch(`${base}/${id}`, { method: "DELETE", headers });
+          if (resp.status === 404) continue;
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          console.log(`   Removed stale eval ${collection}: ${name} (${id})`);
+        } catch (error) {
+          console.warn(`Could not remove stale eval ${collection}: ${name} (${id}):`, error);
+        }
+      }
+    }
   }
 
   async cleanup(): Promise<void> {
