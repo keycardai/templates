@@ -98,8 +98,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      # Keep serial until the full matrix is verified with parallel jobs.
-      max-parallel: 1
+      max-parallel: 3
       matrix:
         template: ${{ fromJson(needs.discover.outputs.templates) }}
     env:
