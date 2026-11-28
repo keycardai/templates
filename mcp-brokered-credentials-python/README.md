@@ -1,6 +1,9 @@
 # mcp-brokered-credentials-python
 
-MCP proxy to Linear with Keycard-brokered credentials. No static API keys — the user's Keycard bearer token is exchanged for a Linear-scoped OAuth token via RFC 8693 on every tool call.
+Python MCP proxy to Linear with Keycard-brokered credentials. It mounts the MCP
+v2 `MCPServer` in Starlette and protects the endpoint with `keycardai-starlette`.
+The proxy uses no static API keys. On every tool call, it exchanges the user's
+Keycard bearer token for a Linear-scoped OAuth token via RFC 8693.
 
 Exposes two tools:
 - **`search`** — regex-search Linear's MCP tool catalog

@@ -29,7 +29,7 @@ for SDK experiments, local template runs, and CI tests.
 | Template | Kind | Language | Framework |
 |---|---|---|---|
 | [`mcp-server-typescript-express`](./mcp-server-typescript-express) | MCP server | TypeScript | Express 5 |
-| [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | FastMCP |
+| [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | MCP v2 (`MCPServer`), Starlette |
 | [`mcp-server-ruby`](./mcp-server-ruby) | MCP server | Ruby | Rack |
 | [`mcp-server-go`](./mcp-server-go) | MCP server | Go | `net/http` |
 | [`mcp-delegated-access-go`](./mcp-delegated-access-go) | MCP server | Go | `net/http` |
@@ -38,7 +38,7 @@ for SDK experiments, local template runs, and CI tests.
 | [`mcp-server-java`](./mcp-server-java) | MCP server | Java | Jetty (Servlet) |
 | [`mcp-server-java-spring-ai`](./mcp-server-java-spring-ai) | MCP server | Java | Spring AI (WebMVC) |
 | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) | MCP proxy | TypeScript | Express 5 |
-| [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | FastMCP |
+| [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | MCP proxy | Python | MCP v2 (`MCPServer`), Starlette |
 | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Agent | TypeScript | — |
 | [`agent-python-langchain`](./agent-python-langchain) | Agent | Python | LangChain |
 | [`a2a-delegation-python`](./a2a-delegation-python) | Agent | Python | Starlette |

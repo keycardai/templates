@@ -2,7 +2,7 @@
 
 > A Keycard-protected MCP server with a single `hello_world` tool — the simplest Python starting point for the full OAuth handshake.
 
-This template is a FastMCP server wrapped in a Starlette ASGI app and protected by Keycard. It runs as-is but has **no** authorization until Keycard is provisioned with the primitives below. An agent MUST perform the steps in this document before declaring the project ready.
+This template mounts the MCP v2 `MCPServer` in a Starlette ASGI app and protects the endpoint with `keycardai-starlette`. It runs as-is but has **no** authorization until Keycard is provisioned with the primitives below. An agent MUST perform the steps in this document before declaring the project ready.
 
 ## 0. How the agent uses this document
 
@@ -10,11 +10,11 @@ This template is a FastMCP server wrapped in a Starlette ASGI app and protected 
 
 ## 0a. What this template is
 
-A working MCP server built on FastMCP (the MCP Python SDK's built-in FastMCP class) and protected by Keycard's OAuth 2.1 flow. It ships one tool — `hello_world` — that takes a name and returns a greeting. The server is wrapped in a Starlette ASGI app served by uvicorn, which adds a `/healthz` endpoint and exposes the full MCP protocol at `/mcp`. Add tools by decorating functions with `@mcp.tool()`.
+The `hello_world` tool takes a name and returns a greeting. The Starlette app runs on uvicorn, serves `/healthz`, and mounts the MCP Streamable HTTP endpoint at `/mcp` by default. Keycard protects the MCP endpoint with OAuth 2.1. Add tools by decorating functions with `@mcp.tool()`.
 
 ## 0b. One-line summary
 
-Minimal Keycard-protected MCP server (Python + FastMCP) with a `hello_world` tool — add your own tools and go.
+Minimal Keycard-protected Python MCP server using MCP v2 and Starlette, with a `hello_world` tool.
 
 ## 0c. Concepts the agent should introduce
 
