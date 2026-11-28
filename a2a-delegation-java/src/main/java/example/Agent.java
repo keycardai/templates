@@ -242,7 +242,7 @@ public final class Agent {
             }
             if (params == null || !params.isJsonObject()) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
-                        id, new InvalidRequestError("SendMessage requires a params object")));
+                        id, new InvalidParamsError("SendMessage requires a params object")));
                 return;
             }
 
@@ -253,7 +253,7 @@ public final class Agent {
                 message = ProtoUtils.FromProto.messageSendParams(send).message();
             } catch (JsonProcessingException | InvalidParamsError e) {
                 response.getWriter().write(JSONRPCUtils.toJsonRPCErrorResponse(
-                        id, new InvalidRequestError("Invalid SendMessage parameters")));
+                        id, new InvalidParamsError("Invalid SendMessage parameters")));
                 return;
             }
 
