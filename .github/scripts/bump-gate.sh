@@ -119,6 +119,140 @@ load_metadata_json() {
   printf '%s\n' "$content"
 }
 
+parse_commit_metadata_json() {
+  local target_sha="$1"
+  local message="$2"
+
+  local rows=""
+  rows=$(awk '
+    function trim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      if ((substr(s, 1, 1) == "\"" && substr(s, length(s), 1) == "\"") ||
+          (substr(s, 1, 1) == "\x27" && substr(s, length(s), 1) == "\x27")) {
+        s = substr(s, 2, length(s) - 2)
+      }
+      return s
+    }
+    function flush_item() {
+      if (in_item) {
+        printf "%s\t%s\n", dep_name, update_type
+        dep_name = ""
+        update_type = ""
+        in_item = 0
+      }
+    }
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (!in_block) {
+        if (saw_sep && line ~ /^updated-dependencies:[[:space:]]*$/) {
+          in_block = 1
+          saw_sep = 0
+          next
+        }
+        saw_sep = (line ~ /^---[[:space:]]*$/) ? 1 : 0
+        next
+      }
+      if (line ~ /^\.\.\.[[:space:]]*$/ || line ~ /^---[[:space:]]*$/) {
+        flush_item()
+        exit
+      }
+      if (line ~ /^[[:space:]]*-[[:space:]]+/) {
+        flush_item()
+        in_item = 1
+        sub(/^[[:space:]]*-[[:space:]]+/, "", line)
+      } else if (!in_item) {
+        next
+      }
+      idx = index(line, ":")
+      if (idx > 0) {
+        key = trim(substr(line, 1, idx - 1))
+        val = trim(substr(line, idx + 1))
+        if (key == "dependency-name") {
+          dep_name = val
+        } else if (key == "update-type") {
+          update_type = val
+        }
+      }
+    }
+    END {
+      if (in_block) {
+        flush_item()
+      }
+    }
+  ' <<< "$message")
+
+  [ -n "$rows" ] || return 1
+
+  local deps=()
+  local max_rank=0
+  local has_unknown="false"
+  local dep_name="" update_type=""
+  while IFS=$'\t' read -r dep_name update_type; do
+    if [ -z "$dep_name" ]; then
+      return 1
+    fi
+    deps+=("$dep_name")
+    case "$update_type" in
+      version-update:semver-patch)
+        if [ "$max_rank" -lt 1 ]; then max_rank=1; fi
+        ;;
+      version-update:semver-minor)
+        if [ "$max_rank" -lt 2 ]; then max_rank=2; fi
+        ;;
+      version-update:semver-major)
+        if [ "$max_rank" -lt 3 ]; then max_rank=3; fi
+        ;;
+      *)
+        has_unknown="true"
+        ;;
+    esac
+  done <<< "$rows"
+
+  [ "${#deps[@]}" -gt 0 ] || return 1
+
+  local highest_type=""
+  if [ "$has_unknown" != "true" ]; then
+    case "$max_rank" in
+      3) highest_type="version-update:semver-major" ;;
+      2) highest_type="version-update:semver-minor" ;;
+      1) highest_type="version-update:semver-patch" ;;
+    esac
+  fi
+
+  local joined_deps=""
+  local old_ifs="$IFS"
+  IFS=','
+  joined_deps="${deps[*]}"
+  IFS="$old_ifs"
+
+  jq -n \
+    --arg head_sha "$target_sha" \
+    --arg dependency_names "$joined_deps" \
+    --arg update_type "$highest_type" \
+    '{head_sha: $head_sha, dependency_names: $dependency_names, update_type: $update_type}'
+}
+
+load_commit_metadata_json() {
+  local repo="$1"
+  local target_sha="$2"
+  local commit_json=""
+  commit_json=$(gh api "repos/${repo}/commits/${target_sha}") || return 1
+
+  local author="" committer="" verified="" message=""
+  author=$(jq -r '.author.login // ""' <<< "$commit_json")
+  committer=$(jq -r '.committer.login // ""' <<< "$commit_json")
+  verified=$(jq -r '(.commit.verification.verified // false) | tostring' <<< "$commit_json")
+  message=$(jq -r '.commit.message // ""' <<< "$commit_json")
+
+  if [ "$author" != "dependabot[bot]" ] || [ "$verified" != "true" ] || { [ "$committer" != "web-flow" ] && [ "$committer" != "dependabot[bot]" ]; }; then
+    return 1
+  fi
+
+  parse_commit_metadata_json "$target_sha" "$message"
+}
+
 evaluate_automerge() {
   local repo="$1"
   local ci_run_id="$2"
@@ -135,9 +269,11 @@ evaluate_automerge() {
 
   local meta_json=""
   if ! meta_json=$(load_metadata_json "$repo" "$ci_run_id"); then
-    AUTOMERGE_DECISION="false"
-    AUTOMERGE_REASON="Dependabot metadata artifact missing; treating as major for human review"
-    return 0
+    if ! meta_json=$(load_commit_metadata_json "$repo" "$target_sha"); then
+      AUTOMERGE_DECISION="false"
+      AUTOMERGE_REASON="Dependabot metadata missing; treating as major for human review"
+      return 0
+    fi
   fi
 
   if ! jq -e 'type == "object"' <<< "$meta_json" >/dev/null 2>&1; then

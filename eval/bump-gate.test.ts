@@ -472,6 +472,13 @@ test("automerge policy: security major merges and missing or mismatched metadata
     metadata: null,
     fixtures: {
       "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+      [`repos/keycardai/templates/commits/${SHA}`]: {
+        ...makeBotCommit(),
+        commit: {
+          verification: { verified: true },
+          message: "chore(deps): bump without metadata block\n",
+        },
+      },
     },
   });
   assert.equal(missingMeta.ok, "true");
@@ -490,4 +497,90 @@ test("automerge policy: security major merges and missing or mismatched metadata
   assert.equal(wrongSha.ok, "true");
   assert.equal(wrongSha.automerge, "false");
   assert.match(wrongSha.automerge_reason, /SHA mismatch/i);
+});
+
+test("automerge policy: commit-message YAML fallback handles minor, major, Keycard major, and missing block", () => {
+  const minorFallback = runGate({
+    metadata: null,
+    fixtures: {
+      "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+      [`repos/keycardai/templates/commits/${SHA}`]: {
+        ...makeBotCommit(),
+        commit: {
+          verification: { verified: true },
+          message: [
+            "chore(deps): bump the third-party group",
+            "",
+            "---",
+            "updated-dependencies:",
+            "- dependency-name: golang.org/x/net",
+            "  dependency-type: direct:production",
+            "  update-type: version-update:semver-patch",
+            "- dependency-name: golang.org/x/sys",
+            "  dependency-type: direct:production",
+            "  update-type: version-update:semver-minor",
+            "...",
+            "",
+            "Signed-off-by: dependabot[bot] <support@github.com>",
+          ].join("\n"),
+        },
+      },
+    },
+  });
+  assert.equal(minorFallback.ok, "true");
+  assert.equal(minorFallback.automerge, "true");
+
+  const majorFallback = runGate({
+    metadata: null,
+    fixtures: {
+      "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+      [`repos/keycardai/templates/commits/${SHA}`]: {
+        ...makeBotCommit(),
+        commit: {
+          verification: { verified: true },
+          message: [
+            "chore(deps): bump group",
+            "",
+            "---",
+            "updated-dependencies:",
+            "- dependency-name: golang.org/x/net",
+            "  dependency-type: direct:production",
+            "  update-type: version-update:semver-minor",
+            "- dependency-name: golang.org/x/oauth2",
+            "  dependency-type: direct:production",
+            "  update-type: version-update:semver-major",
+            "---",
+          ].join("\n"),
+        },
+      },
+    },
+  });
+  assert.equal(majorFallback.ok, "true");
+  assert.equal(majorFallback.automerge, "false");
+  assert.match(majorFallback.automerge_reason, /major/i);
+
+  const keycardMajorFallback = runGate({
+    metadata: null,
+    fixtures: {
+      "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+      [`repos/keycardai/templates/commits/${SHA}`]: {
+        ...makeBotCommit(),
+        commit: {
+          verification: { verified: true },
+          message: [
+            "chore(deps): bump keycard",
+            "",
+            "---",
+            "updated-dependencies:",
+            "- dependency-name: github.com/keycardai/go-sdk",
+            "  dependency-type: direct:production",
+            "  update-type: version-update:semver-major",
+            "...",
+          ].join("\n"),
+        },
+      },
+    },
+  });
+  assert.equal(keycardMajorFallback.ok, "true");
+  assert.equal(keycardMajorFallback.automerge, "true");
 });
