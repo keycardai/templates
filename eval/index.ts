@@ -12,7 +12,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { writeFileSync } from "node:fs";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./provision.js";
@@ -112,12 +112,25 @@ const JAVA_NOTES = [
   "Do not run keycard CLI commands and do not look for a parent keycard.toml.",
   "Build with ./gradlew installDist. The harness starts build/install/mcp-server-java/bin/mcp-server-java.",
 ].join("\n");
+const JAVA_DELEGATED_NOTES = [
+  "Provisioning is complete. The provisioned .env and keycard.toml are correct as written.",
+  "KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET are deliberately absent from .env and from your shell. The harness passes them to the server it starts after this step. Do not look for them or add them.",
+  "Do not run keycard CLI commands, start the server, or run the SPEC's smoke test. The harness verifies /healthz, OAuth metadata, /mcp, and /broker.",
+  "Build with ./gradlew installDist. The harness starts build/install/mcp-delegated-access-java/bin/mcp-delegated-access-java.",
+].join("\n");
+const JAVA_SPRING_AI_NOTES = [
+  "Provisioning is complete. The provisioned .env and keycard.toml are correct as written.",
+  "Do not run keycard CLI commands, start the server, or run the SPEC's smoke test.",
+  "Build with ./gradlew installDist. The harness starts build/install/mcp-server-java-spring-ai/bin/mcp-server-java-spring-ai.",
+].join("\n");
 const AGENT_NOTES: Record<string, string> = {
   "mcp-brokered-credentials-python": BROKERED_NOTES,
   "mcp-brokered-credentials-typescript": BROKERED_NOTES,
   "mcp-delegated-access-go": GO_DELEGATED_NOTES,
+  "mcp-delegated-access-java": JAVA_DELEGATED_NOTES,
   "mcp-server-ruby": RUBY_NOTES,
   "mcp-server-java": JAVA_NOTES,
+  "mcp-server-java-spring-ai": JAVA_SPRING_AI_NOTES,
 };
 
 // Detect template language from the presence of its build manifest
@@ -194,20 +207,23 @@ const isA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "package.json"), "u
 const isPythonA2AAgent = await fs.readFile(path.join(TEMPLATE_DIR, "pyproject.toml"), "utf8")
   .then((raw) => /^\s*"keycardai-a2a[\s>=<~!\[]/m.test(raw))
   .catch(() => false);
-if (isA2AAgent || isPythonA2AAgent) {
+const isJavaA2AAgent = isJava && await fs.readFile(path.join(TEMPLATE_DIR, "build.gradle.kts"), "utf8")
+  .then((raw) => /["']ai\.keycard:keycard-a2a[:'"]/.test(raw))
+  .catch(() => false);
+if (isA2AAgent || isPythonA2AAgent || isJavaA2AAgent) {
   const a2aPassed = await runA2AEval({
     templateDir: TEMPLATE_DIR,
     templateName: templateArg,
     runId: RUN_ID,
     usage: buildAgentUsage,
-    language: isPythonA2AAgent ? "python" : "typescript",
+    language: isPythonA2AAgent ? "python" : isJavaA2AAgent ? "java" : "typescript",
   });
   console.log(a2aPassed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
   process.exit(a2aPassed ? 0 : 1);
 }
 
 let zoneId: string | undefined;
-let serverProcess: ReturnType<typeof execFile> | undefined;
+let serverProcess: ReturnType<typeof spawn> | undefined;
 let provisioned: Awaited<ReturnType<typeof provision>> | undefined;
 let token: string | undefined;
 let ephemeral = false;
@@ -303,7 +319,7 @@ try {
     PORT: String(SERVER_START.port),
   };
 
-  serverProcess = execFile(serverCmd, serverArgs, {
+  serverProcess = spawn(serverCmd, serverArgs, {
     cwd: TEMPLATE_DIR,
     env: serverEnv,
     detached: true,

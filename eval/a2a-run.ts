@@ -64,6 +64,13 @@ const DELEGATION_BUILD_NOTES = [
   "Then print the marker.",
 ].join("\n");
 
+const JAVA_DELEGATION_BUILD_NOTES = [
+  "Provisioning is complete and .env and keycard.toml are final. Do not change them or print the credentials.",
+  "Do not run keycard CLI commands, call the zone or any HTTP endpoint, or start either agent.",
+  "Your entire job is to build with ./gradlew installDist and then print the marker.",
+  "The harness starts both roles from build/install/a2a-delegation-java/bin/a2a-delegation-java.",
+].join("\n");
+
 function required(name: string): string {
   const val = process.env[name];
   if (!val) throw new Error(`Required env var ${name} is not set`);
@@ -75,9 +82,11 @@ export async function runA2AEval(opts: {
   templateName: string;
   runId: string;
   usage: BuildAgentUsage;
-  language?: "python" | "typescript";
+  language?: "python" | "typescript" | "java";
 }): Promise<boolean> {
-  if (opts.language === "python") return runA2ADelegationEval(opts);
+  if (opts.language === "python" || opts.language === "java") {
+    return runA2ADelegationEval({ ...opts, language: opts.language });
+  }
   const port = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const agentUrl = `http://localhost:${port}`;
   const impersonatedUser = required("EVAL_TEST_USER_EMAIL");
@@ -225,16 +234,16 @@ async function waitForHealthz(url: string, label: string): Promise<void> {
 }
 
 /**
- * The Python two-agent delegation template (a2a-delegation-python, ECO-102):
- * caller on EVAL_A2A_PORT, target on the next port, both started with uv the
- * way the server flow starts Python templates. The user's token is minted for
- * the caller by impersonation; the caller exchanges it for the target.
+ * The two-agent delegation flow runs the caller on EVAL_A2A_PORT and the
+ * target on the next port. The user's token is minted for the caller by
+ * impersonation, and the caller exchanges it for the target.
  */
 async function runA2ADelegationEval(opts: {
   templateDir: string;
   templateName: string;
   runId: string;
   usage: BuildAgentUsage;
+  language: "python" | "java";
 }): Promise<boolean> {
   const callerPort = Number(process.env.EVAL_A2A_PORT ?? 9000);
   const targetPort = callerPort + 1;
@@ -268,10 +277,10 @@ async function runA2ADelegationEval(opts: {
   };
   process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
 
-  const start = (label: string, module: string, port: number) => {
-    const agent = spawn("uv", ["run", "uvicorn", `${module}:app`, "--host", "0.0.0.0", "--port", String(port)], {
+  const start = (label: string, command: string, args: string[], env: NodeJS.ProcessEnv) => {
+    const agent = spawn(command, args, {
       cwd: opts.templateDir,
-      env: { ...process.env },
+      env,
       detached: true,
     });
     agent.stderr?.on("data", (d: Buffer) => process.stderr.write(`[${label}] ${d}`));
@@ -309,9 +318,11 @@ async function runA2ADelegationEval(opts: {
       targetBaseUrl: targetUrl,
     });
 
-    console.log("\n3. Pre-warming the template's uv environment...");
-    await execFileAsync("uv", ["sync"], { cwd: opts.templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
-    console.log("   uv sync complete");
+    const java = opts.language === "java";
+    const [command, args] = java ? ["./gradlew", ["installDist"]] : ["uv", ["sync"]];
+    console.log(java ? "\n3. Pre-warming the template with Gradle..." : "\n3. Pre-warming the template's uv environment...");
+    await execFileAsync(command, args, { cwd: opts.templateDir, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
+    console.log(java ? "   ./gradlew installDist complete" : "   uv sync complete");
 
     console.log("\n4. Running agent (verify config + build)...");
     const buildOptions = {
@@ -319,8 +330,8 @@ async function runA2ADelegationEval(opts: {
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       resourceIdentifier: provisioned.callerResourceIdentifier,
       usage: opts.usage,
-      language: "python" as const,
-      notes: DELEGATION_BUILD_NOTES,
+      language: opts.language,
+      notes: java ? JAVA_DELEGATION_BUILD_NOTES : DELEGATION_BUILD_NOTES,
     };
     let build = await runBuildAgent(buildOptions);
     if (!build.success) {
@@ -347,8 +358,29 @@ async function runA2ADelegationEval(opts: {
     console.log(`   User token: sub ${String(identity.claims.sub)}, aud ${JSON.stringify(identity.claims.aud)}`);
 
     console.log("\n6. Starting the target and the caller...");
-    start("target", "target_agent", targetPort);
-    start("caller", "caller_agent", callerPort);
+    if (java) {
+      const script = `./build/install/${opts.templateName}/bin/${opts.templateName}`;
+      // The Java agents take the provisioned .env values through the process environment.
+      const agentEnv = {
+        ...process.env,
+        KEYCARD_URL: provisioned.zoneIssuerUrl,
+        CALLER_BASE_URL: provisioned.callerResourceIdentifier,
+        TARGET_BASE_URL: provisioned.targetResourceIdentifier,
+      };
+      start("target", script, ["target"], { ...agentEnv, PORT: String(targetPort) });
+      start("caller", script, ["caller"], {
+        ...agentEnv,
+        PORT: String(callerPort),
+        KEYCARD_CLIENT_ID: provisioned.callerClientId,
+        KEYCARD_CLIENT_SECRET: provisioned.callerClientSecret,
+      });
+    } else {
+      const startPython = (role: "caller" | "target", port: number) => {
+        start(role, "uv", ["run", "uvicorn", `${role}_agent:app`, "--host", "0.0.0.0", "--port", String(port)], { ...process.env });
+      };
+      startPython("target", targetPort);
+      startPython("caller", callerPort);
+    }
     await waitForHealthz(targetUrl, "target");
     await waitForHealthz(callerUrl, "caller");
     console.log("   Both agents ready");
