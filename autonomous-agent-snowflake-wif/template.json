@@ -11,5 +11,5 @@
     "@keycardai/mcp",
     "@keycardai/oauth"
   ],
-  "description": "Query Snowflake from an autonomous agent using workload identity federation instead of a shared secret."
+  "description": "Connect an autonomous agent to Snowflake with workload identity federation instead of a shared secret."
 }

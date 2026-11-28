@@ -44,7 +44,7 @@ for SDK experiments, local template runs, and CI tests.
 | [`a2a-delegation-python`](./a2a-delegation-python) | A2A delegation | Python | Starlette | `keycardai-a2a`, `keycardai-starlette` | Delegate a user's A2A request to a target agent that reports the verified identity claims. |
 | [`a2a-delegation-java`](./a2a-delegation-java) | A2A delegation | Java | Jetty (Servlet), a2a-java | `ai.keycard:keycard-a2a`, `ai.keycard:keycard-mcp` | Delegate a user's A2A request to a target agent that reports the verified identity claims. |
 | [`agent-python-langchain`](./agent-python-langchain) | Workload identity, Agent frameworks | Python | LangChain | `keycardai-langchain`, `keycardai-oauth` | Use Fly workload identity and broker per-tool-call access to Google Calendar in a LangChain agent. |
-| [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Workload identity | TypeScript | `pi-agent-core`, `pi-ai` | `@keycardai/a2a`, `@keycardai/express`, `@keycardai/mcp`, `@keycardai/oauth` | Query Snowflake from an autonomous agent using workload identity federation instead of a shared secret. |
+| [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif) | Workload identity | TypeScript | `pi-agent-core`, `pi-ai` | `@keycardai/a2a`, `@keycardai/express`, `@keycardai/mcp`, `@keycardai/oauth` | Connect an autonomous agent to Snowflake with workload identity federation instead of a shared secret. |
 | [`delegated-access-typescript-cloudflare`](./delegated-access-typescript-cloudflare) | Workload identity | TypeScript | Cloudflare Workers | `@keycardai/cloudflare`, `@keycardai/oauth` | Use a Worker's keypair identity to exchange a user's token and call a protected downstream resource. |
 
 <!-- END TEMPLATE TABLE -->
