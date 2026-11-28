@@ -100,30 +100,35 @@ if [ "$GATE_OK" = "true" ] \
   && [ "$VERIFY_RESULT" != "failure" ] \
   && [ "$EVAL_RESULT" != "failure" ] \
   && { [ "$VERIFY_RESULT" = "cancelled" ] || [ "$EVAL_RESULT" = "cancelled" ]; }; then
-  if [ "$pr_state" != "open" ]; then
-    echo "PR #${PR_NUMBER} is no longer open (state: ${pr_state}); skipping requeue."
-    exit 0
-  fi
-
-  if [ "$current_sha" != "$HEAD_SHA" ]; then
-    echo "PR #${PR_NUMBER} head SHA changed (${current_sha} != ${HEAD_SHA}); skipping requeue."
-    exit 0
-  fi
-
-  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    next_attempt=$((attempt + 1))
-    if gh workflow run dependency-bump.yml --repo "$GITHUB_REPOSITORY" --ref main -f "pr=${PR_NUMBER}" -f "attempt=${next_attempt}"; then
-      set_status "pending" "Requeued after cancellation"
-      echo "Requeued PR #${PR_NUMBER} (attempt ${next_attempt} of ${MAX_ATTEMPTS}) after cancellation."
+  started_cancelled=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" \
+    --jq '.jobs[] | select(.conclusion == "cancelled" and ((.steps // []) | length > 0)) | .name' \
+    | paste -sd ", " - || true)
+  if [ -z "$started_cancelled" ]; then
+    if [ "$pr_state" != "open" ]; then
+      echo "PR #${PR_NUMBER} is no longer open (state: ${pr_state}); skipping requeue."
       exit 0
     fi
-    echo "::warning::Failed to requeue PR #${PR_NUMBER} after cancellation."
-  fi
 
-  set_status "pending" "Cancelled after ${attempt} attempt(s); rerun via workflow_dispatch"
-  body="${MARKER}"$'\n'"Dependency bump verify/eval was cancelled at \`${HEAD_SHA}\` after ${attempt} attempt(s) and needs a manual rerun via \`workflow_dispatch\` (\`gh workflow run dependency-bump.yml -f pr=${PR_NUMBER}\`). See the [Dependency Bump run](${RUN_URL}).${security_note}"
-  upsert_comment "$body"
-  exit 0
+    if [ "$current_sha" != "$HEAD_SHA" ]; then
+      echo "PR #${PR_NUMBER} head SHA changed (${current_sha} != ${HEAD_SHA}); skipping requeue."
+      exit 0
+    fi
+
+    if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+      next_attempt=$((attempt + 1))
+      if gh workflow run dependency-bump.yml --repo "$GITHUB_REPOSITORY" --ref main -f "pr=${PR_NUMBER}" -f "attempt=${next_attempt}"; then
+        set_status "pending" "Requeued after cancellation"
+        echo "Requeued PR #${PR_NUMBER} (attempt ${next_attempt} of ${MAX_ATTEMPTS}) after cancellation."
+        exit 0
+      fi
+      echo "::warning::Failed to requeue PR #${PR_NUMBER} after cancellation."
+    fi
+
+    set_status "pending" "Cancelled after ${attempt} attempt(s); rerun via workflow_dispatch"
+    body="${MARKER}"$'\n'"Dependency bump verify/eval was cancelled at \`${HEAD_SHA}\` after ${attempt} attempt(s) and needs a manual rerun via \`workflow_dispatch\` (\`gh workflow run dependency-bump.yml -f pr=${PR_NUMBER}\`). See the [Dependency Bump run](${RUN_URL}).${security_note}"
+    upsert_comment "$body"
+    exit 0
+  fi
 fi
 
 failed_stage=""

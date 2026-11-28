@@ -80,7 +80,7 @@ jobs:
 
   result:
     needs: [gate, verify, eval]
-    if: always() && needs.gate.outputs.pr != ''
+    if: ${{ !cancelled() && needs.gate.outputs.pr != '' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

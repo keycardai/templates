@@ -175,10 +175,16 @@ and skips live-zone checks on those PRs. When Template CI finishes,
    Template CI run.
 2. **Verify and eval**: calls `Template CI` and then `Template Eval` for the
    touched template(s) at the PR head SHA with secrets.
-3. **Result**: sets the `dependency-bump/verify-eval` commit status. When both
-   pass and the PR head SHA is unchanged, it squash-merges the PR. On failure,
-   it leaves the PR open and creates or updates a single PR comment naming the
-   failed stage and linking the run.
+3. **Result** ([`.github/scripts/bump-result.sh`](./.github/scripts/bump-result.sh)):
+   sets the `dependency-bump/verify-eval` commit status. When both pass and the
+   PR head SHA is unchanged, it squash-merges the PR and dispatches `Template CI`
+   on `main`. If `verify` or `eval` is cancelled while queued (nothing failed
+   and the run was not manually cancelled), it requeues `Dependency Bump` via
+   `workflow_dispatch` with an incremented `attempt` input (up to 3 attempts)
+   and sets a `pending` status; after 3 cancelled attempts it leaves a neutral
+   comment requesting a manual rerun. On failure, it leaves the PR open and
+   creates or updates a single PR comment naming the failed stage and linking
+   the run.
 
 Bump evals share the `template-eval-zone` concurrency group in
 [`eval.yml`](./.github/workflows/eval.yml) (`cancel-in-progress: false`,

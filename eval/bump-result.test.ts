@@ -19,7 +19,7 @@ interface ResultOptions {
   attempt?: string;
   pr?: Record<string, unknown>;
   comments?: Array<{ id: number; body: string }>;
-  jobs?: Array<{ name: string; conclusion: string | null }>;
+  jobs?: Array<{ name: string; conclusion: string | null; steps?: Array<{ name: string }> }>;
 }
 
 function runResult(opts: ResultOptions = {}) {
@@ -190,6 +190,26 @@ test("skips requeue if PR head SHA changed before cancellation completed", () =>
   });
   assert.equal(res.status, 0);
   assert.equal(res.calls.length, 0);
+});
+
+test("treats mid-execution cancelled job (e.g. timeout) as failure instead of requeuing", () => {
+  const res = runResult({
+    verifyResult: "success",
+    evalResult: "cancelled",
+    attempt: "1",
+    jobs: [
+      {
+        name: "eval / eval (mcp-server-typescript-express)",
+        conclusion: "cancelled",
+        steps: [{ name: "Run eval" }],
+      },
+    ],
+  });
+  assert.equal(res.status, 1);
+  assert.equal(res.calls.find((c) => c.cmd === "workflow_run"), undefined);
+  const statusCall = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/statuses/"));
+  assert.ok(statusCall);
+  assert.ok(statusCall.fields.includes("state=failure"));
 });
 
 test("does not show security note on non-security PR even when body mentions security", () => {
