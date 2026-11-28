@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { matchesPublicKey, readQuickTunnelUrl, verifyWorker } from "./verify-cloudflare.js";
 import type { StubRequestRecord } from "./calendar-stub.js";
+import { cloudflareProvisioning } from "./provision-cloudflare.js";
 
 test("finds the quick tunnel URL in cloudflared output, not the signup URL", () => {
   assert.equal(readQuickTunnelUrl("INF requesting Tunnel on trycloudflare.com"), undefined);
@@ -42,4 +43,52 @@ test("checks the fresh downstream request, including the expected user and resou
   assert.deepEqual((await verifyWorker({ ...opts, requests })).map(({ ok }) => ok), [true, true, true, true, true]);
   current = { ...record, claims: { sub: "different-user", aud: ["https://other.example.test/"] } };
   assert.deepEqual((await verifyWorker({ ...opts, requests })).map(({ ok }) => ok), [true, true, false, false, true]);
+});
+
+test("removes resources with matching identifiers before provisioning replacements", async (t) => {
+  const endpoint = process.env.CI_KEYCARD_ENDPOINT;
+  process.env.CI_KEYCARD_ENDPOINT = "https://management.example.test";
+  t.after(() => {
+    if (endpoint === undefined) delete process.env.CI_KEYCARD_ENDPOINT;
+    else process.env.CI_KEYCARD_ENDPOINT = endpoint;
+  });
+  const workerResource = "http://127.0.0.1:8787/call";
+  const downstreamResource = "http://127.0.0.1:8901/calendars/primary/events";
+  const changes: string[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, options?: RequestInit) => {
+    const path = new URL(url).pathname.replace("/zones/test/", "");
+    const method = options?.method ?? "GET";
+    if (method === "GET" && path === "providers") {
+      return Response.json({ items: [{ id: "provider", type: "keycard-sts" }] });
+    }
+    if (method === "POST" && path === "applications") return Response.json({ id: "app" });
+    if (method === "POST" && path === "application-credentials") {
+      return Response.json({ id: "password", identifier: "fixture-id", password: "fixture-password" });
+    }
+    if (method === "GET" && path === "resources") {
+      return Response.json({ items: [
+        { id: "stale-worker", identifier: workerResource },
+        { id: "stale-downstream", identifier: downstreamResource },
+      ] });
+    }
+    if (method === "DELETE" && path.startsWith("resources/")) {
+      changes.push(`delete ${path}`);
+      return new Response(null, { status: 204 });
+    }
+    if (method === "POST" && path === "resources") {
+      const { identifier } = JSON.parse(String(options?.body)) as { identifier: string };
+      changes.push(`create ${identifier}`);
+      return Response.json({ id: identifier === workerResource ? "worker" : "downstream" });
+    }
+    if (method === "PUT" && path.startsWith("applications/app/dependencies/")) {
+      return new Response(null, { status: 204 });
+    }
+    throw new Error("Reached permit setup");
+  });
+  const provision = cloudflareProvisioning("test", "fixture-management-token");
+  await assert.rejects(provision.provision({ runId: "fixture", workerResource, downstreamResource }), /Reached permit setup/);
+  assert.deepEqual(changes, [
+    "delete resources/stale-worker", `create ${workerResource}`,
+    "delete resources/stale-downstream", `create ${downstreamResource}`,
+  ]);
 });
