@@ -1,4 +1,4 @@
-import { findResourceIdByIdentifier, keycardEndpoint } from "./provision.js";
+import { keycardEndpoint } from "./provision.js";
 import { getStsProviderId } from "./zone.js";
 import { ensureEvalImpersonationPermit } from "./policy.js";
 
@@ -46,17 +46,6 @@ export function cloudflareProvisioning(zoneId: string, token: string) {
         ["worker", opts.workerResource, true],
         ["downstream", opts.downstreamResource, false],
       ] as const) {
-        const stale = await findResourceIdByIdentifier(zoneId, token, identifier);
-        if (stale) {
-          const response = await fetch(`${base}/resources/${stale}`, {
-            method: "DELETE",
-            headers: authorization,
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (!response.ok && response.status !== 404) {
-            throw new Error(`Delete stale ${name} resource failed: ${response.status}`);
-          }
-        }
         const resource = await create("resources", {
           name: `eval-resource-${name}-${opts.runId}`,
           identifier,

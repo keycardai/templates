@@ -2,7 +2,7 @@
 
 End-to-end eval harness for Keycard templates. Tests whether a Claude agent can correctly follow a template's `SPEC.md` to provision Keycard resources and produce a working, Keycard-authenticated project.
 
-There are two flows, picked automatically from the template's shape.
+The harness picks a flow automatically from the template's shape.
 
 ## Server templates (inbound auth)
 
@@ -83,13 +83,22 @@ eval does not repeat any of it.
 
 A `wrangler.jsonc`, `wrangler.json`, or `wrangler.toml` selects the headless
 Cloudflare flow. It requires the persistent eval zone and an existing
-`EVAL_TEST_USER_EMAIL` zone user. Do not run it concurrently with another
-eval using that zone.
+`EVAL_TEST_USER_EMAIL` zone user. The workflow supports parallel matrix jobs
+within a run; do not start a separate local eval against the shared zone
+while the workflow is using it.
 
-1. The harness provisions an implicit-consent application with a password
+1. The shared abandoned-provisioning sweep removes only matching eval
+   applications and resources older than 12 hours. The harness then
+   provisions an implicit-consent application with a password
    credential for harness-only user impersonation. Both HTTP resources use
    the Zone Provider: the Worker owns the inbound audience and depends on
-   the downstream stub. The existing scoped impersonation permit is reused.
+   the downstream stub. Their identifiers use the same per-run
+   `*.localhost` hostnames as other flows, so parallel matrix jobs do not
+   share audiences. As elsewhere, the eval entry point adds that hostname
+   to the proxy exclusions. The harness probes the Worker at `127.0.0.1`
+   and sets `KEYCARD_RESOURCE_ENDPOINT` to reach the local stub on
+   `127.0.0.1` without changing the token audience. The existing scoped
+   impersonation permit is reused.
 2. The build agent installs and builds from SPEC.md without credentials.
    The harness then generates a per-run RSA PKCS#8 key and writes it to the
    gitignored `.dev.vars` file with mode 0600 before starting local Wrangler.

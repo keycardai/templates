@@ -35,7 +35,7 @@ its first request other than `GET /healthz` and reuses them until a binding chan
 
 ## Configuration
 
-All Worker bindings are required and have no default.
+Worker bindings are required except where noted.
 
 | Binding | Purpose |
 |---|---|
@@ -43,4 +43,10 @@ All Worker bindings are required and have no default.
 | `KEYCARD_PRIVATE_KEY` | RSA private key in PKCS#8 PEM format |
 | `KEYCARD_CLIENT_ID` | Identifier of the application's public-key credential |
 | `KEYCARD_WORKER_RESOURCE` | Exact resource identifier for `/call` and expected inbound token audience |
-| `KEYCARD_RESOURCE_URL` | Exact downstream resource identifier and HTTP endpoint to call |
+| `KEYCARD_RESOURCE_URL` | Exact downstream resource identifier used for token exchange, and the HTTP endpoint by default |
+| `KEYCARD_RESOURCE_ENDPOINT` | Optional HTTP endpoint if it differs from the registered downstream identifier |
+
+For the [shared test zone](../docs/shared-test-zone.md), use unique resource
+identifiers rather than the default loopback URLs. Template Eval registers
+per-run `*.localhost` audiences and routes HTTP requests to the local
+Worker and stub on `127.0.0.1`.

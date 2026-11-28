@@ -15,13 +15,19 @@ them if the bindings change.
    Worker. In headless eval the harness sets implicit consent.
 2. Create a native HTTP Resource for `GET /call` owned by that Application,
    with the Zone Provider as its credential provider. For the default local
-   port use `http://127.0.0.1:8787/call`, or use the URL configured by the
-   harness. The exact identifier is the required inbound token audience.
+   port in a private zone use `http://127.0.0.1:8787/call`. In the
+   [shared test zone](../docs/shared-test-zone.md), use a unique identifier
+   instead. The exact identifier is the required inbound token audience,
+   independent of the URL the caller uses to reach the Worker.
 3. Create a second native HTTP Resource for the downstream GET endpoint
-   using the Zone Provider. Its identifier is the exact URL the Worker
-   calls. Add the downstream Resource as an Application dependency. The
+   using the Zone Provider. Use its exact registered identifier for token
+   exchange and, by default, the HTTP request. Set `KEYCARD_RESOURCE_ENDPOINT`
+   if the HTTP request must go to a different URL. Add the downstream
+   Resource as an Application dependency. The
    endpoint must verify Keycard bearer tokens for its own audience and must
-   not echo credentials. The eval harness starts a local stub for this.
+   not echo credentials. The eval harness registers both audiences on a
+   per-run `*.localhost` hostname, but probes the Worker and calls the
+   downstream stub on `127.0.0.1`.
 4. Generate a fresh RSA 2048 PKCS#8 key with `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048`
    and store it only in the private, gitignored `.dev.vars` file. Choose the
    application's public-key credential identifier before starting the Worker
@@ -43,7 +49,8 @@ headless impersonation mint; do not broaden it.
 ## Configuration to write
 
 Use `.env.example` as the list of bindings, but write the real values to
-gitignored `.dev.vars` (mode 0600), not to `.env`. All bindings are required:
+gitignored `.dev.vars` (mode 0600), not to `.env`. Bindings are required
+unless marked optional:
 
 | Key | Value |
 |---|---|
@@ -51,7 +58,8 @@ gitignored `.dev.vars` (mode 0600), not to `.env`. All bindings are required:
 | `KEYCARD_PRIVATE_KEY` | Fresh PKCS#8 PEM enclosed in double quotes |
 | `KEYCARD_CLIENT_ID` | Identifier chosen for the public-key credential |
 | `KEYCARD_WORKER_RESOURCE` | Exact identifier of the Resource owned by the Worker Application |
-| `KEYCARD_RESOURCE_URL` | Exact identifier and URL of the downstream Resource |
+| `KEYCARD_RESOURCE_URL` | Exact identifier of the downstream Resource and its default HTTP endpoint |
+| `KEYCARD_RESOURCE_ENDPOINT` | Optional HTTP endpoint when it differs from the registered downstream identifier |
 
 In `keycard.toml`, set `[org] id` and `[zone] id` to the selected Keycard
 org and zone IDs. Leave `[credentials]` empty.

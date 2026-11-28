@@ -9,7 +9,8 @@ import { startCalendarStub, type CalendarStub } from "./calendar-stub.js";
 import { impersonateUser, resolveZoneUserIdentifier } from "./impersonate.js";
 import { writeKeycardToml } from "./keycard-toml.js";
 import { cloudflareProvisioning } from "./provision-cloudflare.js";
-import { cleanupStaleProvisonings } from "./provision.js";
+import { EvalProvisioning } from "./provision.js";
+import { evalOrigin } from "./run-identity.js";
 import { stopProcessGroup } from "./stop.js";
 import {
   matchesPublicKey, readQuickTunnelUrl, redactProcessOutput, verifyClientAssertion, verifyWorker, type Check, type WorkerEnv,
@@ -136,8 +137,11 @@ export async function runCloudflareEval(opts: {
     const port = readPort("EVAL_WORKER_PORT", 8787);
     const stubPort = readPort("EVAL_STUB_PORT", 8901);
     const base = `http://127.0.0.1:${port}`;
-    const workerResource = `${base}/call`;
-    const downstreamResource = `http://127.0.0.1:${stubPort}/calendars/primary/events`;
+    const workerUrl = `${base}/call`;
+    const workerResource = `${evalOrigin(runId, port)}/call`;
+    const downstreamPath = "/calendars/primary/events";
+    const downstreamResource = `${evalOrigin(runId, stubPort)}${downstreamPath}`;
+    const downstreamEndpoint = `http://127.0.0.1:${stubPort}${downstreamPath}`;
     const clientId = `eval-cf-${runId}`;
     console.log("1. Selecting the eval zone and removing stale runs...");
     const { zone, token, ephemeral } = await trackSetup(getOrCreateEvalZone(runId).then((result) => {
@@ -148,7 +152,8 @@ export async function runCloudflareEval(opts: {
     if (ephemeral) {
       throw new Error("Cloudflare eval needs the persistent eval zone and an existing test user");
     }
-    await cleanupStaleProvisonings(zone.id, token);
+    await new EvalProvisioning(zone.id, token).sweepStale();
+    abort.signal.throwIfAborted();
     const userIdentifier = await resolveZoneUserIdentifier(zone.id, email, token);
     abort.signal.throwIfAborted();
 
@@ -186,6 +191,7 @@ export async function runCloudflareEval(opts: {
       KEYCARD_CLIENT_ID: clientId,
       KEYCARD_WORKER_RESOURCE: workerResource,
       KEYCARD_RESOURCE_URL: downstreamResource,
+      KEYCARD_RESOURCE_ENDPOINT: downstreamEndpoint,
     };
     await trackSetup((async () => {
       const vars = await fs.open(varsPath, "wx", 0o600);
@@ -242,7 +248,7 @@ export async function runCloudflareEval(opts: {
 
     console.log("6. Verifying delegated access and capturing the SDK assertion in Node...");
     checks.push(...await verifyWorker({
-      workerResource, downstreamResource, userToken: user.accessToken, userIdentifier, clientId, requests: calendar.requests,
+      workerUrl, downstreamResource, userToken: user.accessToken, userIdentifier, clientId, requests: calendar.requests,
     }));
     checks.push(...await verifyClientAssertion(templateDir, env));
     abort.signal.throwIfAborted();

@@ -14,6 +14,7 @@ export interface WorkerEnv {
   KEYCARD_CLIENT_ID: string;
   KEYCARD_WORKER_RESOURCE: string;
   KEYCARD_RESOURCE_URL: string;
+  KEYCARD_RESOURCE_ENDPOINT?: string;
 }
 
 export function readQuickTunnelUrl(output: string): string | undefined {
@@ -39,16 +40,16 @@ export async function matchesPublicKey(jwksUrl: string, expected: { n?: string; 
 }
 
 export async function verifyWorker(opts: {
-  workerResource: string;
+  workerUrl: string;
   downstreamResource: string;
   userToken: string;
   userIdentifier: string;
   clientId: string;
   requests: StubRequestRecord[];
 }): Promise<Check[]> {
-  const { workerResource, downstreamResource, userToken, userIdentifier, clientId, requests } = opts;
+  const { workerUrl, downstreamResource, userToken, userIdentifier, clientId, requests } = opts;
   const first = requests.length;
-  const response = await fetch(workerResource, {
+  const response = await fetch(workerUrl, {
     headers: { Authorization: `Bearer ${userToken}` },
     signal: AbortSignal.timeout(30_000),
     redirect: "error",
@@ -57,7 +58,7 @@ export async function verifyWorker(opts: {
     ? await response.json() as { kind?: string }
     : (await response.body?.cancel(), undefined);
   const verified = requests.slice(first).find((request) => request.status === 200);
-  const denied = await fetch(workerResource, { signal: AbortSignal.timeout(5_000), redirect: "error" });
+  const denied = await fetch(workerUrl, { signal: AbortSignal.timeout(5_000), redirect: "error" });
   await denied.body?.cancel();
   const aud = verified?.claims?.aud;
   const clientMatches = verified?.claims?.client_id === clientId;

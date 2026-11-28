@@ -7,6 +7,7 @@ interface Env {
   KEYCARD_PRIVATE_KEY: string;
   KEYCARD_CLIENT_ID: string;
   KEYCARD_RESOURCE_URL: string;
+  KEYCARD_RESOURCE_ENDPOINT?: string;
   KEYCARD_WORKER_RESOURCE: string;
 }
 
@@ -29,7 +30,7 @@ function buildProtectedWorker(env: Env) {
       if (!auth.subject) return new Response("Missing token subject", { status: 401 });
 
       const token = await cache.getToken(auth.subject, auth.token, env.KEYCARD_RESOURCE_URL);
-      const downstream = await fetch(env.KEYCARD_RESOURCE_URL, {
+      const downstream = await fetch(env.KEYCARD_RESOURCE_ENDPOINT ?? env.KEYCARD_RESOURCE_URL, {
         headers: { Authorization: `Bearer ${token.accessToken}` },
         redirect: "manual",
       });
@@ -42,9 +43,10 @@ function buildProtectedWorker(env: Env) {
 }
 
 const bindingNames = [
-  "KEYCARD_ISSUER", "KEYCARD_PRIVATE_KEY", "KEYCARD_CLIENT_ID", "KEYCARD_RESOURCE_URL", "KEYCARD_WORKER_RESOURCE",
+  "KEYCARD_ISSUER", "KEYCARD_PRIVATE_KEY", "KEYCARD_CLIENT_ID", "KEYCARD_RESOURCE_URL",
+  "KEYCARD_RESOURCE_ENDPOINT", "KEYCARD_WORKER_RESOURCE",
 ] as const satisfies readonly (keyof Env)[];
-let state: { bindings: string[]; handler: ReturnType<typeof buildProtectedWorker> } | undefined;
+let state: { bindings: Array<string | undefined>; handler: ReturnType<typeof buildProtectedWorker> } | undefined;
 
 function safeErrorText(value: string, request: Request, env: Env): string {
   const token = request.headers.get("Authorization")?.match(/^Bearer\s+(\S+)/i)?.[1];

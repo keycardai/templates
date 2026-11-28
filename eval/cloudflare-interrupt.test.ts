@@ -18,11 +18,14 @@ test("SIGTERM cleans up provisioned objects without waiting for the build agent"
 
   const removed: string[] = [];
   let resourceCount = 0;
+  const registeredResources: string[] = [];
+  const runId = "delegated-access-typescript-cloudflare--123-1";
   let startBuild!: () => void;
   const building = new Promise<void>((resolve) => { startBuild = resolve; });
   const server = createServer((request, response) => {
-    request.resume();
-    const path = new URL(request.url ?? "/", "http://fixture.test").pathname.replace("/zones/test/", "");
+    const url = new URL(request.url ?? "/", "http://fixture.test");
+    const path = url.pathname.replace("/zones/test/", "");
+    if (path !== "resources" || request.method !== "POST") request.resume();
     const json = (value: unknown) => {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify(value));
@@ -37,7 +40,25 @@ test("SIGTERM cleans up provisioned objects without waiting for the build agent"
     switch (path) {
       case "/service-account-token": return json({ access_token: "fixture" });
       case "applications": return json(request.method === "POST" ? { id: "app" } : { items: [] });
-      case "resources": return json(request.method === "POST" ? { id: `resource-${++resourceCount}` } : { items: [] });
+      case "resources":
+        if (request.method === "POST") {
+          let body = "";
+          request.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+          request.on("end", () => {
+            registeredResources.push(JSON.parse(body).identifier);
+            json({ id: `resource-${++resourceCount}` });
+          });
+          return;
+        }
+        if (url.searchParams.get("query[name]") !== "eval-resource-") {
+          return response.writeHead(400).end();
+        }
+        return json({ items: [
+          { id: "abandoned-run", name: "eval-resource-worker-delegated-access-typescript-cloudflare--121-1",
+            created_at: new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString() },
+          { id: "active-run", name: "eval-resource-worker-delegated-access-typescript-cloudflare--122-1",
+            created_at: new Date().toISOString() },
+        ] });
       case "providers": return json({ items: [{ id: "sts", type: "keycard-sts" }] });
       case "users": return json({ items: [{ identifier: "fixture-user" }] });
       case "application-credentials": return json({ id: "credential", identifier: "fixture-id", password: "fixture-password" });
@@ -61,7 +82,7 @@ test("SIGTERM cleans up provisioned objects without waiting for the build agent"
     import { runCloudflareEval } from ${JSON.stringify(moduleUrl)};
     await runCloudflareEval({
       templateDir: ${JSON.stringify(templateDir)}, wranglerConfig: "wrangler.jsonc",
-      runId: "fixture", usage: {}, notes: "",
+      runId: ${JSON.stringify(runId)}, usage: {}, notes: "",
     });
   `], {
     cwd: dirname(fileURLToPath(import.meta.url)),
@@ -71,6 +92,8 @@ test("SIGTERM cleans up provisioned objects without waiting for the build agent"
       EVAL_ZONE_ID: "test",
       EVAL_ZONE_ISSUER_URL: "https://zone.example.test",
       EVAL_TEST_USER_EMAIL: "test@example.test",
+      EVAL_WORKER_PORT: "8787",
+      EVAL_STUB_PORT: "8901",
       ANTHROPIC_BASE_URL: endpoint,
       ANTHROPIC_API_KEY: "fixture",
     },
@@ -84,7 +107,12 @@ test("SIGTERM cleans up provisioned objects without waiting for the build agent"
   child.kill("SIGTERM");
   assert.deepEqual(await exit, [1, null]);
   assert.match(stderr, /Cloudflare eval interrupted; cleaning up/);
+  assert.deepEqual(registeredResources, [
+    "http://delegated-access-typescript-cloudflare.123-1.localhost:8787/call",
+    "http://delegated-access-typescript-cloudflare.123-1.localhost:8901/calendars/primary/events",
+  ]);
   assert.deepEqual(removed, [
+    "resources/abandoned-run",
     "application-credentials/credential", "applications/app", "resources/resource-1", "resources/resource-2",
   ]);
   assert.equal(await readFile(join(templateDir, "keycard.toml"), "utf8"), toml);

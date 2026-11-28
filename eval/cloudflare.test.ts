@@ -3,6 +3,7 @@ import test from "node:test";
 import { matchesPublicKey, readQuickTunnelUrl, redactProcessOutput, verifyWorker } from "./verify-cloudflare.js";
 import type { StubRequestRecord } from "./calendar-stub.js";
 import { cloudflareProvisioning } from "./provision-cloudflare.js";
+import { evalOrigin } from "./run-identity.js";
 
 test("finds the quick tunnel URL in cloudflared output, not the signup URL", () => {
   assert.equal(readQuickTunnelUrl("INF requesting Tunnel on trycloudflare.com"), undefined);
@@ -36,7 +37,7 @@ test("redacts bearer tokens, assertions, and PEM keys without hiding error descr
 test("checks the fresh downstream request, including the expected user, resource and credential", async (t) => {
   const downstreamResource = "https://resource.example.test/calendar";
   const opts = {
-    workerResource: "https://worker.example.test/call",
+    workerUrl: "http://127.0.0.1:8787/call",
     downstreamResource,
     userToken: "synthetic-user-token",
     userIdentifier: "test-user",
@@ -48,7 +49,8 @@ test("checks the fresh downstream request, including the expected user, resource
   };
   const requests: StubRequestRecord[] = [record];
   let current = record;
-  t.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(url, opts.workerUrl);
     if (!init.headers) return new Response(null, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
     requests.push(current);
     return Response.json({ kind: "calendar#events" });
@@ -60,15 +62,16 @@ test("checks the fresh downstream request, including the expected user, resource
   assert.deepEqual(log.mock.calls[0]?.arguments, ["Verified stub token claim names:", '["aud","client_id","sub"]']);
 });
 
-test("removes resources with matching identifiers before provisioning replacements", async (t) => {
+test("creates per-run Cloudflare resources without looking up or deleting existing resources", async (t) => {
   const endpoint = process.env.CI_KEYCARD_ENDPOINT;
   process.env.CI_KEYCARD_ENDPOINT = "https://management.example.test";
   t.after(() => {
     if (endpoint === undefined) delete process.env.CI_KEYCARD_ENDPOINT;
     else process.env.CI_KEYCARD_ENDPOINT = endpoint;
   });
-  const workerResource = "http://127.0.0.1:8787/call";
-  const downstreamResource = "http://127.0.0.1:8901/calendars/primary/events";
+  const runId = "delegated-access-typescript-cloudflare--123-1";
+  const workerResource = `${evalOrigin(runId, 8787)}/call`;
+  const downstreamResource = `${evalOrigin(runId, 8901)}/calendars/primary/events`;
   const changes: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string, options?: RequestInit) => {
     const path = new URL(url).pathname.replace("/zones/test/", "");
@@ -80,30 +83,21 @@ test("removes resources with matching identifiers before provisioning replacemen
     if (method === "POST" && path === "application-credentials") {
       return Response.json({ id: "password", identifier: "fixture-id", password: "fixture-password" });
     }
-    if (method === "GET" && path === "resources") {
-      return Response.json({ items: [
-        { id: "stale-worker", identifier: workerResource },
-        { id: "stale-downstream", identifier: downstreamResource },
-      ] });
-    }
-    if (method === "DELETE" && path.startsWith("resources/")) {
-      changes.push(`delete ${path}`);
-      return new Response(null, { status: 204 });
-    }
     if (method === "POST" && path === "resources") {
-      const { identifier } = JSON.parse(String(options?.body)) as { identifier: string };
-      changes.push(`create ${identifier}`);
+      const { name, identifier } = JSON.parse(String(options?.body)) as { name: string; identifier: string };
+      changes.push(`create ${name} ${identifier}`);
       return Response.json({ id: identifier === workerResource ? "worker" : "downstream" });
     }
     if (method === "PUT" && path.startsWith("applications/app/dependencies/")) {
       return new Response(null, { status: 204 });
     }
-    throw new Error("Reached permit setup");
+    if (path === "policy-sets") throw new Error("Reached permit setup");
+    assert.fail(`Unexpected management call: ${method} ${path}`);
   });
   const provision = cloudflareProvisioning("test", "fixture-management-token");
-  await assert.rejects(provision.provision({ runId: "fixture", workerResource, downstreamResource }), /Reached permit setup/);
+  await assert.rejects(provision.provision({ runId, workerResource, downstreamResource }), /Reached permit setup/);
   assert.deepEqual(changes, [
-    "delete resources/stale-worker", `create ${workerResource}`,
-    "delete resources/stale-downstream", `create ${downstreamResource}`,
+    `create eval-resource-worker-${runId} ${workerResource}`,
+    `create eval-resource-downstream-${runId} ${downstreamResource}`,
   ]);
 });
