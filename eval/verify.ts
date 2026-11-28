@@ -14,6 +14,7 @@ export interface VerifyResult {
 
 export interface VerifyOptions {
   serverUrl: string;
+  resourceIdentifier: string;
   accessToken: string;
   expectedIssuer?: string;
 }
@@ -57,14 +58,20 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     if (!match) {
       throw new Error(`Missing resource_metadata in WWW-Authenticate: ${wwwAuth}`);
     }
-    resourceMetadataUrl = match[1];
+    const advertised = new URL(match[1]);
+    const local = new URL(base);
+    local.pathname = advertised.pathname;
+    local.search = advertised.search;
+    resourceMetadataUrl = local.toString();
   }, checks);
 
   await check(".well-known/oauth-protected-resource returns JSON", async () => {
     const resp = await fetch(resourceMetadataUrl);
     if (!resp.ok) throw new Error(`Expected 200 from ${resourceMetadataUrl}, got ${resp.status}`);
     const body = await resp.json();
-    if (!body.resource) throw new Error(`Missing 'resource' field in response`);
+    if (body.resource !== opts.resourceIdentifier) {
+      throw new Error(`Expected resource ${opts.resourceIdentifier}, got ${body.resource}`);
+    }
   }, checks);
 
   await check(".well-known/oauth-authorization-server returns JSON", async () => {

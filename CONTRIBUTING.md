@@ -4,6 +4,9 @@ Each template is a runnable project in its own directory at the repo root.
 Before adding one, check the [template catalog](./README.md#available-templates)
 and pick the closest example for your language and Keycard flow.
 
+See the [shared SDK test zone guide](./docs/shared-test-zone.md) for manual
+testing, local template runs, and CI in another repository.
+
 ## Start a template
 
 From the repo root, copy the starter and use your new template's name:
@@ -120,10 +123,9 @@ gh workflow run "Template Eval" --ref <branch> -f template=<name>
 ```
 
 Never run two evals against the shared eval zone at once, including scheduled
-runs and anyone running locally against that zone. Jobs can collide on
-resource identifiers, and stale-provisioning cleanup can delete an
-application or resource another run is using. The matrix is serial within a
-workflow run, not across workflow runs.
+runs and anyone running locally against that zone. Each matrix job now uses
+its own resource identifiers and cleans up only what it created, but the
+shared-zone eval coverage rule still applies across workflow runs.
 
 Open the named template's **Run eval** step. A passing run shows
 `=== Results ===` with every check marked `✓`, ends with `✓ PASS`,
@@ -144,7 +146,7 @@ Start with an existing flow and use the narrowest hint if needed:
 | Hint | When to use it |
 |---|---|
 | `AGENT_NOTES` in [`eval/index.ts`](./eval/index.ts) | Tell the MCP build agent about deliberate differences between harness provisioning and the real setup in `SPEC.md`. These notes override the SPEC where they conflict. For example, a provisioned credential may only be injected at server startup, so the build agent should build but skip that smoke test. Do not use notes to mask a stale or incorrect SPEC. |
-| `SERVER_OVERRIDES` in [`eval/index.ts`](./eval/index.ts) | Set just the MCP startup `command` (executable and argument list), `port`, or `healthPath` if the language default, port `8000`, or `/healthz` does not fit. The harness uses the selected port and path for readiness, and the port for provisioning and cleanup. The final MCP verification still checks `/healthz`. |
+| `SERVER_OVERRIDES` in [`eval/index.ts`](./eval/index.ts) | Set just the MCP startup `command` (executable and argument list), `port`, or `healthPath` if the language default, port `8000`, or `/healthz` does not fit. The harness uses the selected port and path for readiness, and the port for the registered resource URL. The final MCP verification still checks `/healthz`. |
 | [`eval/eval-skip.txt`](./eval/eval-skip.txt) | Omit a template from the automatic matrix only if the harness has no compatible flow yet. Add one directory name per line and a `#` comment explaining why. A named dispatch bypasses this list. A skip is not coverage: get a compatible eval flow and a passing run before merging a new template. |
 
 See the [eval README](./eval/README.md) for local setup and runtime details.

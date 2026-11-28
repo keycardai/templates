@@ -15,7 +15,8 @@ import { writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
-import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./provision.js";
+import { EvalProvisioning, provision } from "./provision.js";
+import { addLoopbackProxyExclusion, evalHostname, evalRunId } from "./run-identity.js";
 import { runBuildAgent } from "./agent.js";
 import { BUILD_AGENT_MODEL, emptyBuildAgentUsage, formatBuildAgentUsage } from "./build-agent-usage.js";
 import { authenticateViaOAuth } from "./browser.js";
@@ -58,7 +59,9 @@ if (templateArg.startsWith("_") || path.basename(path.resolve(templateArg)).star
 }
 
 const TEMPLATE_DIR = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", templateArg);
-const RUN_ID = `${Date.now()}`;
+const RUN_ID = evalRunId(path.basename(TEMPLATE_DIR));
+addLoopbackProxyExclusion(process.env, evalHostname(RUN_ID));
+
 const buildAgentUsage = emptyBuildAgentUsage();
 
 function writeUsage(file: string | number | undefined, content: string, flag: "a" | "w"): void {
@@ -159,6 +162,8 @@ const SERVER_START: ServerStart = {
   port: SERVER_PORT,
   healthPath: override.healthPath ?? DEFAULT_HEALTH_PATH,
 };
+// Probe the listener with its local Host header. FastMCP's transport rejects
+// other hosts, even though the token audience and discovery use the job URL.
 const SERVER_URL = `http://localhost:${SERVER_START.port}`;
 
 async function killStaleServer(): Promise<void> {
@@ -208,8 +213,7 @@ if (isA2AAgent || isPythonA2AAgent) {
 
 let zoneId: string | undefined;
 let serverProcess: ReturnType<typeof execFile> | undefined;
-let provisioned: Awaited<ReturnType<typeof provision>> | undefined;
-let token: string | undefined;
+let provisioning: EvalProvisioning | undefined;
 let ephemeral = false;
 
 let cleanedUp = false;
@@ -217,17 +221,17 @@ async function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
   await stopProcessGroup(serverProcess);
-  if (provisioned && !ephemeral && token) {
-    await teardownProvisioning(provisioned, token).catch((e) => console.error("Resource cleanup failed:", e));
-    console.log("   Cleaned up app + resource");
-  }
+  if (!ephemeral) await provisioning?.cleanup();
   if (zoneId && ephemeral) {
     console.log(`\nCleaning up zone ${zoneId}...`);
     await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
   }
 }
 
-process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
+process.on("SIGINT", async () => {
+  await cleanup().catch(console.error);
+  process.exit(1);
+});
 
 console.log(`\n=== Keycard Template Eval ===`);
 console.log(`Template: ${templateArg}\nRun ID:   ${RUN_ID}\n`);
@@ -239,7 +243,7 @@ try {
   // 1. Create eval zone
   console.log("1. Creating eval zone...");
   const evalZone = await getOrCreateEvalZone(RUN_ID);
-  token = evalZone.token;
+  const { token } = evalZone;
   ephemeral = evalZone.ephemeral;
   const zone = evalZone.zone;
   zoneId = zone.id;
@@ -247,12 +251,14 @@ try {
 
   // 2. Provision resources + write config files
   console.log("\n2. Provisioning resources...");
-  await cleanupStaleProvisonings(zone.id, token);
-  provisioned = await provision({
+  provisioning = new EvalProvisioning(zone.id, token);
+  if (!ephemeral) await provisioning.sweepStale();
+  const provisioned = await provision({
     zoneId: zone.id,
     zoneIssuerUrl: zone.issuerUrl,
     runId: RUN_ID,
     token,
+    provisioning,
     templateDir: TEMPLATE_DIR,
     serverPort: SERVER_START.port,
   });
@@ -323,12 +329,13 @@ try {
   }
 
   // 5. Register user agent via DCR
+  // Public DCR reuses identical registrations; keep the name and callback stable.
   console.log("\n5. Registering user agent via DCR...");
   const dcrResp = await fetch(`${zone.issuerUrl}/oauth/2/registration`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_name: `eval-ua-${RUN_ID}`,
+      client_name: "template-eval",
       redirect_uris: ["http://localhost:8888/callback"],
       grant_types: ["authorization_code"],
       response_types: ["code"],
@@ -353,7 +360,11 @@ try {
 
   // 7. Verify
   console.log("\n7. Verifying server...");
-  const result = await verifyServer({ serverUrl: SERVER_URL, accessToken: auth.accessToken });
+  const result = await verifyServer({
+    serverUrl: SERVER_URL,
+    resourceIdentifier: provisioned.resourceIdentifier,
+    accessToken: auth.accessToken,
+  });
 
   console.log("\n=== Results ===");
   for (const c of result.checks) {

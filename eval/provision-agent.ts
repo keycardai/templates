@@ -28,13 +28,12 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { writeKeycardToml } from "./keycard-toml.js";
-import { keycardEndpoint, findResourceIdByIdentifier, type ProvisionedZone } from "./provision.js";
+import { keycardEndpoint, type EvalProvisioning, type ProvisionedZone } from "./provision.js";
 import { ensureEvalImpersonationPermit, EVAL_IMPERSONATION_POLICY_NAME } from "./policy.js";
 
 export interface ProvisionedAgent extends ProvisionedZone {
   /** Identifier of the resource the application owns, the exchange's first audience. */
   agentResourceIdentifier: string;
-  agentResourceId: string;
 }
 
 async function getZoneProviderId(zoneId: string, token: string): Promise<string> {
@@ -52,40 +51,24 @@ async function getZoneProviderId(zoneId: string, token: string): Promise<string>
   return zoneProvider.id;
 }
 
-/** Create a zone-native resource, replacing any leftover with the same identifier. */
+/** Create a zone-native resource. */
 async function createResource(opts: {
-  zoneId: string;
-  token: string;
+  provisioning: EvalProvisioning;
   name: string;
   identifier: string;
   providerId: string;
   applicationId?: string;
 }): Promise<string> {
-  const stale = await findResourceIdByIdentifier(opts.zoneId, opts.token, opts.identifier);
-  if (stale) {
-    await fetch(`${keycardEndpoint()}/zones/${opts.zoneId}/resources/${stale}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${opts.token}` },
-    });
-  }
-
-  const resp = await fetch(`${keycardEndpoint()}/zones/${opts.zoneId}/resources`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${opts.token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: opts.name,
-      identifier: opts.identifier,
-      credential_provider_id: opts.providerId,
-      application_type: "native",
-      // The tool calls a path under the resource identifier, so the grant has
-      // to cover the whole prefix rather than the bare base URL.
-      prefix: true,
-      ...(opts.applicationId ? { application_id: opts.applicationId } : {}),
-    }),
+  return opts.provisioning.create("resources", {
+    name: opts.name,
+    identifier: opts.identifier,
+    credential_provider_id: opts.providerId,
+    application_type: "native",
+    // The tool calls a path under the resource identifier, so the grant has
+    // to cover the whole prefix rather than the bare base URL.
+    prefix: true,
+    ...(opts.applicationId ? { application_id: opts.applicationId } : {}),
   });
-  if (!resp.ok) throw new Error(`Create resource ${opts.identifier} failed: ${resp.status} ${await resp.text()}`);
-  const { id } = (await resp.json()) as { id: string };
-  return id;
 }
 
 export async function provisionAgent(opts: {
@@ -93,15 +76,16 @@ export async function provisionAgent(opts: {
   zoneIssuerUrl: string;
   runId: string;
   token: string;
+  provisioning: EvalProvisioning;
   templateDir: string;
   /** Base URL of the local calendar stub, registered as the resource the agent calls. */
   calendarResourceIdentifier: string;
-  /** Base URL `langgraph dev` serves on, registered as the application's own resource. */
+  /** Audience for impersonated subject tokens, registered as the application's own resource. */
   agentResourceIdentifier: string;
   anthropicApiKey: string;
   anthropicModel: string;
 }): Promise<ProvisionedAgent> {
-  const { zoneId, zoneIssuerUrl, runId, token, templateDir } = opts;
+  const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir } = opts;
   const zoneProviderId = await getZoneProviderId(zoneId, token);
   console.log(`   Zone provider: ${zoneProviderId}`);
 
@@ -109,17 +93,11 @@ export async function provisionAgent(opts: {
   // consent: "implicit" pre-authorizes the application; SPEC.md keeps the
   // default for the shipped template because the consent screen is part of the
   // product demo, but it would deadlock a headless run.
-  const appResp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/applications`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: `eval-app-${runId}`,
-      identifier: `eval-app-${runId}`,
-      consent: "implicit",
-    }),
+  const applicationId = await provisioning.create("applications", {
+    name: `eval-app-${runId}`,
+    identifier: `eval-app-${runId}`,
+    consent: "implicit",
   });
-  if (!appResp.ok) throw new Error(`Create application failed: ${appResp.status} ${await appResp.text()}`);
-  const { id: applicationId } = (await appResp.json()) as { id: string };
   console.log(`   Application: ${applicationId}`);
 
   const credResp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/application-credentials`, {
@@ -138,8 +116,7 @@ export async function provisionAgent(opts: {
   console.log(`   Application credential: ${applicationClientId}`);
 
   const agentResourceId = await createResource({
-    zoneId,
-    token,
+    provisioning,
     name: `eval-resource-agent-${runId}`,
     identifier: opts.agentResourceIdentifier,
     providerId: zoneProviderId,
@@ -148,8 +125,7 @@ export async function provisionAgent(opts: {
   console.log(`   Agent resource: ${agentResourceId} (${opts.agentResourceIdentifier})`);
 
   const calendarResourceId = await createResource({
-    zoneId,
-    token,
+    provisioning,
     name: `eval-resource-calendar-${runId}`,
     identifier: opts.calendarResourceIdentifier,
     providerId: zoneProviderId,
@@ -204,28 +180,9 @@ export async function provisionAgent(opts: {
   console.log("   Wrote keycard.toml");
 
   return {
-    zoneId,
-    zoneIssuerUrl,
-    applicationId,
     applicationClientId,
     applicationClientSecret,
-    resourceId: calendarResourceId,
     resourceIdentifier: opts.calendarResourceIdentifier,
-    agentResourceId,
     agentResourceIdentifier: opts.agentResourceIdentifier,
   };
-}
-
-/** Delete both resources and the application created for an agent run. */
-export async function teardownAgentProvisioning(
-  provisioned: ProvisionedAgent,
-  token: string,
-): Promise<void> {
-  const headers = { Authorization: `Bearer ${token}` };
-  const base = `${keycardEndpoint()}/zones/${provisioned.zoneId}`;
-  await Promise.all([
-    fetch(`${base}/applications/${provisioned.applicationId}`, { method: "DELETE", headers }),
-    fetch(`${base}/resources/${provisioned.resourceId}`, { method: "DELETE", headers }),
-    fetch(`${base}/resources/${provisioned.agentResourceId}`, { method: "DELETE", headers }),
-  ]);
 }

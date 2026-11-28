@@ -28,7 +28,7 @@ export interface StubRequestRecord {
 }
 
 export interface CalendarStub {
-  /** Base URL the template's KEYCARD_RESOURCE points at. */
+  /** Local URL for harness probes. */
   url: string;
   requests: StubRequestRecord[];
   close: () => Promise<void>;
