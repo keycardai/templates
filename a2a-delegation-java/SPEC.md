@@ -32,7 +32,7 @@ set +a
 PORT=9100 bash scripts/ci-verify.sh
 ```
 
-The script starts `./build/install/a2a-delegation-java/bin/a2a-delegation-java` with roles `caller` and `target` on `PORT` and `PORT + 1`. If provisioned on different local ports, use the first of the two consecutive ports for the script. It checks `GET /healthz`, the A2A 1.0 JSONRPC card at `/.well-known/agent-card.json`, OAuth metadata, and 401 Bearer challenges from unauthenticated `POST /a2a/jsonrpc` on both agents.
+The script starts `./build/install/a2a-delegation-java/bin/a2a-delegation-java` with roles `caller` and `target` on `PORT` and `PORT + 1`. If provisioned on different local ports, use the first of the two consecutive ports for the script. It checks `GET /healthz`, the A2A 1.0 JSONRPC interface and bearer authentication requirement at `/.well-known/agent-card.json`, OAuth metadata, and 401 Bearer challenges from unauthenticated `POST /a2a/jsonrpc` on both agents.
 
 For authenticated verification, start the two roles and use the `SendMessage` command in [README.md](./README.md) with a user token for the caller. The target's report must have `sub` equal to the user, `act.sub` equal to the caller's Application identifier, and `aud` containing only `TARGET_BASE_URL`. Send the same request directly to the target with the same token to verify it returns 401 with `error="invalid_token"`.
 

@@ -33,9 +33,11 @@ import org.a2aproject.sdk.spec.AgentCapabilities;
 import org.a2aproject.sdk.spec.AgentCard;
 import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.HTTPAuthSecurityScheme;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.MethodNotFoundError;
 import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.SecurityRequirement;
 import org.a2aproject.sdk.spec.TextPart;
 import org.a2aproject.sdk.spec.VersionNotSupportedError;
 import org.eclipse.jetty.ee10.servlet.FilterHolder;
@@ -132,6 +134,12 @@ public final class Agent {
                         .description(description)
                         .tags(List.of("identity"))
                         .build()))
+                .securitySchemes(Map.of("keycard", HTTPAuthSecurityScheme.builder()
+                        .scheme("bearer")
+                        .bearerFormat("JWT")
+                        .description("A Keycard access token for this agent's resource URL")
+                        .build()))
+                .securityRequirements(List.of(new SecurityRequirement(Map.of("keycard", List.of()))))
                 .supportedInterfaces(List.of(new AgentInterface("JSONRPC", baseUrl + RPC_PATH, null, VERSION)))
                 .build();
         return ProtoJsonUtils.toJson(JsonFormat.printer(), ProtoUtils.ToProto.agentCard(card));

@@ -36,8 +36,11 @@ verify() {
   curl -fsS --max-time 5 "$base/healthz" >/dev/null
   curl -fsS --max-time 5 "$base/.well-known/agent-card.json" |
     jq -e --arg endpoint "$resource/a2a/jsonrpc" '
-      (.name | length > 0) and any(.supportedInterfaces[];
+      (.name | length > 0)
+      and any(.supportedInterfaces[];
         .protocolBinding == "JSONRPC" and .protocolVersion == "1.0" and .url == $endpoint)
+      and .securitySchemes.keycard.httpAuthSecurityScheme.scheme == "bearer"
+      and any(.securityRequirements[].schemes; has("keycard"))
     ' >/dev/null
   curl -fsS --max-time 5 "$base/.well-known/oauth-protected-resource" |
     jq -e --arg resource "$resource" '.resource == $resource' >/dev/null
