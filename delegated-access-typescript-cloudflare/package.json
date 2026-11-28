@@ -1,0 +1,21 @@
+{
+  "name": "delegated-access-typescript-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "build": "tsc --noEmit && wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev --local",
+    "ci:verify": "bash scripts/ci-verify.sh"
+  },
+  "dependencies": {
+    "@keycardai/cloudflare": "0.7.0",
+    "@keycardai/oauth": "0.43.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261128.1",
+    "typescript": "^5.9.3",
+    "wrangler": "4.169.0"
+  }
+}

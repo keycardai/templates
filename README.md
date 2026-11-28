@@ -33,6 +33,7 @@ for SDK experiments, local template runs, and CI tests.
 | [`mcp-server-ruby`](./mcp-server-ruby) | MCP server | Ruby | Rack |
 | [`mcp-server-go`](./mcp-server-go) | MCP server | Go | `net/http` |
 | [`mcp-delegated-access-go`](./mcp-delegated-access-go) | MCP server | Go | `net/http` |
+| [`delegated-access-typescript-cloudflare`](./delegated-access-typescript-cloudflare) | Delegated access | TypeScript | Cloudflare Workers |
 | [`mcp-delegated-access-java`](./mcp-delegated-access-java) | MCP server | Java | Jetty (Servlet) |
 | [`mcp-server-java`](./mcp-server-java) | MCP server | Java | Jetty (Servlet) |
 | [`mcp-server-java-spring-ai`](./mcp-server-java-spring-ai) | MCP server | Java | Spring AI (WebMVC) |
