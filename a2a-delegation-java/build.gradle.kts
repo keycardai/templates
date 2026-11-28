@@ -16,7 +16,7 @@ dependencies {
     implementation("com.google.protobuf:protobuf-java-util:4.36.2")
     implementation("com.google.code.gson:gson:2.15.0")
     implementation("com.nimbusds:nimbus-jose-jwt:10.10")
-    runtimeOnly("org.slf4j:slf4j-simple:2.0.17")
+    runtimeOnly("org.slf4j:slf4j-simple:2.0.20")
 }
 
 application {
