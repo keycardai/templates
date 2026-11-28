@@ -125,6 +125,44 @@ jobs:
                 | sed 's|^\./||' | sort | jq -R . | jq -sc .)"
             } >> "$GITHUB_OUTPUT"
           fi
+      - name: Fetch Dependabot metadata
+        id: dependabot_metadata
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+        continue-on-error: true
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
+        with:
+          github-token: ${{ github.token }}
+      - name: Write Dependabot metadata artifact
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' && steps.dependabot_metadata.outcome == 'success'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DEPENDENCY_NAMES: ${{ steps.dependabot_metadata.outputs.dependency-names }}
+          UPDATE_TYPE: ${{ steps.dependabot_metadata.outputs.update-type }}
+          DEPENDENCY_GROUP: ${{ steps.dependabot_metadata.outputs.dependency-group }}
+          PACKAGE_ECOSYSTEM: ${{ steps.dependabot_metadata.outputs.package-ecosystem }}
+        run: |
+          jq -n \
+            --arg head_sha "$HEAD_SHA" \
+            --arg dependency_names "$DEPENDENCY_NAMES" \
+            --arg update_type "$UPDATE_TYPE" \
+            --arg dependency_group "$DEPENDENCY_GROUP" \
+            --arg package_ecosystem "$PACKAGE_ECOSYSTEM" \
+            '{
+              head_sha: $head_sha,
+              dependency_names: $dependency_names,
+              update_type: $update_type,
+              dependency_group: $dependency_group,
+              package_ecosystem: $package_ecosystem
+            }' > "${RUNNER_TEMP}/dependabot-metadata.json"
+      - name: Upload Dependabot metadata artifact
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' && steps.dependabot_metadata.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependabot-metadata
+          path: ${{ runner.temp }}/dependabot-metadata.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   verify-typescript:
     needs: discover
