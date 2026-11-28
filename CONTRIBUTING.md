@@ -184,12 +184,11 @@ and skips live-zone checks on those PRs. When Template CI finishes,
    the ecosystem's Keycard patterns), security group bumps, and third-party
    semver-patch/minor bumps auto-merge when green. For a Python requirement-floor
    update with no reported type, the gate compares the lower bounds in the
-   manifest diff or, if the patch is unavailable, the verified Dependabot
-   commit's version comparison. A rise in the first component (or in the
-   second for versions starting at zero) counts as major. Third-party semver-major
-   bumps (or PRs with missing, invalid, or mixed/unknown metadata that cannot
-   be inferred) still run
-   verify and eval but never auto-merge.
+   PR diff or, if that patch is unavailable and the PR has one commit, in
+   the verified Dependabot commit's manifest diff. A rise in the first
+   component (or in the second for versions starting at zero) counts as major.
+   Third-party semver-major bumps and PRs whose update type cannot be determined
+   still run verify and eval but never auto-merge.
 2. **Verify and eval**: calls `Template CI` and then `Template Eval` for the
    touched template(s) at the PR head SHA with secrets.
 3. **Result** ([`.github/scripts/bump-result.sh`](./.github/scripts/bump-result.sh)):

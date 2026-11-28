@@ -237,63 +237,65 @@ parse_commit_metadata_json() {
       has_reported_type: $has_reported_type}'
 }
 
-load_verified_commit_message() {
+load_verified_commit_json() {
   local repo="$1"
   local target_sha="$2"
   local commit_json=""
   commit_json=$(gh api "repos/${repo}/commits/${target_sha}") || return 1
 
-  local author="" committer="" verified="" message=""
+  local author="" committer="" verified=""
   author=$(jq -r '.author.login // ""' <<< "$commit_json")
   committer=$(jq -r '.committer.login // ""' <<< "$commit_json")
   verified=$(jq -r '(.commit.verification.verified // false) | tostring' <<< "$commit_json")
-  message=$(jq -r '.commit.message // ""' <<< "$commit_json")
 
   if [ "$author" != "dependabot[bot]" ] || [ "$verified" != "true" ] || { [ "$committer" != "web-flow" ] && [ "$committer" != "dependabot[bot]" ]; }; then
     return 1
   fi
 
-  printf '%s\n' "$message"
+  printf '%s\n' "$commit_json"
+}
+
+python_manifest_file() {
+  jq -sec '
+    select(all(.[]; .previous_filename == null and (.filename | test("/(pyproject\\.toml|uv\\.lock)$"))))
+    | map(select(.filename | endswith("/pyproject.toml")))
+    | select(length == 1) | .[0]
+  '
 }
 
 infer_python_floor_update_type() {
-  local repo="$1" target_sha="$2" dep="$3" files_json="$4" message="$5"
+  local repo="$1" target_sha="$2" dep="$3" files_json="$4" commit_json="$5" commit_count="$6"
   local dep_pattern='[A-Za-z0-9_.-]+(\[[A-Za-z0-9_.,-]+\])?'
   [[ "$dep" =~ ^${dep_pattern}$ ]] || return 1
 
-  local patch=""
-  patch=$(jq -ser '
-    select(all(.[]; .previous_filename == null and (.filename | test("/(pyproject.toml|uv.lock)$"))))
-    | map(select(.filename | endswith("/pyproject.toml")))
-    | select(length == 1) | .[0].patch // ""
-  ' <<< "$files_json") || return 1
+  local manifest="" patch=""
+  manifest=$(python_manifest_file <<< "$files_json") || return 1
+  patch=$(jq -r '.patch // ""' <<< "$manifest")
+  if [ -z "$patch" ]; then
+    # The head commit alone represents the entire PR only for a single-commit update.
+    [ "$commit_count" -eq 1 ] || return 1
+    if [ -z "$commit_json" ]; then
+      commit_json=$(load_verified_commit_json "$repo" "$target_sha") || return 1
+    fi
+    local commit_manifest="" filename=""
+    commit_manifest=$(jq -c '.files[]?' <<< "$commit_json" | python_manifest_file) || return 1
+    filename=$(jq -r '.filename' <<< "$manifest")
+    patch=$(jq -er --arg filename "$filename" 'select(.filename == $filename) | .patch // empty' <<< "$commit_manifest") || return 1
+  fi
 
   local release='[0-9]{1,9}(\.[0-9]{1,9}){0,2}'
   local old="" new=""
-  if [ -n "$patch" ]; then
-    local changes=()
-    mapfile -t changes < <(sed -n '/^[-+]/p' <<< "$patch")
-    local upper_bound="[[:space:]]*,[[:space:]]*<=?[[:space:]]*${release}"
-    local requirement="^[[:space:]]*\"(${dep_pattern})[[:space:]]*>=[[:space:]]*(${release})(${upper_bound})?[[:space:]]*\"[[:space:]]*,?[[:space:]]*$"
-    [ "${#changes[@]}" -eq 2 ] || return 1
-    [[ "${changes[0]}" == -* && "${changes[0]:1}" =~ $requirement && "${BASH_REMATCH[1]}" == "$dep" ]] || return 1
-    old="${BASH_REMATCH[3]}"
-    local upper="${BASH_REMATCH[5]}"
-    [[ "${changes[1]}" == +* && "${changes[1]:1}" =~ $requirement && "${BASH_REMATCH[1]}" == "$dep" ]] || return 1
-    new="${BASH_REMATCH[3]}"
-    [ "$upper" = "${BASH_REMATCH[5]}" ] || return 1
-  else
-    if [ -z "$message" ]; then
-      message=$(load_verified_commit_message "$repo" "$target_sha") || return 1
-    fi
-    grep -qF "Updates the requirements on [${dep}](" <<< "$message" || return 1
-    local compare=""
-    compare=$(sed -n 's|^- \[Commits\](https://[^ ]*/compare/\([^/ ]*\))$|\1|p' <<< "$message")
-    local tag="(v|[A-Za-z0-9_.-]+==)?"
-    [[ "$compare" =~ ^${tag}(${release})\.\.\.${tag}(${release})$ ]] || return 1
-    old="${BASH_REMATCH[2]}"
-    new="${BASH_REMATCH[5]}"
-  fi
+  local changes=()
+  mapfile -t changes < <(sed -n '/^[-+]/p' <<< "$patch")
+  local upper_bound="[[:space:]]*,[[:space:]]*<=?[[:space:]]*${release}"
+  local requirement="^[[:space:]]*\"(${dep_pattern})[[:space:]]*>=[[:space:]]*(${release})(${upper_bound})?[[:space:]]*\"[[:space:]]*,?[[:space:]]*$"
+  [ "${#changes[@]}" -eq 2 ] || return 1
+  [[ "${changes[0]}" == -* && "${changes[0]:1}" =~ $requirement && "${BASH_REMATCH[1]}" == "$dep" ]] || return 1
+  old="${BASH_REMATCH[3]}"
+  local upper="${BASH_REMATCH[5]}"
+  [[ "${changes[1]}" == +* && "${changes[1]:1}" =~ $requirement && "${BASH_REMATCH[1]}" == "$dep" ]] || return 1
+  new="${BASH_REMATCH[3]}"
+  [ "$upper" = "${BASH_REMATCH[5]}" ] || return 1
 
   local old_major old_minor old_patch new_major new_minor new_patch
   IFS=. read -r old_major old_minor old_patch <<< "$old"
@@ -329,6 +331,7 @@ evaluate_automerge() {
   local target_sha="$4"
   local templates_json="$5"
   local files_json="$6"
+  local commit_count="$7"
 
   # Security update PRs (security group branch) auto-merge at any level when green.
   if [[ "$pr_head_ref" =~ ^dependabot/[^/]+/[^/]+/security(-|$) ]]; then
@@ -337,9 +340,11 @@ evaluate_automerge() {
     return 0
   fi
 
-  local meta_json="" commit_message=""
+  local meta_json="" commit_json=""
   if ! meta_json=$(load_metadata_json "$repo" "$ci_run_id"); then
-    if ! commit_message=$(load_verified_commit_message "$repo" "$target_sha") ||
+    local commit_message=""
+    if ! commit_json=$(load_verified_commit_json "$repo" "$target_sha") ||
+      ! commit_message=$(jq -r '.commit.message // ""' <<< "$commit_json") ||
       ! meta_json=$(parse_commit_metadata_json "$target_sha" "$commit_message"); then
       AUTOMERGE_DECISION="false"
       AUTOMERGE_REASON="Dependabot metadata missing; treating as major for human review"
@@ -397,7 +402,7 @@ evaluate_automerge() {
 
   if [ "$eco" = "uv" ] && [ -z "$update_type" ] &&
     jq -e '.has_reported_type != true' <<< "$meta_json" >/dev/null; then
-    update_type=$(infer_python_floor_update_type "$repo" "$target_sha" "$dependency_names" "$files_json" "$commit_message") || update_type=""
+    update_type=$(infer_python_floor_update_type "$repo" "$target_sha" "$dependency_names" "$files_json" "$commit_json" "$commit_count") || update_type=""
   fi
 
   case "$update_type" in
@@ -537,7 +542,7 @@ main() {
     return 0
   fi
 
-  local author="" committer="" verified=""
+  local author="" committer="" verified="" commit_count=0
   while IFS=$'\t' read -r author committer verified; do
     if [ "$author" != "dependabot[bot]" ]; then
       local display_author="${author}"
@@ -555,6 +560,7 @@ main() {
       emit_output "$pr_number" "$target_sha" "[]" "false" "PR contains unverified commit (committer: ${display_committer}, verified: ${verified})"
       return 0
     fi
+    commit_count=$((commit_count + 1))
   done <<< "$commits_lines"
 
   local files_json="" files_lines=""
@@ -691,7 +697,7 @@ main() {
 
   AUTOMERGE_DECISION="false"
   AUTOMERGE_REASON=""
-  evaluate_automerge "$repo" "$ci_run_id" "$pr_head_ref" "$target_sha" "$templates_json" "$files_json"
+  evaluate_automerge "$repo" "$ci_run_id" "$pr_head_ref" "$target_sha" "$templates_json" "$files_json" "$commit_count"
 
   emit_output "$pr_number" "$target_sha" "$templates_json" "true" "" "$AUTOMERGE_DECISION" "$AUTOMERGE_REASON"
 }
