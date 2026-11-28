@@ -13,6 +13,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { writeFileSync } from "node:fs";
 import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { provision, cleanupStaleProvisonings, teardownProvisioning } from "./provision.js";
@@ -326,6 +327,7 @@ try {
   });
   serverProcess.stderr?.on("data", (d: Buffer) => process.stderr.write(`[server] ${d}`));
   serverProcess.stdout?.on("data", (d: Buffer) => process.stdout.write(`[server] ${d}`));
+  await once(serverProcess, "spawn");
   serverProcess.unref();
 
   // Wait for server ready

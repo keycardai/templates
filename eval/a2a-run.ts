@@ -23,6 +23,7 @@ import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
 import { cleanupStaleProvisonings } from "./provision.js";
@@ -285,7 +286,7 @@ async function runA2ADelegationEval(opts: {
   };
   process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
 
-  const start = (label: string, command: string, args: string[], env: NodeJS.ProcessEnv) => {
+  const start = async (label: string, command: string, args: string[], env: NodeJS.ProcessEnv) => {
     const agent = spawn(command, args, {
       cwd: templateDir,
       env,
@@ -293,8 +294,9 @@ async function runA2ADelegationEval(opts: {
     });
     agent.stderr?.on("data", (d: Buffer) => process.stderr.write(`[${label}] ${d}`));
     agent.stdout?.on("data", (d: Buffer) => process.stdout.write(`[${label}] ${d}`));
-    agent.unref();
     agents.push(agent);
+    await once(agent, "spawn");
+    agent.unref();
   };
 
   let passed = false;
@@ -388,19 +390,18 @@ async function runA2ADelegationEval(opts: {
         CALLER_BASE_URL: provisioned.callerResourceIdentifier,
         TARGET_BASE_URL: provisioned.targetResourceIdentifier,
       };
-      start("target", script, ["target"], { ...agentEnv, PORT: String(targetPort) });
-      start("caller", script, ["caller"], {
+      await start("target", script, ["target"], { ...agentEnv, PORT: String(targetPort) });
+      await start("caller", script, ["caller"], {
         ...agentEnv,
         PORT: String(callerPort),
         KEYCARD_CLIENT_ID: provisioned.callerClientId,
         KEYCARD_CLIENT_SECRET: provisioned.callerClientSecret,
       });
     } else {
-      const startPython = (role: "caller" | "target", port: number) => {
+      const startPython = (role: "caller" | "target", port: number) =>
         start(role, "uv", ["run", "uvicorn", `${role}_agent:app`, "--host", "0.0.0.0", "--port", String(port)], { ...process.env });
-      };
-      startPython("target", targetPort);
-      startPython("caller", callerPort);
+      await startPython("target", targetPort);
+      await startPython("caller", callerPort);
     }
     await waitForHealthz(targetUrl, "target");
     await waitForHealthz(callerUrl, "caller");
