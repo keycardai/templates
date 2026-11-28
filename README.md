@@ -29,7 +29,7 @@ for SDK experiments, local template runs, and CI tests.
 | Template | Kind | Language | Framework |
 |---|---|---|---|
 | [`mcp-server-typescript-express`](./mcp-server-typescript-express) | MCP server | TypeScript | Express 5 |
-| [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | MCP v2 (`MCPServer)), Starlette |
+| [`mcp-server-python-mcp`](./mcp-server-python-mcp) | MCP server | Python | MCP v2 (`MCPServer`), Starlette |
 | [`mcp-server-ruby`](./mcp-server-ruby) | MCP server | Ruby | Rack |
 | [`mcp-server-go`](./mcp-server-go) | MCP server | Go | `net/http` |
 | [`mcp-delegated-access-go`](./mcp-delegated-access-go) | MCP server | Go | `net/http` |
