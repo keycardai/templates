@@ -126,7 +126,7 @@ function coverageMatrix(templates) {
 
 function renderRegion(file, region, content) {
   const path = join(root, file);
-  const current = readFileSync(path, "utf8");
+  const current = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
   const begin = "<!-- BEGIN " + region + " -->";
   const end = "<!-- END " + region + " -->";
   const lines = current.split("\n");
