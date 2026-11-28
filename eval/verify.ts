@@ -7,6 +7,8 @@
  * - If the template exposes /broker, it brokers a delegated token (token exchange)
  */
 
+import { decodeJwtPayload } from "./impersonate.js";
+
 export interface VerifyResult {
   passed: boolean;
   checks: Array<{ name: string; passed: boolean; detail?: string }>;
@@ -17,6 +19,7 @@ export interface VerifyOptions {
   resourceIdentifier: string;
   accessToken: string;
   expectedIssuer?: string;
+  downstreamResourceIdentifier?: string;
 }
 
 export async function check(
@@ -105,14 +108,59 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     const resp = await fetch(`${base}/broker`, {
       headers: { Authorization: `Bearer ${opts.accessToken}` },
     });
-    if (resp.status === 404 || resp.status === 405) return; // template does not broker; skip
+    if (!opts.downstreamResourceIdentifier && (resp.status === 404 || resp.status === 405)) return;
     if (resp.status === 401) throw new Error(`Broker rejected the token (401)`);
     if (!resp.ok) throw new Error(`Broker returned ${resp.status}`);
     const body = await resp.json();
     if (body.brokered !== true) {
       throw new Error(`Token exchange did not succeed: ${JSON.stringify(body)}`);
     }
+    if (opts.downstreamResourceIdentifier && body.resource !== opts.downstreamResourceIdentifier) {
+      throw new Error("Broker did not exchange for the registered downstream resource");
+    }
   }, checks);
+
+  if (opts.downstreamResourceIdentifier) {
+    await check("the inbound MCP token cannot access the downstream API directly", async () => {
+      const resp = await fetch(`${base}/profile`, {
+        headers: { Authorization: `Bearer ${opts.accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      await resp.body?.cancel();
+      if (resp.status !== 401) throw new Error(`Expected 401 from the downstream API, got ${resp.status}`);
+    }, checks);
+
+    await check("get_profile calls the downstream API as the signed-in user", async () => {
+      const subject = decodeJwtPayload(opts.accessToken).sub;
+      if (typeof subject !== "string" || !subject) throw new Error("MCP token has no subject");
+
+      // The stateless Streamable HTTP transport accepts this tool call without a session.
+      const resp = await fetch(`${base}/mcp`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${opts.accessToken}`,
+          "Accept": "application/json, text/event-stream",
+          "Content-Type": "application/json",
+          "MCP-Protocol-Version": "2025-11-25",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "get_profile", arguments: {} },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!resp.ok) throw new Error(`MCP tool call returned HTTP ${resp.status}`);
+      const body = resp.headers.get("content-type")?.includes("text/event-stream")
+        ? (await resp.text()).split(/\r?\n/).filter((line) => line.startsWith("data: "))
+            .map((line) => JSON.parse(line.slice(6))).find((message) => message.id === 1)
+        : await resp.json();
+      if (body?.result?.isError || body?.result?.structuredContent?.subject !== subject) {
+        throw new Error("get_profile did not return the signed-in user's subject");
+      }
+    }, checks);
+  }
 
   return {
     passed: checks.every((c) => c.passed),

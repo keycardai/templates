@@ -1,0 +1,14 @@
+{
+  "name": "mcp-delegated-access-typescript",
+  "language": "TypeScript",
+  "flows": [
+    "delegated-access"
+  ],
+  "framework": "Express 5",
+  "sdk_packages": [
+    "@keycardai/express",
+    "@keycardai/mcp",
+    "@keycardai/oauth"
+  ],
+  "description": "Exchange an authenticated MCP user's token and call a protected downstream API on their behalf."
+}

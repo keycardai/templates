@@ -11,6 +11,7 @@
 /mcp-brokered-credentials-typescript/ @keycardai/engineering
 /mcp-delegated-access-go/ @keycardai/engineering
 /mcp-delegated-access-java/ @keycardai/engineering
+/mcp-delegated-access-typescript/ @keycardai/engineering
 /mcp-server-go/ @keycardai/engineering
 /mcp-server-java-spring-ai/ @keycardai/engineering
 /mcp-server-java/ @keycardai/engineering

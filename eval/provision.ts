@@ -33,6 +33,7 @@ export interface ProvisionedZone {
   applicationClientId: string;
   applicationClientSecret: string;
   resourceIdentifier: string;
+  downstreamResourceIdentifier?: string;
 }
 
 export class EvalProvisioning {
@@ -119,7 +120,7 @@ async function getStsProviderId(zoneId: string, token: string): Promise<string> 
   return sts.id;
 }
 
-/** Create the Application and Resource the template needs, write .env and keycard.toml. */
+/** Create the Application and Resources the template needs, write .env and keycard.toml. */
 export async function provision(opts: {
   zoneId: string;
   zoneIssuerUrl: string;
@@ -128,13 +129,26 @@ export async function provision(opts: {
   provisioning: EvalProvisioning;
   templateDir: string;
   serverPort: number;
+  downstreamPath?: string;
 }): Promise<ProvisionedZone> {
-  const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir, serverPort: port } = opts;
-  const resourceIdentifier = `${evalOrigin(runId, port)}/mcp`;
+  const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir, serverPort: port, downstreamPath } = opts;
+  const origin = evalOrigin(runId, port);
+  const resourceIdentifier = `${origin}/mcp`;
+  const downstreamResourceIdentifier = downstreamPath && `${origin}${downstreamPath}`;
 
   // 1. Find the STS provider
   const stsProviderId = await getStsProviderId(zoneId, token);
   console.log(`   STS provider: ${stsProviderId}`);
+
+  // Create the downstream resource before its dependent application so reverse
+  // order cleanup removes the application before the downstream resource.
+  const downstreamId = downstreamResourceIdentifier && await provisioning.create("resources", {
+    name: `eval-resource-downstream-${runId}`,
+    identifier: downstreamResourceIdentifier,
+    credential_provider_id: stsProviderId,
+    application_type: "native",
+    prefix: false,
+  });
 
   // 2. Use implicit consent so delegated exchanges do not need a second browser prompt.
   const applicationId = await provisioning.create("applications", {
@@ -170,10 +184,20 @@ export async function provision(opts: {
   });
   console.log(`   Resource: ${resourceId} (${resourceIdentifier})`);
 
+  if (downstreamId) {
+    const dependency = await fetch(`${endpoint()}/zones/${zoneId}/applications/${applicationId}/dependencies/${downstreamId}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!dependency.ok) throw new Error(`Add downstream dependency failed: HTTP ${dependency.status}`);
+    console.log(`   Downstream resource: ${downstreamId} (${downstreamResourceIdentifier})`);
+  }
+
   // 4. Write .env — all templates use KEYCARD_URL
   const envContent = [
     `KEYCARD_URL=${zoneIssuerUrl}`,
     `KEYCARD_RESOURCE_ID=${resourceIdentifier}`,
+    ...(downstreamResourceIdentifier ? [`KEYCARD_DOWNSTREAM_RESOURCE_ID=${downstreamResourceIdentifier}`] : []),
     `PORT=${port}`,
   ].join("\n") + "\n";
   await fs.writeFile(path.join(templateDir, ".env"), envContent, "utf8");
@@ -187,5 +211,6 @@ export async function provision(opts: {
     applicationClientId,
     applicationClientSecret,
     resourceIdentifier,
+    downstreamResourceIdentifier,
   };
 }

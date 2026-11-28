@@ -123,6 +123,12 @@ const JAVA_DELEGATED_NOTES = [
   "Do not run keycard CLI commands, start the server, or run the SPEC's smoke test. The harness verifies /healthz, OAuth metadata, /mcp, and /broker.",
   "Build with ./gradlew installDist. The harness starts build/install/mcp-delegated-access-java/bin/mcp-delegated-access-java.",
 ].join("\n");
+const TYPESCRIPT_DELEGATED_NOTES = [
+  "Provisioning is complete. The provisioned .env and keycard.toml are correct as written.",
+  "The harness injects KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET when it starts the server. Do not look for them or add them.",
+  "Run npm ci, then npm run build. The harness starts the server and verifies the browser login, /broker, and get_profile tool.",
+  "Do not run keycard CLI commands, start the server, or run the SPEC's smoke test.",
+].join("\n");
 const JAVA_SPRING_AI_NOTES = [
   "Provisioning is complete. The provisioned .env and keycard.toml are correct as written.",
   "Do not run keycard CLI commands, start the server, or run the SPEC's smoke test.",
@@ -133,6 +139,7 @@ const AGENT_NOTES: Record<string, string> = {
   "mcp-brokered-credentials-typescript": BROKERED_NOTES,
   "mcp-delegated-access-go": GO_DELEGATED_NOTES,
   "mcp-delegated-access-java": JAVA_DELEGATED_NOTES,
+  "mcp-delegated-access-typescript": TYPESCRIPT_DELEGATED_NOTES,
   "mcp-server-ruby": RUBY_NOTES,
   "mcp-server-java": JAVA_NOTES,
   "mcp-server-java-spring-ai": JAVA_SPRING_AI_NOTES,
@@ -301,6 +308,7 @@ try {
     provisioning,
     templateDir: TEMPLATE_DIR,
     serverPort: SERVER_START.port,
+    downstreamPath: templateArg === "mcp-delegated-access-typescript" ? "/profile" : undefined,
   });
 
   // Kill any stale server before the agent's smoke tests run
@@ -405,6 +413,7 @@ try {
     serverUrl: SERVER_URL,
     resourceIdentifier: provisioned.resourceIdentifier,
     accessToken: auth.accessToken,
+    downstreamResourceIdentifier: provisioned.downstreamResourceIdentifier,
   });
 
   console.log("\n=== Results ===");

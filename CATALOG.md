@@ -41,7 +41,7 @@ An empty cell means there is no template for that combination.
 | Language | MCP server | Delegated access | Brokered credentials | A2A delegation | Workload identity | Agent frameworks |
 | --- | --- | --- | --- | --- | --- | --- |
 | Python | [`mcp-server-python-mcp`](./mcp-server-python-mcp) |  | [`mcp-brokered-credentials-python`](./mcp-brokered-credentials-python) | [`a2a-delegation-python`](./a2a-delegation-python) | [`agent-python-langchain`](./agent-python-langchain) | [`agent-python-langchain`](./agent-python-langchain) |
-| TypeScript | [`mcp-server-typescript-express`](./mcp-server-typescript-express) |  | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) |  | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif), [`delegated-access-typescript-cloudflare`](./delegated-access-typescript-cloudflare) |  |
+| TypeScript | [`mcp-server-typescript-express`](./mcp-server-typescript-express) | [`mcp-delegated-access-typescript`](./mcp-delegated-access-typescript) | [`mcp-brokered-credentials-typescript`](./mcp-brokered-credentials-typescript) |  | [`autonomous-agent-snowflake-wif`](./autonomous-agent-snowflake-wif), [`delegated-access-typescript-cloudflare`](./delegated-access-typescript-cloudflare) |  |
 | Go | [`mcp-server-go`](./mcp-server-go) | [`mcp-delegated-access-go`](./mcp-delegated-access-go) |  |  |  |  |
 | Ruby | [`mcp-server-ruby`](./mcp-server-ruby) |  |  |  |  |  |
 | Java | [`mcp-server-java`](./mcp-server-java), [`mcp-server-java-spring-ai`](./mcp-server-java-spring-ai) | [`mcp-delegated-access-java`](./mcp-delegated-access-java) |  | [`a2a-delegation-java`](./a2a-delegation-java) |  | [`mcp-server-java-spring-ai`](./mcp-server-java-spring-ai) |
