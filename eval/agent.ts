@@ -17,6 +17,23 @@ import * as path from "node:path";
 import { addBuildAgentUsage, BUILD_AGENT_MODEL, type BuildAgentUsage } from "./build-agent-usage.js";
 
 const execFileAsync = promisify(execFile);
+const cacheControl: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
+
+function withLatestMessageBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const latest = messages[messages.length - 1];
+  const content = typeof latest.content === "string"
+    ? [{ type: "text" as const, text: latest.content }]
+    : latest.content;
+  for (let i = content.length - 1; i >= 0; i--) {
+    const block = content[i];
+    if (block.type === "thinking" || block.type === "redacted_thinking" || (block.type === "text" && !block.text)) continue;
+    return [...messages.slice(0, -1), {
+      ...latest,
+      content: [...content.slice(0, i), { ...block, cache_control: cacheControl }, ...content.slice(i + 1)],
+    }];
+  }
+  return messages;
+}
 
 export interface AgentResult {
   success: boolean;
@@ -83,6 +100,7 @@ Your task:
         },
         required: ["path", "content"],
       },
+      cache_control: cacheControl,
     },
   ];
 
@@ -92,9 +110,9 @@ Your task:
     const response = await client.messages.create({
       model: BUILD_AGENT_MODEL,
       max_tokens: 4096,
-      system: systemPrompt,
+      system: [{ type: "text", text: systemPrompt, cache_control: cacheControl }],
       tools,
-      messages,
+      messages: withLatestMessageBreakpoint(messages),
     });
     addBuildAgentUsage(opts.usage, response.usage);
 
