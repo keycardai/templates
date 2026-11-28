@@ -42,6 +42,8 @@ jobs:
       templates: ${{ steps.gate.outputs.templates }}
       ok: ${{ steps.gate.outputs.ok }}
       reason: ${{ steps.gate.outputs.reason }}
+      automerge: ${{ steps.gate.outputs.automerge }}
+      automerge_reason: ${{ steps.gate.outputs.automerge_reason }}
     steps:
       - uses: actions/checkout@v4
       - id: gate
@@ -49,6 +51,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_PR: ${{ inputs.pr }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
@@ -84,6 +87,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      issues: write
       pull-requests: write
       statuses: write
       actions: write
@@ -97,6 +101,8 @@ jobs:
           TEMPLATES: ${{ needs.gate.outputs.templates }}
           GATE_OK: ${{ needs.gate.outputs.ok }}
           GATE_REASON: ${{ needs.gate.outputs.reason }}
+          AUTOMERGE: ${{ needs.gate.outputs.automerge }}
+          AUTOMERGE_REASON: ${{ needs.gate.outputs.automerge_reason }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           EVAL_RESULT: ${{ needs.eval.result }}
           ATTEMPT: ${{ inputs.attempt || '1' }}

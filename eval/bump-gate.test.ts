@@ -19,6 +19,7 @@ interface RunOptions {
   runConclusion?: string;
   runHtmlUrl?: string;
   repoRoot?: string;
+  metadata?: Record<string, unknown> | null;
   fixtures?: Record<string, unknown>;
 }
 
@@ -86,16 +87,34 @@ function runGate(opts: RunOptions = {}) {
   try {
     const output = join(dir, "output");
     writeFileSync(output, "");
+    let metadataFile = "";
+    if (opts.metadata !== null) {
+      metadataFile = join(dir, "dependabot-metadata.json");
+      writeFileSync(
+        metadataFile,
+        JSON.stringify(
+          opts.metadata ?? {
+            head_sha: opts.runHeadSha ?? SHA,
+            dependency_names: "github.com/keycardai/go-sdk",
+            update_type: "version-update:semver-minor",
+            dependency_group: "keycard",
+            package_ecosystem: "gomod",
+          },
+        ),
+      );
+    }
     execFileSync("bash", ["-c", BASH_MOCK], {
       env: {
         ...process.env,
         FIXTURES: JSON.stringify(defaultFixtures),
         SCRIPT_PATH: SCRIPT,
         REPO_ROOT: opts.repoRoot ?? ownedRepoRoot!,
+        METADATA_FILE: metadataFile,
         GITHUB_REPOSITORY: "keycardai/templates",
         GITHUB_OUTPUT: output,
         EVENT_NAME: eventName,
         INPUT_PR: opts.inputPr ?? "",
+        WORKFLOW_RUN_ID: "999",
         WORKFLOW_RUN_HEAD_SHA: opts.runHeadSha ?? SHA,
         WORKFLOW_RUN_HEAD_BRANCH: opts.runHeadBranch ?? BRANCH,
         WORKFLOW_RUN_CONCLUSION: opts.runConclusion ?? "success",
@@ -377,4 +396,98 @@ test("emits empty pr when no open PR exists for the workflow_run branch", () => 
   });
   assert.equal(out.ok, "false");
   assert.equal(out.pr, "");
+});
+
+test("automerge policy: Keycard major merges, third-party minor merges, third-party major does not", () => {
+  const keycardMajor = runGate({
+    metadata: {
+      head_sha: SHA,
+      dependency_names: "github.com/keycardai/go-sdk",
+      update_type: "version-update:semver-major",
+      dependency_group: "keycard",
+      package_ecosystem: "gomod",
+    },
+  });
+  assert.equal(keycardMajor.ok, "true");
+  assert.equal(keycardMajor.automerge, "true");
+
+  const thirdPartyMinor = runGate({
+    metadata: {
+      head_sha: SHA,
+      dependency_names: "golang.org/x/net",
+      update_type: "version-update:semver-minor",
+      dependency_group: "third-party",
+      package_ecosystem: "gomod",
+    },
+  });
+  assert.equal(thirdPartyMinor.ok, "true");
+  assert.equal(thirdPartyMinor.automerge, "true");
+
+  const thirdPartyMajor = runGate({
+    metadata: {
+      head_sha: SHA,
+      dependency_names: "golang.org/x/net",
+      update_type: "version-update:semver-major",
+      dependency_group: "",
+      package_ecosystem: "gomod",
+    },
+  });
+  assert.equal(thirdPartyMajor.ok, "true");
+  assert.equal(thirdPartyMajor.automerge, "false");
+  assert.match(thirdPartyMajor.automerge_reason, /major/i);
+
+  const mixedMajor = runGate({
+    metadata: {
+      head_sha: SHA,
+      dependency_names: "github.com/keycardai/go-sdk, golang.org/x/net",
+      update_type: "version-update:semver-major",
+      dependency_group: "keycard",
+      package_ecosystem: "gomod",
+    },
+  });
+  assert.equal(mixedMajor.ok, "true");
+  assert.equal(mixedMajor.automerge, "false");
+});
+
+test("automerge policy: security major merges and missing or mismatched metadata does not merge", () => {
+  const secBranch = "dependabot/gomod/mcp-server-go/security-123";
+  const secPr = makePr({
+    head: {
+      sha: SHA,
+      ref: secBranch,
+      repo: { full_name: "keycardai/templates" },
+    },
+  });
+  const secMajor = runGate({
+    runHeadBranch: secBranch,
+    metadata: null,
+    fixtures: {
+      [`repos/keycardai/templates/pulls?state=open&head=keycardai:${secBranch}&per_page=10`]: [secPr],
+    },
+  });
+  assert.equal(secMajor.ok, "true");
+  assert.equal(secMajor.automerge, "true");
+
+  const missingMeta = runGate({
+    metadata: null,
+    fixtures: {
+      "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+    },
+  });
+  assert.equal(missingMeta.ok, "true");
+  assert.equal(missingMeta.automerge, "false");
+  assert.match(missingMeta.automerge_reason, /missing/i);
+
+  const wrongSha = runGate({
+    metadata: {
+      head_sha: "2222222222222222222222222222222222222222",
+      dependency_names: "github.com/keycardai/go-sdk",
+      update_type: "version-update:semver-minor",
+      dependency_group: "keycard",
+      package_ecosystem: "gomod",
+    },
+  });
+  assert.equal(wrongSha.ok, "true");
+  assert.equal(wrongSha.automerge, "false");
+  assert.match(wrongSha.automerge_reason, /SHA mismatch/i);
 });

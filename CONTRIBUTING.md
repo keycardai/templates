@@ -168,22 +168,32 @@ and skips live-zone checks on those PRs. When Template CI finishes,
 
 1. **Trust gate** ([`.github/scripts/bump-gate.sh`](./.github/scripts/bump-gate.sh)):
    requires an open PR targeting `main` from this repository, authored by
-   `dependabot[bot]` with every commit authored by `dependabot[bot]`, matching
-   the CI run head SHA, changing only allowed dependency manifests or lockfiles
-   under existing template directories (never `.github`, `eval`, `_skeleton`,
-   or `scripts`), not listed in `eval/eval-skip.txt`, and with a green
-   Template CI run.
+   `dependabot[bot]` with every commit verified and authored by
+   `dependabot[bot]`, matching the CI run head SHA, changing only allowed
+   dependency manifests or lockfiles under existing template directories (never
+   `.github`, `eval`, `_skeleton`, or `scripts`), not listed in
+   `eval/eval-skip.txt`, and with a green Template CI run. It also downloads
+   and validates the `dependabot-metadata` artifact from `Template CI` to set
+   `automerge`: Keycard SDK bumps (verified against the ecosystem's Keycard
+   patterns), security group bumps, and third-party semver-patch/minor bumps
+   auto-merge when green; third-party semver-major bumps (or PRs with missing,
+   invalid, or mixed/unknown metadata) still run verify and eval but never
+   auto-merge.
 2. **Verify and eval**: calls `Template CI` and then `Template Eval` for the
    touched template(s) at the PR head SHA with secrets.
 3. **Result** ([`.github/scripts/bump-result.sh`](./.github/scripts/bump-result.sh)):
-   sets the `dependency-bump/verify-eval` commit status. When both pass and the
-   PR head SHA is unchanged, it squash-merges the PR and dispatches `Template CI`
-   on `main`. If `verify` or `eval` is cancelled while queued (nothing failed),
-   it requeues `Dependency Bump` via `workflow_dispatch` with an incremented
-   `attempt` input (up to 3 attempts) and sets a `pending` status; after 3
-   cancelled attempts it leaves a neutral comment requesting a manual rerun. On
-   failure, it leaves the PR open and creates or updates a single PR comment
-   naming the failed stage and linking the run.
+   sets the `dependency-bump/verify-eval` commit status. When both pass, the PR
+   head SHA is unchanged, and `automerge` is `true`, it squash-merges the PR
+   and dispatches `Template CI` on `main`. When verify and eval pass with
+   `automerge` `false` (third-party major or missing/unknown metadata), it sets
+   a green status, adds the `needs-review` label, leaves the PR open, and posts
+   a marker comment for human review. If `verify` or `eval` is cancelled while
+   queued (nothing failed), it requeues `Dependency Bump` via
+   `workflow_dispatch` with an incremented `attempt` input (up to 3 attempts)
+   and sets a `pending` status; after 3 cancelled attempts it leaves a neutral
+   comment requesting a manual rerun. On failure, it leaves the PR open, adds
+   `needs-review` when `automerge` is `false`, and creates or updates a single
+   PR comment naming the failed stage and linking the run.
 
 Bump evals share the `template-eval-zone` concurrency group in
 [`eval.yml`](./.github/workflows/eval.yml) (`cancel-in-progress: false`,

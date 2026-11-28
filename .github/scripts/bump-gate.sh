@@ -10,13 +10,201 @@ emit_output() {
   local templates="$3"
   local ok="$4"
   local reason="${5//$'\n'/ }"
+  local automerge="${6:-false}"
+  local automerge_reason="${7:-}"
+  automerge_reason="${automerge_reason//$'\n'/ }"
   {
     printf 'pr=%s\n' "$pr"
     printf 'head_sha=%s\n' "$head_sha"
     printf 'templates=%s\n' "$templates"
     printf 'ok=%s\n' "$ok"
     printf 'reason=%s\n' "$reason"
+    printf 'automerge=%s\n' "$automerge"
+    printf 'automerge_reason=%s\n' "$automerge_reason"
   } >> "$GITHUB_OUTPUT"
+}
+
+detect_ecosystem() {
+  local head_ref="$1"
+  local templates_json="$2"
+  if [[ "$head_ref" =~ ^dependabot/([^/]+)/ ]]; then
+    case "${BASH_REMATCH[1]}" in
+      npm_and_yarn) echo "npm"; return 0 ;;
+      uv|pip) echo "uv"; return 0 ;;
+      go_modules|gomod) echo "gomod"; return 0 ;;
+      gradle) echo "gradle"; return 0 ;;
+    esac
+  fi
+
+  local eco=""
+  local tpl=""
+  while IFS= read -r tpl; do
+    local tpl_eco=""
+    if [ -f "${REPO_ROOT}/${tpl}/package.json" ]; then
+      tpl_eco="npm"
+    elif [ -f "${REPO_ROOT}/${tpl}/go.mod" ]; then
+      tpl_eco="gomod"
+    elif [ -f "${REPO_ROOT}/${tpl}/build.gradle.kts" ]; then
+      tpl_eco="gradle"
+    elif [ -f "${REPO_ROOT}/${tpl}/pyproject.toml" ]; then
+      tpl_eco="uv"
+    else
+      return 1
+    fi
+    if [ -z "$eco" ]; then
+      eco="$tpl_eco"
+    elif [ "$eco" != "$tpl_eco" ]; then
+      return 1
+    fi
+  done < <(jq -r '.[]' <<< "$templates_json")
+  [ -n "$eco" ] || return 1
+  echo "$eco"
+}
+
+is_keycard_dependency() {
+  local eco="$1"
+  local dep="$2"
+  case "$eco" in
+    npm)
+      [[ "$dep" =~ ^@keycardai/[A-Za-z0-9._-]+$ ]]
+      ;;
+    uv)
+      [[ "$dep" =~ ^keycardai-[A-Za-z0-9._-]+$ ]]
+      ;;
+    gomod)
+      [[ "$dep" =~ ^github\.com/keycardai/[A-Za-z0-9._/-]+$ ]]
+      ;;
+    gradle)
+      [[ "$dep" =~ ^ai\.keycard:[A-Za-z0-9._-]+$ ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+load_metadata_json() {
+  local repo="$1"
+  local ci_run_id="$2"
+
+  if [ -n "${METADATA_FILE:-}" ]; then
+    [ -f "$METADATA_FILE" ] || return 1
+    cat "$METADATA_FILE"
+    return 0
+  fi
+
+  [ -n "$ci_run_id" ] || return 1
+  local artifacts_json=""
+  artifacts_json=$(gh api "repos/${repo}/actions/runs/${ci_run_id}/artifacts?per_page=100") || return 1
+  local artifact_id=""
+  artifact_id=$(jq -r '
+    .artifacts
+    | map(select(.name == "dependabot-metadata" and (.expired // false) == false))
+    | sort_by(.created_at) | reverse | .[0].id // ""
+  ' <<< "$artifacts_json")
+  [ -n "$artifact_id" ] || return 1
+
+  local tmp_zip=""
+  tmp_zip=$(mktemp)
+  if ! gh api "repos/${repo}/actions/artifacts/${artifact_id}/zip" > "$tmp_zip"; then
+    rm -f "$tmp_zip"
+    return 1
+  fi
+  local content=""
+  if ! content=$(unzip -p "$tmp_zip" dependabot-metadata.json 2>/dev/null); then
+    rm -f "$tmp_zip"
+    return 1
+  fi
+  rm -f "$tmp_zip"
+  printf '%s\n' "$content"
+}
+
+evaluate_automerge() {
+  local repo="$1"
+  local ci_run_id="$2"
+  local pr_head_ref="$3"
+  local target_sha="$4"
+  local templates_json="$5"
+
+  # Security update PRs (security group branch) auto-merge at any level when green.
+  if [[ "$pr_head_ref" =~ ^dependabot/[^/]+/[^/]+/security(-|$) ]]; then
+    AUTOMERGE_DECISION="true"
+    AUTOMERGE_REASON=""
+    return 0
+  fi
+
+  local meta_json=""
+  if ! meta_json=$(load_metadata_json "$repo" "$ci_run_id"); then
+    AUTOMERGE_DECISION="false"
+    AUTOMERGE_REASON="Dependabot metadata artifact missing; treating as major for human review"
+    return 0
+  fi
+
+  if ! jq -e 'type == "object"' <<< "$meta_json" >/dev/null 2>&1; then
+    AUTOMERGE_DECISION="false"
+    AUTOMERGE_REASON="Dependabot metadata artifact is invalid JSON; treating as major for human review"
+    return 0
+  fi
+
+  local meta_sha=""
+  local update_type=""
+  local dependency_names=""
+  meta_sha=$(jq -r '.head_sha // ""' <<< "$meta_json")
+  update_type=$(jq -r '.update_type // ""' <<< "$meta_json")
+  dependency_names=$(jq -r '.dependency_names // ""' <<< "$meta_json")
+
+  if [ "$meta_sha" != "$target_sha" ]; then
+    AUTOMERGE_DECISION="false"
+    AUTOMERGE_REASON="Dependabot metadata head SHA mismatch; treating as major for human review"
+    return 0
+  fi
+
+  local eco=""
+  eco=$(detect_ecosystem "$pr_head_ref" "$templates_json" || true)
+
+  local dep_count=0
+  local all_keycard="true"
+  local dep=""
+  if [ -n "$dependency_names" ]; then
+    local old_ifs="$IFS"
+    IFS=','
+    for dep in $dependency_names; do
+      IFS="$old_ifs"
+      dep=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$dep")
+      if [ -z "$dep" ]; then
+        continue
+      fi
+      dep_count=$((dep_count + 1))
+      if [ -z "$eco" ] || ! is_keycard_dependency "$eco" "$dep"; then
+        all_keycard="false"
+      fi
+    done
+    IFS="$old_ifs"
+  fi
+
+  if [ "$dep_count" -gt 0 ] && [ "$all_keycard" = "true" ]; then
+    AUTOMERGE_DECISION="true"
+    AUTOMERGE_REASON=""
+    return 0
+  fi
+
+  case "$update_type" in
+    version-update:semver-patch|version-update:semver-minor)
+      AUTOMERGE_DECISION="true"
+      AUTOMERGE_REASON=""
+      return 0
+      ;;
+    version-update:semver-major)
+      AUTOMERGE_DECISION="false"
+      AUTOMERGE_REASON="Third-party semver-major update needs human review"
+      return 0
+      ;;
+    *)
+      AUTOMERGE_DECISION="false"
+      AUTOMERGE_REASON="Unknown or mixed update type (${update_type:-missing}); treating as major for human review"
+      return 0
+      ;;
+  esac
 }
 
 is_allowed_basename() {
@@ -102,6 +290,7 @@ main() {
   pr_author=$(jq -r '.user.login // ""' <<< "$pr_json")
   pr_base_ref=$(jq -r '.base.ref // ""' <<< "$pr_json")
   pr_head_repo=$(jq -r '.head.repo.full_name // ""' <<< "$pr_json")
+  pr_head_ref=$(jq -r '.head.ref // ""' <<< "$pr_json")
   pr_head_sha=$(jq -r '.head.sha // ""' <<< "$pr_json")
   target_sha="$pr_head_sha"
 
@@ -233,9 +422,11 @@ main() {
     fi
   fi
 
+  local ci_run_id=""
   if [ "$event_name" = "workflow_run" ]; then
     local conclusion="${WORKFLOW_RUN_CONCLUSION:-}"
     local ci_url="${WORKFLOW_RUN_HTML_URL:-}"
+    ci_run_id="${WORKFLOW_RUN_ID:-}"
     case "$conclusion" in
       success) ;;
       cancelled|skipped|stale)
@@ -262,6 +453,7 @@ main() {
     local ci_status=""
     local ci_conclusion=""
     local ci_url=""
+    ci_run_id=$(jq -r '.id // ""' <<< "$latest_run")
     ci_status=$(jq -r '.status // ""' <<< "$latest_run")
     ci_conclusion=$(jq -r '.conclusion // ""' <<< "$latest_run")
     ci_url=$(jq -r '.html_url // ""' <<< "$latest_run")
@@ -282,7 +474,11 @@ main() {
     esac
   fi
 
-  emit_output "$pr_number" "$target_sha" "$templates_json" "true" ""
+  AUTOMERGE_DECISION="false"
+  AUTOMERGE_REASON=""
+  evaluate_automerge "$repo" "$ci_run_id" "$pr_head_ref" "$target_sha" "$templates_json"
+
+  emit_output "$pr_number" "$target_sha" "$templates_json" "true" "" "$AUTOMERGE_DECISION" "$AUTOMERGE_REASON"
 }
 
 main

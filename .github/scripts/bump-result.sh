@@ -48,6 +48,16 @@ update_existing_comment() {
   fi
 }
 
+add_needs_review_label() {
+  gh label create "needs-review" \
+    --repo "$GITHUB_REPOSITORY" \
+    --description "Dependency bump needs human review before merge" \
+    --color "fbca04" \
+    --force > /dev/null || true
+  gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
+    -f "labels[]=needs-review" > /dev/null
+}
+
 pr_json=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
 pr_state=$(jq -r '.state // ""' <<< "$pr_json")
 current_sha=$(jq -r '.head.sha // ""' <<< "$pr_json")
@@ -64,6 +74,17 @@ if [ "$is_security" = "true" ]; then
 fi
 
 if [ "$GATE_OK" = "true" ] && [ "$VERIFY_RESULT" = "success" ] && [ "$EVAL_RESULT" = "success" ]; then
+  if [ "${AUTOMERGE:-false}" != "true" ]; then
+    review_reason="${AUTOMERGE_REASON:-Third-party semver-major update needs human review}"
+    set_status "success" "Verify and eval passed; needs human review"
+    if [ "$pr_state" = "open" ] && [ "$current_sha" = "$HEAD_SHA" ]; then
+      add_needs_review_label
+    fi
+    body="${MARKER}"$'\n'"Dependency bump verify and eval passed for \`${HEAD_SHA}\`, but this PR was left open for human review (${review_reason}). See the [Dependency Bump run](${RUN_URL}).${security_note}"
+    upsert_comment "$body"
+    exit 0
+  fi
+
   set_status "success" "Verify and eval passed"
 
   if [ "$pr_state" != "open" ]; then
@@ -165,6 +186,10 @@ else
     failed_stage="Eval failed (${EVAL_RESULT}) for templates ${TEMPLATES}"
   fi
   status_desc="Template eval failed"
+fi
+
+if [ "$GATE_OK" = "true" ] && [ "${AUTOMERGE:-true}" != "true" ] && [ "$pr_state" = "open" ] && [ "$current_sha" = "$HEAD_SHA" ]; then
+  add_needs_review_label
 fi
 
 set_status "failure" "$status_desc"

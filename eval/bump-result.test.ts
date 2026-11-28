@@ -14,6 +14,8 @@ const CI_WORKFLOW_URL = "https://github.com/keycardai/templates/actions/workflow
 interface ResultOptions {
   gateOk?: string;
   gateReason?: string;
+  automerge?: string;
+  automergeReason?: string;
   verifyResult?: string;
   evalResult?: string;
   attempt?: string;
@@ -62,6 +64,8 @@ function runResult(opts: ResultOptions = {}) {
         TEMPLATES: '["mcp-server-typescript-express"]',
         GATE_OK: opts.gateOk ?? "true",
         GATE_REASON: opts.gateReason ?? "",
+        AUTOMERGE: opts.automerge ?? "true",
+        AUTOMERGE_REASON: opts.automergeReason ?? "",
         VERIFY_RESULT: opts.verifyResult ?? "success",
         EVAL_RESULT: opts.evalResult ?? "success",
         ATTEMPT: opts.attempt ?? "1",
@@ -94,6 +98,11 @@ const BASH_MOCK = String.raw`
     if [[ "$sub" == pr && "$1" == merge ]]; then
       shift
       jq -nc --args '$ARGS.positional | {cmd: "pr_merge", args: .}' -- "$@" >> "$CALLS_LOG"
+      return 0
+    fi
+    if [[ "$sub" == label && "$1" == create ]]; then
+      shift
+      jq -nc --args '$ARGS.positional | {cmd: "label_create", args: .}' -- "$@" >> "$CALLS_LOG"
       return 0
     fi
     [[ "$sub" == api ]] || return 1
@@ -261,4 +270,46 @@ test("shows security note for security group branch or security label", () => {
     .find((c) => c.cmd === "api" && c.endpoint.includes("/comments"))
     ?.fields.find((f: string) => f.startsWith("body="));
   assert.match(labelBody, /Security update PRs/);
+});
+
+test("green third-party major sets success status, adds needs-review label, comments, and does not merge", () => {
+  const res = runResult({
+    verifyResult: "success",
+    evalResult: "success",
+    automerge: "false",
+    automergeReason: "Third-party semver-major update needs human review",
+  });
+  assert.equal(res.status, 0);
+  assert.equal(res.calls.find((c) => c.cmd === "pr_merge"), undefined);
+  const statusCall = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/statuses/"));
+  assert.ok(statusCall);
+  assert.ok(statusCall.fields.includes("state=success"));
+  const labelCreate = res.calls.find((c) => c.cmd === "label_create");
+  assert.ok(labelCreate);
+  assert.ok(labelCreate.args.includes("needs-review"));
+  const labelAdd = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/labels"));
+  assert.ok(labelAdd);
+  assert.ok(labelAdd.fields.includes("labels[]=needs-review"));
+  const commentCall = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/comments"));
+  assert.ok(commentCall);
+  const bodyField = commentCall.fields.find((f: string) => f.startsWith("body="));
+  assert.match(bodyField, /left open for human review/);
+  assert.match(bodyField, /Third-party semver-major/);
+});
+
+test("red third-party major fails and also adds needs-review label", () => {
+  const res = runResult({
+    verifyResult: "success",
+    evalResult: "failure",
+    automerge: "false",
+    automergeReason: "Third-party semver-major update needs human review",
+  });
+  assert.equal(res.status, 1);
+  assert.equal(res.calls.find((c) => c.cmd === "pr_merge"), undefined);
+  const statusCall = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/statuses/"));
+  assert.ok(statusCall);
+  assert.ok(statusCall.fields.includes("state=failure"));
+  const labelAdd = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/labels"));
+  assert.ok(labelAdd);
+  assert.ok(labelAdd.fields.includes("labels[]=needs-review"));
 });
