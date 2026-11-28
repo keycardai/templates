@@ -134,10 +134,6 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.typescript) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -165,6 +161,10 @@ jobs:
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -195,6 +195,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -208,10 +210,6 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.python) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -236,6 +234,10 @@ jobs:
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -266,6 +268,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -279,10 +283,6 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.go) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -305,6 +305,10 @@ jobs:
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -335,6 +339,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -348,10 +354,6 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.ruby) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -373,6 +375,10 @@ jobs:
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -403,6 +409,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
@@ -416,10 +424,6 @@ jobs:
       fail-fast: false
       matrix:
         template: ${{ fromJson(needs.discover.outputs.java) }}
-    env:
-      CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
-      CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
-      CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -443,6 +447,10 @@ jobs:
       - name: Create ephemeral zone
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: zone
+        env:
+          CI_KEYCARD_CLIENT_ID: ${{ secrets.CI_KEYCARD_CLIENT_ID }}
+          CI_KEYCARD_CLIENT_SECRET: ${{ secrets.CI_KEYCARD_CLIENT_SECRET }}
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           ZONE_NAME="templates-ci-${{ github.run_id }}-${{ strategy.job-index }}"
           TOKEN=$(curl -sf -X POST "${CI_KEYCARD_ENDPOINT}/service-account-token" \
@@ -473,6 +481,8 @@ jobs:
 
       - name: Delete ephemeral zone
         if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          CI_KEYCARD_ENDPOINT: ${{ secrets.CI_KEYCARD_ENDPOINT }}
         run: |
           [ -n "${{ steps.zone.outputs.ZONE_ID }}" ] && \
             curl -sf -X DELETE "${CI_KEYCARD_ENDPOINT}/zones/${{ steps.zone.outputs.ZONE_ID }}" \
