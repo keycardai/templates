@@ -24,6 +24,7 @@ import { verifyServer } from "./verify.js";
 import { stopProcessGroup } from "./stop.js";
 import { runAgentEval } from "./agent-run.js";
 import { runA2AEval } from "./a2a-run.js";
+import { runCloudflareEval } from "./cloudflare-run.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -123,6 +124,13 @@ const AGENT_NOTES: Record<string, string> = {
   "mcp-server-java": JAVA_NOTES,
 };
 
+const CLOUDFLARE_NOTES = [
+  "The harness owns provisioning, config, and smoke tests. keycard.toml is final.",
+  "The missing .env and .dev.vars are intentional. Do not read, write, or look for credentials.",
+  "Do not run keycard CLI commands, start the Worker, open a tunnel, call the zone, or deploy.",
+  "Run exactly npm ci, then npm run build, and report the build marker.",
+].join("\n");
+
 // Detect template language from the presence of its build manifest
 const isPython = await fs.access(path.join(TEMPLATE_DIR, "pyproject.toml")).then(() => true).catch(() => false);
 const isGo = await fs.access(path.join(TEMPLATE_DIR, "go.mod")).then(() => true).catch(() => false);
@@ -168,6 +176,21 @@ const SERVER_URL = `http://localhost:${SERVER_START.port}`;
 
 async function killStaleServer(): Promise<void> {
   await execFileAsync("bash", ["-c", `lsof -ti :${SERVER_START.port} | xargs kill -9 2>/dev/null; true`]);
+}
+
+const templateFiles = await fs.readdir(TEMPLATE_DIR);
+const wranglerConfig = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"]
+  .find((file) => templateFiles.includes(file));
+if (wranglerConfig) {
+  const passed = await runCloudflareEval({
+    templateDir: TEMPLATE_DIR,
+    wranglerConfig,
+    runId: RUN_ID,
+    usage: buildAgentUsage,
+    notes: CLOUDFLARE_NOTES,
+  });
+  console.log(passed ? "\n\u2713 PASS\n" : "\n\u2717 FAIL\n");
+  process.exit(passed ? 0 : 1);
 }
 
 // Agent templates are outbound-auth: langgraph serves the graph and the

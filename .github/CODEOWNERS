@@ -5,6 +5,7 @@
 /a2a-delegation-python/ @keycardai/engineering
 /agent-python-langchain/ @keycardai/engineering
 /autonomous-agent-snowflake-wif/ @keycardai/engineering
+/delegated-access-typescript-cloudflare/ @keycardai/engineering
 /mcp-brokered-credentials-python/ @keycardai/engineering
 /mcp-brokered-credentials-typescript/ @keycardai/engineering
 /mcp-delegated-access-go/ @keycardai/engineering

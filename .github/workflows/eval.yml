@@ -135,9 +135,14 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Check for Wrangler config
+        id: wrangler
+        if: ${{ hashFiles(format('{0}/wrangler.jsonc', matrix.template), format('{0}/wrangler.json', matrix.template), format('{0}/wrangler.toml', matrix.template)) != '' }}
+        run: echo "present=true" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ steps.wrangler.outputs.present == 'true' && '22' || '20' }}
           cache: "npm"
           cache-dependency-path: "eval/package-lock.json"
 
@@ -195,6 +200,16 @@ jobs:
       - name: Install eval dependencies
         working-directory: eval
         run: npm install
+
+      - name: Install cloudflared for Wrangler templates
+        if: steps.wrangler.outputs.present == 'true'
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+            https://github.com/cloudflare/cloudflared/releases/download/2025.11.1/cloudflared-linux-amd64 \
+            --output "$RUNNER_TEMP/cloudflared"
+          echo "991dffd8889ee9f0147b6b48933da9e4407e68ea8c6d984f55fa2d3db4bb431d  $RUNNER_TEMP/cloudflared" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/cloudflared"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       # Run from eval/ so npx resolves the pinned playwright in eval/node_modules
       # and installs the matching browser build. Running at the repo root pulls a
