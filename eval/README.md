@@ -128,10 +128,30 @@ The agent template needs `uv` on PATH and no vault resources beyond the three
 above. `EVAL_TEST_USER_EMAIL` doubles as the impersonation target, so that user
 must exist in the eval zone; the password is unused on this path.
 
+### GitHub Actions cadence
+
+Template Eval runs every Monday at 06:00 UTC and on manual dispatch without
+checking SDK releases. A nightly check at 09:00 UTC runs the eval only when a
+Keycard SDK has a newer tag, rather than running once per SDK release.
+
+The nightly check uses the workflow's read-only GitHub token to check tags in
+`keycardai/python-sdk`, `keycardai/typescript-sdk`, `keycardai/go-sdk`,
+`keycardai/ruby-sdk`, and `keycardai/java-sdk`. It uses the tagger date for
+annotated tags and the commit date for lightweight tags, and compares those dates
+with the start of the last successful nightly run that actually ran the eval.
+Skipped and failed nights do not move that cutoff, so the next nightly check
+looks back to the same start time. If there is no previous successful nightly
+eval or the GitHub API check fails, the nightly runs the eval.
+
+When nothing changed, the nightly skips the eval jobs and explains why in the
+Actions run summary. Failed runs stay visible in Actions. The scheduled failure
+notification posts to Slack only when `EVAL_SLACK_WEBHOOK_URL` is configured.
+Template Eval does not gate releases or checks in the SDK repositories.
+
 ### Skipping templates
 
 `eval-skip.txt` contains only comments, so it excludes no templates. The
-weekly workflow's discover job uses it to exclude templates from the automatic
+workflow's discover job uses it to exclude templates from the automatic
 matrix, one directory name per line. It ignores `#` comments and blank lines.
 A named `workflow_dispatch` template input bypasses the list.
 
