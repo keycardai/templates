@@ -1,6 +1,7 @@
-import { Agent } from "@earendil-works/pi-agent-core";
-import { getModel } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+
+const models = builtinModels();
 
 const DEFAULT_SYSTEM_PROMPT = `You are an autonomous agent with access to a Snowflake data warehouse.
 
@@ -18,10 +19,7 @@ export interface AgentConfig {
 }
 
 export function buildAgent(config: AgentConfig): Agent {
-  const model = getModel(
-    config.provider as any,
-    config.modelId as any,
-  );
+  const model = models.getModel(config.provider, config.modelId);
 
   if (!model) {
     throw new Error(
@@ -39,6 +37,7 @@ export function buildAgent(config: AgentConfig): Agent {
       model,
       tools: config.tools,
     },
+    streamFn: models.streamSimple.bind(models),
   });
 
   agent.subscribe((event) => {

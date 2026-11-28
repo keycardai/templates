@@ -6,7 +6,7 @@ Autonomous agent that queries a Snowflake data warehouse via **Workload Identity
 
 This template implements AAuth's [identity-only mode](https://github.com/dickhardt/AAuth#what-aauth-provides): the agent generates an RSA keypair, publishes the public key at `/.well-known/jwks.json`, and signs every authentication request with a client assertion JWT ([RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523)). Keycard's STS verifies the signature by fetching the JWKS from the agent's public URL — no pre-shared secret, no vault brokering. The private key never leaves the agent's local storage.
 
-The agent authenticates to Snowflake via Keycard's token exchange, obtaining an OIDC access token that Snowflake validates through its Workload Identity Federation configuration. It then runs a [pi-agent-core](https://github.com/earendil-works/pi) LLM loop to query Snowflake and produce results autonomously.
+The agent authenticates to Snowflake via Keycard's token exchange, obtaining an OIDC access token that Snowflake validates through its Workload Identity Federation configuration. It uses a [pi-agent-core](https://github.com/earendil-works/pi) 1.4 LLM loop. The agent resolves the configured chat model in pi-ai 1.4's built-in catalog and uses that catalog's `streamSimple` as its stream function.
 
 Other agents reach it over [A2A protocol 1.0](https://a2a-protocol.org) (`@keycardai/a2a` 0.6 on `@a2a-js/sdk` 1.x): the agent card at `/.well-known/agent-card.json` advertises a JSON-RPC interface under `supportedInterfaces`, and `/a2a/jsonrpc` accepts `SendMessage` and `GetTask` with an `A2A-Version: 1.0` header. `@keycardai/express` verifies the bearer token and serves `/.well-known/oauth-protected-resource` for the default Resource, the agent base URL. A missing token returns HTTP 401 with `WWW-Authenticate: Bearer`, not a JSON-RPC error. Agents still on A2A 0.3 (`message/send`) are not served; see `legacyCompat` in the `@keycardai/a2a` README.
 
@@ -47,6 +47,8 @@ Other agents reach it over [A2A protocol 1.0](https://a2a-protocol.org) (`@keyca
 3. **Keycard CLI** installed and authenticated (`keycard init`).
 
 4. **LLM API key** for the configured provider (default: `ANTHROPIC_API_KEY`).
+
+5. **Node.js 22.19.0 or later** for local builds and runs.
 
 ## Quick start
 
@@ -90,18 +92,18 @@ The agent will:
 | `AGENT_BASE_URL` | yes | — | Public URL where this agent is reachable |
 | `KEYCARD_URL` | yes | — | Keycard zone URL (`https://<id>.keycard.cloud`) |
 | `KEYCARD_RESOURCE_ID` | no | `AGENT_BASE_URL` if unset or empty | The agent's registered Resource identifier. Inbound A2A calls require a token minted for this Resource. |
-
-The agent requests Snowflake access with the OAuth SDK's `ClientCredentialsClient`. Its `WebIdentity` credential is configured once and signs assertions for the discovered token endpoint. To verify the HTTP endpoints without a Snowflake account, run `npm run build && KEYCARD_URL=<zone-url> npm run ci:verify`.
 | `SNOWFLAKE_ACCOUNT` | yes | — | Snowflake account identifier (`ORGNAME-ACCTNAME`) |
 | `SNOWFLAKE_USER` | no | — | Snowflake user for WIF authentication |
 | `SNOWFLAKE_DATABASE` | no | — | Default database |
 | `SNOWFLAKE_WAREHOUSE` | no | — | Default warehouse |
 | `SNOWFLAKE_ROLE` | no | — | Snowflake role to assume |
 | `AGENT_PROVIDER` | no | `anthropic` | pi-ai LLM provider |
-| `AGENT_MODEL` | no | `claude-sonnet-4-20250514` | pi-ai model ID |
+| `AGENT_MODEL` | no | `claude-sonnet-4-6` | Chat model ID in the pi-ai 1.4 catalog for the selected provider |
 | `AGENT_TASK` | no | Snowflake query prompt | Task the agent executes |
 | `PORT` | no | `9000` | Port for the well-known endpoint server |
 | `AGENT_KEYS_DIR` | no | `./agent_keys` | Directory for the RSA keypair |
+
+The agent requests Snowflake access with the OAuth SDK's `ClientCredentialsClient`. Its `WebIdentity` credential is configured once and signs assertions for the discovered token endpoint. To verify the HTTP endpoints without a Snowflake account, run `npm run build && PORT=8000 KEYCARD_URL=<zone-url> npm run ci:verify`.
 
 ## Identity model
 

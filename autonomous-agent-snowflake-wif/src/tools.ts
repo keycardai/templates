@@ -1,6 +1,6 @@
 import type { Client } from "@modelcontextprotocol/client";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type, type TSchema } from "typebox";
+import { Type, type TSchema } from "@earendil-works/pi-ai";
 
 /**
  * Discovers all tools from an MCP server and adapts each one into a

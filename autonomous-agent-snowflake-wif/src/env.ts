@@ -6,7 +6,7 @@ const Env = z.object({
   KEYCARD_RESOURCE_ID: z.string().optional(),
 
   AGENT_PROVIDER: z.string().default("anthropic"),
-  AGENT_MODEL: z.string().default("claude-sonnet-4-20250514"),
+  AGENT_MODEL: z.string().default("claude-sonnet-4-6"),
   PORT: z.coerce.number().int().positive().default(9000),
   AGENT_KEYS_DIR: z.string().default("./agent_keys"),
   AGENT_NAME: z.string().default("autonomous-agent-snowflake-wif"),
