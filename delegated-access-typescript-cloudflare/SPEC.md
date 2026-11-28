@@ -6,7 +6,8 @@ A local Cloudflare Worker receives a user token, authenticates as its own
 Keycard application with a signed `private_key_jwt` assertion, and exchanges
 the incoming token for delegated access to a protected HTTP resource.
 The Worker initializes its Keycard handler and per-subject token cache once
-per isolate, on the first request other than `GET /healthz`.
+per isolate, on the first request other than `GET /healthz`, and rebuilds
+them if the bindings change.
 
 ## Keycard provisioning
 

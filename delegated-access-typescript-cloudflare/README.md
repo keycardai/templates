@@ -31,7 +31,7 @@ Health returns `ok`. Use a user token minted for the Worker's resource, not
 for the downstream resource. The authenticated request returns the downstream
 status and body. Without a bearer token, `/call` returns `401` and a Bearer challenge.
 Each Worker isolate initializes the Keycard handler and token cache lazily on
-its first request other than `GET /healthz` and reuses them across requests.
+its first request other than `GET /healthz` and reuses them until a binding changes.
 
 ## Configuration
 

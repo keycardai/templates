@@ -1,4 +1,5 @@
 import { createKeycardWorker, IsolateSafeTokenCache, resolveCredential } from "@keycardai/cloudflare";
+import { OAuthError } from "@keycardai/oauth/errors";
 import { TokenExchangeClient } from "@keycardai/oauth/tokenExchange";
 
 interface Env {
@@ -40,7 +41,22 @@ function buildProtectedWorker(env: Env) {
   });
 }
 
-let protectedWorker: ReturnType<typeof buildProtectedWorker> | undefined;
+const bindingNames = [
+  "KEYCARD_ISSUER", "KEYCARD_PRIVATE_KEY", "KEYCARD_CLIENT_ID", "KEYCARD_RESOURCE_URL", "KEYCARD_WORKER_RESOURCE",
+] as const satisfies readonly (keyof Env)[];
+let state: { bindings: string[]; handler: ReturnType<typeof buildProtectedWorker> } | undefined;
+
+function safeErrorText(value: string, request: Request, env: Env): string {
+  const token = request.headers.get("Authorization")?.match(/^Bearer\s+(\S+)/i)?.[1];
+  for (const secret of [token, env.KEYCARD_PRIVATE_KEY]) {
+    if (secret) value = value.replaceAll(secret, "[redacted]");
+  }
+  return value
+    .replace(/-----BEGIN [^\r\n-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^\r\n-]*PRIVATE KEY-----|$)/g, "[redacted PEM]")
+    .replace(/\bBearer\s+[^\s,;"']+/gi, "Bearer [redacted]")
+    .replace(/\beyJ[\w-]*\.[\w-]+\.[\w-]+\b/g, "[redacted JWT]")
+    .slice(0, 512);
+}
 
 const worker: ExportedHandler<Env> = {
   async fetch(request, env, ctx) {
@@ -50,9 +66,22 @@ const worker: ExportedHandler<Env> = {
     }
 
     try {
-      protectedWorker ??= buildProtectedWorker(env);
-      return await protectedWorker.fetch!(request, env, ctx);
-    } catch {
+      const bindings = bindingNames.map((key) => env[key]);
+      if (!state || state.bindings.some((value, index) => value !== bindings[index])) {
+        state = { bindings, handler: buildProtectedWorker(env) };
+      }
+      return await state.handler.fetch!(request, env, ctx);
+    } catch (err) {
+      if (err instanceof Error) {
+        console.error("Keycard request failed", {
+          name: safeErrorText(err.name, request, env),
+          code: err instanceof OAuthError ? safeErrorText(err.errorCode, request, env) : undefined,
+          description: safeErrorText(err instanceof OAuthError ? (err.errorDescription ?? err.message) : err.message, request, env),
+          status: err instanceof OAuthError ? err.status : undefined,
+        });
+      } else {
+        console.error("Keycard request failed", { name: "UnknownError" });
+      }
       return new Response("Keycard request failed", { status: 502 });
     }
   },
