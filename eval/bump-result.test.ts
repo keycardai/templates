@@ -163,7 +163,10 @@ test("after 3 cancelled attempts, posts a neutral manual-rerun comment with no f
   const res = runResult({ verifyResult: "success", evalResult: "cancelled", attempt: "3" });
   assert.equal(res.status, 0);
   assert.equal(res.calls.find((c) => c.cmd === "workflow_run"), undefined);
-  assert.equal(res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/statuses/")), undefined);
+  const statusCall = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/statuses/"));
+  assert.ok(statusCall, "expected pending status update");
+  assert.ok(statusCall.fields.includes("state=pending"));
+  assert.ok(statusCall.fields.includes("description=Cancelled after 3 attempt(s); rerun via workflow_dispatch"));
   const commentCall = res.calls.find((c) => c.cmd === "api" && c.endpoint.includes("/comments"));
   assert.ok(commentCall, "expected neutral comment");
   const bodyField = commentCall.fields.find((f: string) => f.startsWith("body="));

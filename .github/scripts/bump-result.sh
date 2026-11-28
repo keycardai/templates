@@ -120,6 +120,7 @@ if [ "$GATE_OK" = "true" ] \
     echo "::warning::Failed to requeue PR #${PR_NUMBER} after cancellation."
   fi
 
+  set_status "pending" "Cancelled after ${attempt} attempt(s); rerun via workflow_dispatch"
   body="${MARKER}"$'\n'"Dependency bump verify/eval was cancelled at \`${HEAD_SHA}\` after ${attempt} attempt(s) and needs a manual rerun via \`workflow_dispatch\` (\`gh workflow run dependency-bump.yml -f pr=${PR_NUMBER}\`). See the [Dependency Bump run](${RUN_URL}).${security_note}"
   upsert_comment "$body"
   exit 0
