@@ -315,7 +315,7 @@ SNOWFLAKE_DATABASE=<snowflake-database>
 SNOWFLAKE_WAREHOUSE=<snowflake-warehouse>
 # SNOWFLAKE_ROLE=<snowflake-role>
 AGENT_PROVIDER=anthropic
-AGENT_MODEL=claude-sonnet-4-20250514
+AGENT_MODEL=claude-sonnet-4-6
 AGENT_TASK=Query Snowflake for recent data and produce a summary report.
 PORT=<port>
 ```
@@ -387,11 +387,13 @@ The build step does not need brokered credentials, only the runtime does. Verify
 
 ### Build
 
+Use Node.js 22.19.0 or later for pi-ai and pi-agent-core 1.4.
+
 ```bash
 npm install && npm run build
 ```
 
-For the HTTP smoke test, run `KEYCARD_URL=<zone-url> npm run ci:verify` before configuring Snowflake. The script starts and stops its own process and checks:
+For the HTTP smoke test, run `PORT=8000 KEYCARD_URL=<zone-url> npm run ci:verify` before configuring Snowflake. The script starts and stops its own process and checks:
 
 - `GET /healthz` returns HTTP 200, including in degraded mode without Snowflake.
 - `GET /.well-known/oauth-protected-resource` returns the same Resource identifier as the inbound verifier and the configured zone issuer.
@@ -524,7 +526,7 @@ The agent SHOULD print these as concrete suggestions after the handoff recap, so
 ## 9. Where to extend
 
 - **Query different data.** Change `AGENT_TASK` in `.env` to any Snowflake query task — the agent adapts to whatever you describe.
-- **Change the LLM.** Set `AGENT_PROVIDER` and `AGENT_MODEL` in `.env`. The agent uses `pi-ai`'s model registry, which supports Anthropic, OpenAI, Google, Mistral, and others.
+- **Change the LLM.** Set `AGENT_PROVIDER` and `AGENT_MODEL` in `.env` to a provider and chat model ID from the pi-ai 1.4 built-in catalog. The template creates the catalog with `builtinModels()`, looks up the model with `models.getModel()`, and passes `models.streamSimple` as the pi-agent-core `Agent` stream function. Pi-ai resolves the configured provider's credentials, such as `ANTHROPIC_API_KEY`.
 - **Customize the system prompt.** Edit `src/agent.ts` — the `DEFAULT_SYSTEM_PROMPT` tells the LLM how to query Snowflake. Tailor it for different workflows (e.g. data analysis, report generation, anomaly detection).
 - **Deploy to a hosting provider.** When you're ready to run 24/7, use the `keycard-deploy-app` skill to deploy. The template ships `Dockerfile`, `fly.toml`, and `.dockerignore` for Fly.io out of the box.
 - **Broker more secrets.** Add additional `[[credentials.default]]` entries in `keycard.toml` to broker other vault-stored secrets (e.g. API keys for other providers). Each entry maps a vault resource URN to an env var.
