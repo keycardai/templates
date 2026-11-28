@@ -13,17 +13,17 @@
     "@keycardai/express": "^0.12.0",
     "@keycardai/mcp": "^2.2.0",
     "@keycardai/oauth": "^0.43.0",
-    "@modelcontextprotocol/client": "^2.2.0",
-    "@modelcontextprotocol/server": "^2.3.0",
-    "@modelcontextprotocol/node": "^2.1.1",
-    "express": "^5.0.0",
-    "safe-regex2": "^5.1.1",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "express": "^5.3.0",
+    "safe-regex2": "^5.1.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^20.11.0",
-    "tsx": "^4.7.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.4.0"
   },
   "engines": {
