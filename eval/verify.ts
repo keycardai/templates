@@ -14,6 +14,7 @@ export interface VerifyResult {
 
 export interface VerifyOptions {
   serverUrl: string;
+  resourceIdentifier: string;
   accessToken: string;
   expectedIssuer?: string;
 }
@@ -64,7 +65,9 @@ export async function verifyServer(opts: VerifyOptions): Promise<VerifyResult> {
     const resp = await fetch(resourceMetadataUrl);
     if (!resp.ok) throw new Error(`Expected 200 from ${resourceMetadataUrl}, got ${resp.status}`);
     const body = await resp.json();
-    if (!body.resource) throw new Error(`Missing 'resource' field in response`);
+    if (body.resource !== opts.resourceIdentifier) {
+      throw new Error(`Expected resource ${opts.resourceIdentifier}, got ${body.resource}`);
+    }
   }, checks);
 
   await check(".well-known/oauth-authorization-server returns JSON", async () => {

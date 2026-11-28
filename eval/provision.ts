@@ -7,6 +7,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { writeKeycardToml } from "./keycard-toml.js";
+import { evalOrigin } from "./run-identity.js";
 
 export function keycardEndpoint() {
   const e = process.env.CI_KEYCARD_ENDPOINT;
@@ -17,78 +18,47 @@ export function keycardEndpoint() {
 const endpoint = keycardEndpoint;
 
 export interface ProvisionedZone {
-  zoneId: string;
-  zoneIssuerUrl: string;
-  applicationId: string;
   /** Client credential minted for the application, so a broker can authenticate its exchange. */
   applicationClientId: string;
   applicationClientSecret: string;
-  resourceId: string;
   resourceIdentifier: string;
 }
 
-/** Delete App + Resource created by a previous eval run (by name prefix). */
-export async function cleanupStaleProvisonings(zoneId: string, token: string): Promise<void> {
-  const headers = { Authorization: `Bearer ${token}` };
+export class EvalProvisioning {
+  private readonly entities: Array<{ collection: "applications" | "resources"; id: string }> = [];
 
-  const [appsResp, resResp] = await Promise.all([
-    fetch(`${endpoint()}/zones/${zoneId}/applications`, { headers }),
-    fetch(`${endpoint()}/zones/${zoneId}/resources`, { headers }),
-  ]);
+  constructor(private readonly zoneId: string, private readonly token: string) {}
 
-  const staleApps = appsResp.ok
-    ? ((await appsResp.json()) as { items?: Array<{ id: string; name: string }> }).items?.filter(
-        (a) => a.name.startsWith("eval-app-"),
-      ) ?? []
-    : [];
-
-  const staleRes = resResp.ok
-    ? ((await resResp.json()) as { items?: Array<{ id: string; name: string }> }).items?.filter(
-        (r) => r.name.startsWith("eval-resource-"),
-      ) ?? []
-    : [];
-
-  await Promise.all([
-    ...staleApps.map((a) =>
-      fetch(`${endpoint()}/zones/${zoneId}/applications/${a.id}`, { method: "DELETE", headers }),
-    ),
-    ...staleRes.map((r) =>
-      fetch(`${endpoint()}/zones/${zoneId}/resources/${r.id}`, { method: "DELETE", headers }),
-    ),
-  ]);
-
-  if (staleApps.length || staleRes.length) {
-    console.log(`   Cleaned up ${staleApps.length} stale app(s), ${staleRes.length} stale resource(s)`);
+  async create(collection: "applications" | "resources", body: object): Promise<string> {
+    const resp = await fetch(`${endpoint()}/zones/${this.zoneId}/${collection}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(`Create ${collection} failed: ${resp.status} ${await resp.text()}`);
+    const { id } = (await resp.json()) as { id: string };
+    this.entities.push({ collection, id });
+    return id;
   }
-}
 
-/** Delete the App + Resource created during this eval run. */
-export async function teardownProvisioning(provisioned: ProvisionedZone, token: string): Promise<void> {
-  const headers = { Authorization: `Bearer ${token}` };
-  await Promise.all([
-    fetch(`${endpoint()}/zones/${provisioned.zoneId}/applications/${provisioned.applicationId}`, {
-      method: "DELETE",
-      headers,
-    }),
-    fetch(`${endpoint()}/zones/${provisioned.zoneId}/resources/${provisioned.resourceId}`, {
-      method: "DELETE",
-      headers,
-    }),
-  ]);
-}
-
-/** Find an existing resource by its identifier (identifiers are unique per zone). */
-export async function findResourceIdByIdentifier(
-  zoneId: string,
-  token: string,
-  identifier: string,
-): Promise<string | undefined> {
-  const resp = await fetch(`${endpoint()}/zones/${zoneId}/resources`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!resp.ok) return undefined;
-  const { items } = (await resp.json()) as { items?: Array<{ id: string; identifier: string }> };
-  return items?.find((r) => r.identifier === identifier)?.id;
+  async cleanup(): Promise<void> {
+    const errors: unknown[] = [];
+    for (const { collection, id } of [...this.entities].reverse()) {
+      try {
+        const resp = await fetch(`${endpoint()}/zones/${this.zoneId}/${collection}/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+        if (!resp.ok && resp.status !== 404) {
+          throw new Error(`Delete ${collection}/${id} failed: HTTP ${resp.status}`);
+        }
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, "Resource cleanup failed");
+    console.log(`   Cleaned up ${this.entities.length} eval applications and resources`);
+  }
 }
 
 /** Find the keycard-sts provider on the zone. */
@@ -109,28 +79,21 @@ export async function provision(opts: {
   zoneIssuerUrl: string;
   runId: string;
   token: string;
+  provisioning: EvalProvisioning;
   templateDir: string;
-  serverPort?: number;
+  serverPort: number;
 }): Promise<ProvisionedZone> {
-  const { zoneId, zoneIssuerUrl, runId, token, templateDir } = opts;
-  const port = opts.serverPort ?? 8000;
-  const resourceIdentifier = `http://localhost:${port}/mcp`;
+  const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir, serverPort: port } = opts;
+  const resourceIdentifier = `${evalOrigin(runId, port)}/mcp`;
 
   // 1. Find the STS provider
   const stsProviderId = await getStsProviderId(zoneId, token);
   console.log(`   STS provider: ${stsProviderId}`);
 
-  // 2. Create Application
-  const appResp = await fetch(`${endpoint()}/zones/${zoneId}/applications`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    // consent: "implicit" pre-authorizes the app so a delegated token exchange does not
-    // require an interactive user-consent step (otherwise the exchange fails with
-    // insufficient_authorization / "User consent is required").
-    body: JSON.stringify({ name: `eval-app-${runId}`, identifier: `eval-app-${runId}`, consent: "implicit" }),
+  // 2. Use implicit consent so delegated exchanges do not need a second browser prompt.
+  const applicationId = await provisioning.create("applications", {
+    name: `eval-app-${runId}`, identifier: `eval-app-${runId}`, consent: "implicit",
   });
-  if (!appResp.ok) throw new Error(`Create application failed: ${appResp.status} ${await appResp.text()}`);
-  const { id: applicationId } = await appResp.json() as { id: string };
   console.log(`   Application: ${applicationId}`);
 
   // 2b. Mint a client credential for the application so a template that brokers delegated
@@ -151,33 +114,14 @@ export async function provision(opts: {
   }
   console.log(`   Application credential: ${applicationClientId}`);
 
-  // 3. Create Resource. Identifiers are unique per zone, and a persistent zone may
-  // carry one over from a prior run that a name-prefix cleanup did not catch, so
-  // remove any existing resource with this identifier first.
-  const staleResourceId = await findResourceIdByIdentifier(zoneId, token, resourceIdentifier);
-  if (staleResourceId) {
-    await fetch(`${endpoint()}/zones/${zoneId}/resources/${staleResourceId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    console.log(`   Removed stale resource ${staleResourceId} (${resourceIdentifier})`);
-  }
-
-  const resResp = await fetch(`${endpoint()}/zones/${zoneId}/resources`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: `eval-resource-${runId}`,
-      identifier: resourceIdentifier,
-      credential_provider_id: stsProviderId,
-      scopes_supported: ["mcp:tools"],
-      // Link the resource to the application so the application is authorized to broker
-      // (exchange the user's token for) this resource.
-      application_id: applicationId,
-    }),
+  // 3. Link the resource to the application for delegated token exchange.
+  const resourceId = await provisioning.create("resources", {
+    name: `eval-resource-${runId}`,
+    identifier: resourceIdentifier,
+    credential_provider_id: stsProviderId,
+    scopes_supported: ["mcp:tools"],
+    application_id: applicationId,
   });
-  if (!resResp.ok) throw new Error(`Create resource failed: ${resResp.status} ${await resResp.text()}`);
-  const { id: resourceId } = await resResp.json() as { id: string };
   console.log(`   Resource: ${resourceId} (${resourceIdentifier})`);
 
   // 4. Write .env — all templates use KEYCARD_URL
@@ -194,12 +138,8 @@ export async function provision(opts: {
   console.log(`   Wrote keycard.toml`);
 
   return {
-    zoneId,
-    zoneIssuerUrl,
-    applicationId,
     applicationClientId,
     applicationClientSecret,
-    resourceId,
     resourceIdentifier,
   };
 }

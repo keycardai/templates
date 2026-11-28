@@ -201,7 +201,7 @@ export async function startCalendarStub(opts: {
   });
 
   return {
-    url: `http://localhost:${opts.port}`,
+    url: opts.resourceIdentifier,
     requests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

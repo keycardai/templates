@@ -8,11 +8,19 @@ There are two flows, picked automatically from the template's shape.
 
 The `mcp-server-*` templates are servers that authenticate requests coming in.
 
-1. Creates an ephemeral Keycard zone
-2. Runs a Claude agent against the template's `SPEC.md`, which provisions the zone's Application and Resource, writes config files, and starts the server
+1. Uses the configured Keycard zone (or creates an ephemeral zone if explicitly enabled)
+2. Provisions the Application and Resource, writes config files, runs a Claude agent against the template's `SPEC.md` to build the project, and starts the server
 3. Uses Playwright to authenticate as a test user via the zone's OAuth consent flow
 4. Verifies the server accepts authenticated requests and rejects unauthenticated ones
-5. Tears down the Application + Resource (zone is reused)
+5. Tears down the job's Application and Resource, including after a failure
+
+Resource URLs use a per-job hostname under `.localhost` so the registered
+identifiers are distinct without changing routes such as `/mcp`. CI derives
+the hostname from the template name, GitHub run ID, and run attempt; local
+runs use a random suffix. The machine's resolver must resolve
+`*.localhost` to loopback. The browser callback stays on `localhost`, and
+the eval reuses one public dynamic client registration per zone. The
+read-only zone preflight runs before any job provisions resources.
 
 ## Agent templates (outbound auth)
 

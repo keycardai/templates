@@ -20,8 +20,9 @@ import * as fs from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { getOrCreateEvalZone, deleteZone } from "./zone.js";
-import { cleanupStaleProvisonings } from "./provision.js";
-import { provisionAgent, teardownAgentProvisioning, type ProvisionedAgent } from "./provision-agent.js";
+import { EvalProvisioning } from "./provision.js";
+import { provisionAgent } from "./provision-agent.js";
+import { evalOrigin } from "./run-identity.js";
 import { runBuildAgent } from "./agent.js";
 import type { BuildAgentUsage } from "./build-agent-usage.js";
 import { startCalendarStub, type CalendarStub } from "./calendar-stub.js";
@@ -65,8 +66,7 @@ export async function runAgentEval(opts: {
 
   let zoneId: string | undefined;
   let ephemeral = false;
-  let token: string | undefined;
-  let provisioned: ProvisionedAgent | undefined;
+  let provisioning: EvalProvisioning | undefined;
   let stub: CalendarStub | undefined;
   let agentProcess: ReturnType<typeof spawn> | undefined;
 
@@ -76,11 +76,6 @@ export async function runAgentEval(opts: {
     cleanedUp = true;
     await stopProcessGroup(agentProcess);
     await stub?.close().catch(() => undefined);
-    if (provisioned && !ephemeral && token) {
-      await teardownAgentProvisioning(provisioned, token)
-        .catch((e) => console.error("Resource cleanup failed:", e));
-      console.log("   Cleaned up app + resources");
-    }
     if (zoneId && ephemeral) {
       console.log(`\nCleaning up zone ${zoneId}...`);
       await deleteZone(zoneId).catch((e) => console.error("Zone cleanup failed:", e));
@@ -88,14 +83,18 @@ export async function runAgentEval(opts: {
     // The harness wrote a real client secret and a live user token into the
     // template working tree; do not leave them behind.
     await fs.rm(path.join(opts.templateDir, ".env"), { force: true }).catch(() => undefined);
+    if (!ephemeral) await provisioning?.cleanup();
   };
-  process.on("SIGINT", async () => { await cleanup(); process.exit(1); });
+  process.on("SIGINT", async () => {
+    await cleanup().catch(console.error);
+    process.exit(1);
+  });
 
   let passed = false;
   try {
     console.log("1. Creating eval zone...");
     const evalZone = await getOrCreateEvalZone(opts.runId);
-    token = evalZone.token;
+    const { token } = evalZone;
     ephemeral = evalZone.ephemeral;
     zoneId = evalZone.zone.id;
     console.log(`   Zone: ${evalZone.zone.id} (${evalZone.zone.issuerUrl})`);
@@ -112,20 +111,21 @@ export async function runAgentEval(opts: {
     stub = await startCalendarStub({
       port: stubPort,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
-      resourceIdentifier: `http://localhost:${stubPort}`,
+      resourceIdentifier: evalOrigin(opts.runId, stubPort),
     });
     console.log(`   Stub calendar: ${stub.url} (verifying against the zone JWKS)`);
 
     console.log("\n3. Provisioning resources...");
-    await cleanupStaleProvisonings(evalZone.zone.id, token);
-    provisioned = await provisionAgent({
+    provisioning = new EvalProvisioning(evalZone.zone.id, token);
+    const provisioned = await provisionAgent({
       zoneId: evalZone.zone.id,
       zoneIssuerUrl: evalZone.zone.issuerUrl,
       runId: opts.runId,
       token,
+      provisioning,
       templateDir: opts.templateDir,
       calendarResourceIdentifier: stub.url,
-      agentResourceIdentifier: agentUrl,
+      agentResourceIdentifier: evalOrigin(opts.runId, agentPort),
       anthropicApiKey,
       anthropicModel,
     });

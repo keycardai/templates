@@ -24,20 +24,16 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { writeKeycardToml } from "./keycard-toml.js";
-import { keycardEndpoint, findResourceIdByIdentifier } from "./provision.js";
+import { keycardEndpoint, type EvalProvisioning } from "./provision.js";
+import { evalOrigin } from "./run-identity.js";
 import { ensureEvalImpersonationPermit, EVAL_IMPERSONATION_POLICY_NAME } from "./policy.js";
 
 export interface ProvisionedA2AAgent {
-  zoneId: string;
-  zoneIssuerUrl: string;
-  applicationId: string;
   applicationClientId: string;
   applicationClientSecret: string;
   /** The agent's own resource: its base URL, and the audience its verifier is bound to. */
-  agentResourceId: string;
   agentResourceIdentifier: string;
   /** A resource the agent does not serve; tokens for it must be refused. */
-  otherResourceId: string;
   otherResourceIdentifier: string;
 }
 
@@ -57,35 +53,20 @@ async function getZoneProviderId(zoneId: string, token: string): Promise<string>
 }
 
 async function createResource(opts: {
-  zoneId: string;
-  token: string;
+  provisioning: EvalProvisioning;
   name: string;
   identifier: string;
   providerId: string;
   applicationId: string;
 }): Promise<string> {
-  const stale = await findResourceIdByIdentifier(opts.zoneId, opts.token, opts.identifier);
-  if (stale) {
-    await fetch(`${keycardEndpoint()}/zones/${opts.zoneId}/resources/${stale}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${opts.token}` },
-    });
-  }
-  const resp = await fetch(`${keycardEndpoint()}/zones/${opts.zoneId}/resources`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${opts.token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: opts.name,
-      identifier: opts.identifier,
-      credential_provider_id: opts.providerId,
-      application_type: "native",
-      prefix: true,
-      application_id: opts.applicationId,
-    }),
+  return opts.provisioning.create("resources", {
+    name: opts.name,
+    identifier: opts.identifier,
+    credential_provider_id: opts.providerId,
+    application_type: "native",
+    prefix: true,
+    application_id: opts.applicationId,
   });
-  if (!resp.ok) throw new Error(`Create resource ${opts.identifier} failed: ${resp.status} ${await resp.text()}`);
-  const { id } = (await resp.json()) as { id: string };
-  return id;
 }
 
 async function addDependency(zoneId: string, token: string, applicationId: string, resourceId: string) {
@@ -101,27 +82,18 @@ export async function provisionA2AAgent(opts: {
   zoneIssuerUrl: string;
   runId: string;
   token: string;
+  provisioning: EvalProvisioning;
   templateDir: string;
   /** Base URL the agent serves on; registered as its resource and written as AGENT_BASE_URL. */
   agentBaseUrl: string;
   port: number;
 }): Promise<ProvisionedA2AAgent> {
-  const { zoneId, zoneIssuerUrl, runId, token, templateDir } = opts;
+  const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir } = opts;
   const zoneProviderId = await getZoneProviderId(zoneId, token);
   console.log(`   Zone provider: ${zoneProviderId}`);
 
   // consent: "implicit", as in provision-agent.ts: no browser, so no consent screen.
-  const appResp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/applications`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: `eval-app-${runId}`,
-      identifier: `eval-app-${runId}`,
-      consent: "implicit",
-    }),
-  });
-  if (!appResp.ok) throw new Error(`Create application failed: ${appResp.status} ${await appResp.text()}`);
-  const { id: applicationId } = (await appResp.json()) as { id: string };
+  const applicationId = await createApplication(provisioning, `eval-app-${runId}`);
   console.log(`   Application: ${applicationId}`);
 
   const credResp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/application-credentials`, {
@@ -140,15 +112,15 @@ export async function provisionA2AAgent(opts: {
   console.log(`   Application credential: ${applicationClientId}`);
 
   const agentResourceId = await createResource({
-    zoneId, token, providerId: zoneProviderId, applicationId,
+    provisioning, providerId: zoneProviderId, applicationId,
     name: `eval-resource-agent-${runId}`,
     identifier: opts.agentBaseUrl,
   });
   console.log(`   Agent resource: ${agentResourceId} (${opts.agentBaseUrl})`);
 
-  const otherResourceIdentifier = `http://localhost:${opts.port + 1}`;
+  const otherResourceIdentifier = evalOrigin(runId, opts.port + 1);
   const otherResourceId = await createResource({
-    zoneId, token, providerId: zoneProviderId, applicationId,
+    provisioning, providerId: zoneProviderId, applicationId,
     name: `eval-resource-other-${runId}`,
     identifier: otherResourceIdentifier,
   });
@@ -176,29 +148,11 @@ export async function provisionA2AAgent(opts: {
   console.log("   Wrote keycard.toml");
 
   return {
-    zoneId,
-    zoneIssuerUrl,
-    applicationId,
     applicationClientId,
     applicationClientSecret,
-    agentResourceId,
     agentResourceIdentifier: opts.agentBaseUrl,
-    otherResourceId,
     otherResourceIdentifier,
   };
-}
-
-export async function teardownA2AProvisioning(
-  provisioned: ProvisionedA2AAgent,
-  token: string,
-): Promise<void> {
-  const headers = { Authorization: `Bearer ${token}` };
-  const base = `${keycardEndpoint()}/zones/${provisioned.zoneId}`;
-  await Promise.all([
-    fetch(`${base}/applications/${provisioned.applicationId}`, { method: "DELETE", headers }),
-    fetch(`${base}/resources/${provisioned.agentResourceId}`, { method: "DELETE", headers }),
-    fetch(`${base}/resources/${provisioned.otherResourceId}`, { method: "DELETE", headers }),
-  ]);
 }
 
 /**
@@ -215,28 +169,14 @@ export async function teardownA2AProvisioning(
  * exchange time, so that identifier is what verification asserts on.
  */
 export interface ProvisionedA2ADelegation {
-  zoneId: string;
-  zoneIssuerUrl: string;
-  callerApplicationId: string;
   callerApplicationIdentifier: string;
   callerClientId: string;
   callerClientSecret: string;
-  targetApplicationId: string;
-  callerResourceId: string;
   callerResourceIdentifier: string;
-  targetResourceId: string;
-  targetResourceIdentifier: string;
 }
 
-async function createApplication(zoneId: string, token: string, identifier: string): Promise<string> {
-  const resp = await fetch(`${keycardEndpoint()}/zones/${zoneId}/applications`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: identifier, identifier, consent: "implicit" }),
-  });
-  if (!resp.ok) throw new Error(`Create application ${identifier} failed: ${resp.status} ${await resp.text()}`);
-  const { id } = (await resp.json()) as { id: string };
-  return id;
+async function createApplication(provisioning: EvalProvisioning, identifier: string): Promise<string> {
+  return provisioning.create("applications", { name: identifier, identifier, consent: "implicit" });
 }
 
 async function createPasswordCredential(
@@ -260,30 +200,31 @@ export async function provisionA2ADelegation(opts: {
   zoneIssuerUrl: string;
   runId: string;
   token: string;
+  provisioning: EvalProvisioning;
   templateDir: string;
   callerBaseUrl: string;
   targetBaseUrl: string;
 }): Promise<ProvisionedA2ADelegation> {
-  const { zoneId, zoneIssuerUrl, runId, token, templateDir } = opts;
+  const { zoneId, zoneIssuerUrl, runId, token, provisioning, templateDir } = opts;
   const zoneProviderId = await getZoneProviderId(zoneId, token);
   console.log(`   Zone provider: ${zoneProviderId}`);
 
   const callerApplicationIdentifier = `eval-app-${runId}`;
-  const callerApplicationId = await createApplication(zoneId, token, callerApplicationIdentifier);
+  const callerApplicationId = await createApplication(provisioning, callerApplicationIdentifier);
   const caller = await createPasswordCredential(zoneId, token, callerApplicationId);
   console.log(`   Caller application: ${callerApplicationId} (${callerApplicationIdentifier}, credential ${caller.clientId})`);
 
-  const targetApplicationId = await createApplication(zoneId, token, `eval-app-target-${runId}`);
+  const targetApplicationId = await createApplication(provisioning, `eval-app-target-${runId}`);
   console.log(`   Target application: ${targetApplicationId}`);
 
   const callerResourceId = await createResource({
-    zoneId, token, providerId: zoneProviderId, applicationId: callerApplicationId,
+    provisioning, providerId: zoneProviderId, applicationId: callerApplicationId,
     name: `eval-resource-caller-${runId}`,
     identifier: opts.callerBaseUrl,
   });
   console.log(`   Caller resource: ${callerResourceId} (${opts.callerBaseUrl})`);
   const targetResourceId = await createResource({
-    zoneId, token, providerId: zoneProviderId, applicationId: targetApplicationId,
+    provisioning, providerId: zoneProviderId, applicationId: targetApplicationId,
     name: `eval-resource-target-${runId}`,
     identifier: opts.targetBaseUrl,
   });
@@ -309,30 +250,9 @@ export async function provisionA2ADelegation(opts: {
   console.log("   Wrote keycard.toml");
 
   return {
-    zoneId,
-    zoneIssuerUrl,
-    callerApplicationId,
     callerApplicationIdentifier,
     callerClientId: caller.clientId,
     callerClientSecret: caller.clientSecret,
-    targetApplicationId,
-    callerResourceId,
     callerResourceIdentifier: opts.callerBaseUrl,
-    targetResourceId,
-    targetResourceIdentifier: opts.targetBaseUrl,
   };
-}
-
-export async function teardownA2ADelegation(
-  provisioned: ProvisionedA2ADelegation,
-  token: string,
-): Promise<void> {
-  const headers = { Authorization: `Bearer ${token}` };
-  const base = `${keycardEndpoint()}/zones/${provisioned.zoneId}`;
-  await Promise.all([
-    fetch(`${base}/applications/${provisioned.callerApplicationId}`, { method: "DELETE", headers }),
-    fetch(`${base}/applications/${provisioned.targetApplicationId}`, { method: "DELETE", headers }),
-    fetch(`${base}/resources/${provisioned.callerResourceId}`, { method: "DELETE", headers }),
-    fetch(`${base}/resources/${provisioned.targetResourceId}`, { method: "DELETE", headers }),
-  ]);
 }

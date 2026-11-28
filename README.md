@@ -21,6 +21,9 @@ Every template ships a `SPEC.md` describing the Keycard resources that **must** 
 
 Agents (the Keycard skills, or your own automation) MUST treat `SPEC.md` as the source of truth for provisioning. The template files themselves intentionally do not encode Keycard state.
 
+Keycard engineers can use the [shared SDK test zone](./docs/shared-test-zone.md)
+for SDK experiments, local template runs, and CI tests.
+
 ## Available templates
 
 | Template | Kind | Language | Framework |
