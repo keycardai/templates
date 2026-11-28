@@ -1,6 +1,7 @@
 # mcp-server-python-mcp
 
-Minimal Keycard-protected MCP server (Python + FastMCP) with a `hello_world` tool.
+Minimal Python MCP server with a `hello_world` tool. It mounts the MCP v2
+`MCPServer` in Starlette and protects the endpoint with `keycardai-starlette`.
 
 Python equivalent of [`mcp-server-typescript-express`](../mcp-server-typescript-express/).
 
@@ -65,7 +66,7 @@ Create a file in `tools/` following the pattern in `tools/hello.py`: export a `r
 # tools/my_tool.py
 from mcp.server.mcpserver import MCPServer
 
-def register_my_tool(mcp: FastMCP) -> None:
+def register_my_tool(mcp: MCPServer) -> None:
     @mcp.tool()
     def my_tool(arg: str) -> str:
         """Tool description shown to the model."""

@@ -153,12 +153,17 @@ See the [eval README](./eval/README.md) for local setup and runtime details.
 
 ## Dependency bumps
 
-[`.github/dependabot.yml`](./.github/dependabot.yml) runs daily per template
-with three groups: `keycard` (Keycard SDK updates with no cooldown),
-`third-party` (minor and patch updates with a 30/7/3-day major/minor/patch
-cooldown; majors open individually), and `security` (security updates, never
-held by cooldown). `mcp-server-ruby` has no `Gemfile.lock` and uses `>=`
-floors, so it is covered by the nightly eval rather than Dependabot.
+[`.github/dependabot.yml`](./.github/dependabot.yml) checks each configured
+template for version updates at 06:00 UTC on weekdays. Dependabot schedules
+version updates per ecosystem and directory, so the `keycard` and
+`third-party` groups share that schedule.
+
+The `keycard` group has no cooldown. The `third-party` group bundles minor and
+patch updates, with major updates opening individually. Third-party major,
+minor, and patch version updates have 30-, 7-, and 3-day cooldowns
+respectively. The `security` group runs independently of the version update
+schedule and cooldowns. The nightly eval covers `mcp-server-ruby`, which uses
+`>=` floors and has no `Gemfile.lock`.
 
 Because Dependabot `pull_request` runs receive no Actions secrets,
 [Template CI](./.github/workflows/ci.yml) builds only the touched template(s)
