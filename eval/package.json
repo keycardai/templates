@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "eval": "tsx index.ts",
+    "test": "tsx --test preflight.test.ts",
     "install:browsers": "npx playwright install chromium"
   },
   "dependencies": {

@@ -107,13 +107,15 @@ cp .env.eval.example .env.eval
 
 ### 4. One-time test user signup
 
-Run once with a visible browser to sign up the test user in the eval zone:
+Run once with a visible browser to sign in through the Organization Zone and create the test user in the eval zone:
 
 ```bash
 EVAL_HEADLESS=false keycard run -- npm run eval -- --template mcp-server-typescript-express
 ```
 
 When the browser opens, sign in with the email/password from your vault resources, signing up at the Keycard ID Zone first if the account doesn't exist yet, and verify the email. The first sign-in creates the test user in the eval zone. After that, all subsequent runs are fully headless.
+
+In GitHub Actions, the preflight job checks the eval zone before any template runs and doesn't change it. It expects the user identified by `EVAL_TEST_USER_EMAIL` to exist in the zone and the Identity Provider to be Keycard ID in the Organization Zone, or the Organization Zone itself in a custom zone. When the job can't read the organization or the Organization Zone's issuer to verify which provider is configured, it warns instead of failing.
 
 ## Run
 
@@ -181,6 +183,7 @@ plus the build command the harness depends on.
 | Variable | Used by | Meaning |
 |---|---|---|
 | `CI_KEYCARD_CLIENT_ID`, `CI_KEYCARD_CLIENT_SECRET`, `CI_KEYCARD_ENDPOINT` | both | Service account that creates the zone |
+| `EVAL_KEYCARD_CLIENT_ID`, `EVAL_KEYCARD_CLIENT_SECRET` | both | Optional. A service account for the eval alone, so PR CI (`ci.yml`) and the eval show up as different actors and rotate separately. Set both or neither; when unset, the eval uses `CI_KEYCARD_*` |
 | `ANTHROPIC_API_KEY` | both | Drives the build agent, and the agent template's model turn |
 | `EVAL_TEST_USER_EMAIL` | both | Browser sign-in for servers, impersonation target for agents |
 | `EVAL_TEST_USER_PASSWORD` | servers | Browser sign-in only |
