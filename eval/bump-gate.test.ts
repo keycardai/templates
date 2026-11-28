@@ -53,6 +53,10 @@ function makeTempRepoRoot(skipContent = "") {
   writeFileSync(join(root, "mcp-server-go/go.mod"), "module example\n");
   mkdirSync(join(root, "mcp-server-java"), { recursive: true });
   writeFileSync(join(root, "mcp-server-java/build.gradle.kts"), "// gradle\n");
+  for (const template of ["agent-python-langchain", "a2a-delegation-python"]) {
+    mkdirSync(join(root, template));
+    writeFileSync(join(root, template, "pyproject.toml"), "[project]\n");
+  }
   mkdirSync(join(root, "eval"), { recursive: true });
   writeFileSync(join(root, "eval/eval-skip.txt"), skipContent);
   return root;
@@ -583,4 +587,106 @@ test("automerge policy: commit-message YAML fallback handles minor, major, Keyca
   });
   assert.equal(keycardMajorFallback.ok, "true");
   assert.equal(keycardMajorFallback.automerge, "true");
+});
+
+const pythonFloors = [
+  [86, "agent-python-langchain", "pytest", "8.0", "9.2.0", "pytest-dev/pytest", "8.0.0...9.2.0", "major"],
+  [87, "agent-python-langchain", "python-dotenv", "1.0.0", "1.2.4", "theskumar/python-dotenv", "v1.0.0...v1.2.4", "minor"],
+  [91, "a2a-delegation-python", "a2a-sdk[http-server]", "1.2.0", "1.3.1", "a2aproject/a2a-python", "v1.2.0...v1.3.1", "minor"],
+  [94, "agent-python-langchain", "langchain-anthropic", "1.6", "1.7.13", "langchain-ai/langchain", "langchain-anthropic==1.6.0...langchain-anthropic==1.7.13", "minor"],
+  [99, "agent-python-langchain", "langchain", "1.0", "1.5.2", "langchain-ai/langchain", "langchain==1.0.0...langchain==1.5.2", "minor"],
+  [102, "agent-python-langchain", "langgraph-cli[inmem]", "0.4", "0.4.44", "langchain-ai/langgraph", "0.4.0...cli==0.4.44", "patch"],
+] as const;
+
+function runPythonFloorGate(
+  template: string,
+  dependency: string,
+  patch: string | null,
+  message: string,
+  options: { ecosystem?: "uv" | "pip"; verified?: boolean; updateType?: string; artifact?: boolean } = {},
+) {
+  const ecosystem = options.ecosystem ?? "uv";
+  const branch = `dependabot/${ecosystem}/${template}/requirement`;
+  const pr = makePr({ head: { sha: SHA, ref: branch, repo: { full_name: "keycardai/templates" } } });
+  return runGate({
+    runHeadBranch: branch,
+    metadata: options.artifact === false ? null : {
+      head_sha: SHA,
+      dependency_names: dependency,
+      update_type: options.updateType ?? "",
+      package_ecosystem: ecosystem,
+    },
+    fixtures: {
+      [`repos/keycardai/templates/pulls?state=open&head=keycardai:${branch}&per_page=10`]: [pr],
+      "repos/keycardai/templates/pulls/42/files?per_page=100": [
+        { filename: `${template}/pyproject.toml`, patch },
+        ...(template === "a2a-delegation-python" ? [{ filename: `${template}/uv.lock` }] : []),
+      ],
+      "repos/keycardai/templates/actions/runs/999/artifacts?per_page=100": { artifacts: [] },
+      [`repos/keycardai/templates/commits/${SHA}`]: makeBotCommit({
+        commit: { verification: { verified: options.verified ?? true }, message },
+      }),
+    },
+  });
+}
+
+function floorPatch(dependency: string, oldFloor: string, newFloor: string) {
+  return `-    "${dependency}>=${oldFloor}",\n+    "${dependency}>=${newFloor}",`;
+}
+
+function floorMessage(dependency: string, version: string, repo: string, compare: string) {
+  return [
+    `Updates the requirements on [${dependency}](https://github.com/${repo}) to permit the latest version.`,
+    `- [Commits](https://github.com/${repo}/compare/${compare})`,
+    "",
+    "---",
+    "updated-dependencies:",
+    `- dependency-name: ${dependency}`,
+    `  dependency-version: ${version}`,
+    `  dependency-type: direct:${dependency === "pytest" ? "development" : "production"}`,
+    "...",
+    "",
+    "Signed-off-by: dependabot[bot] <support@github.com>",
+  ].join("\n");
+}
+
+for (const [pr, template, dependency, oldFloor, newFloor, repo, compare, type] of pythonFloors) {
+  const expected = type === "major" ? "false" : "true";
+  const reason = type === "major" ? "Third-party semver-major update needs human review" : "";
+
+  test(`PR #${pr}: infer ${type} for ${dependency} from the manifest diff`, () => {
+    const out = runPythonFloorGate(template, dependency, floorPatch(dependency, oldFloor, newFloor), "");
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, expected);
+    assert.equal(out.automerge_reason, reason);
+  });
+
+  test(`PR #${pr}: infer ${type} for ${dependency} from the verified commit`, () => {
+    const out = runPythonFloorGate(template, dependency, null, floorMessage(dependency, newFloor, repo, compare), { artifact: false });
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, expected);
+    assert.equal(out.automerge_reason, reason);
+  });
+}
+
+test("Python floor inference keeps explicit and unparseable updates under review", () => {
+  const template = "agent-python-langchain";
+  const dependency = "langgraph-cli[inmem]";
+  const message = floorMessage(dependency, "0.4.44", "langchain-ai/langgraph", "0.4.0...cli==0.4.44");
+
+  const preOneMajor = runPythonFloorGate(template, dependency, floorPatch(dependency, "0.4", "0.5"), message, { ecosystem: "pip" });
+  assert.equal(preOneMajor.automerge_reason, "Third-party semver-major update needs human review");
+
+  const explicitMajor = runPythonFloorGate(template, dependency, floorPatch(dependency, "0.4", "0.4.44"), message, {
+    updateType: "version-update:semver-major",
+  });
+  assert.equal(explicitMajor.automerge_reason, "Third-party semver-major update needs human review");
+
+  const unparseable = runPythonFloorGate(template, dependency, floorPatch(dependency, "0.4", "0.4.44rc1"), message);
+  const unverified = runPythonFloorGate(template, dependency, null, message, { verified: false });
+  for (const out of [unparseable, unverified]) {
+    assert.equal(out.ok, "true");
+    assert.equal(out.automerge, "false");
+    assert.match(out.automerge_reason, /treating as major/);
+  }
 });

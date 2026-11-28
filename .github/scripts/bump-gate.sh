@@ -187,13 +187,14 @@ parse_commit_metadata_json() {
 
   local deps=()
   local max_rank=0
-  local has_unknown="false"
+  local has_unknown="false" has_reported_type="false"
   local dep_name="" update_type=""
   while IFS=$'\t' read -r dep_name update_type; do
     if [ -z "$dep_name" ]; then
       return 1
     fi
     deps+=("$dep_name")
+    if [ -n "$update_type" ]; then has_reported_type="true"; fi
     case "$update_type" in
       version-update:semver-patch)
         if [ "$max_rank" -lt 1 ]; then max_rank=1; fi
@@ -231,10 +232,12 @@ parse_commit_metadata_json() {
     --arg head_sha "$target_sha" \
     --arg dependency_names "$joined_deps" \
     --arg update_type "$highest_type" \
-    '{head_sha: $head_sha, dependency_names: $dependency_names, update_type: $update_type}'
+    --argjson has_reported_type "$has_reported_type" \
+    '{head_sha: $head_sha, dependency_names: $dependency_names, update_type: $update_type,
+      has_reported_type: $has_reported_type}'
 }
 
-load_commit_metadata_json() {
+load_verified_commit_message() {
   local repo="$1"
   local target_sha="$2"
   local commit_json=""
@@ -250,7 +253,73 @@ load_commit_metadata_json() {
     return 1
   fi
 
-  parse_commit_metadata_json "$target_sha" "$message"
+  printf '%s\n' "$message"
+}
+
+infer_python_floor_update_type() {
+  local repo="$1" target_sha="$2" dep="$3" files_json="$4" message="$5"
+  local dep_pattern='[A-Za-z0-9_.-]+(\[[A-Za-z0-9_.,-]+\])?'
+  [[ "$dep" =~ ^${dep_pattern}$ ]] || return 1
+
+  local patch=""
+  patch=$(jq -ser '
+    select(all(.[]; .previous_filename == null and (.filename | test("/(pyproject.toml|uv.lock)$"))))
+    | map(select(.filename | endswith("/pyproject.toml")))
+    | select(length == 1) | .[0].patch // ""
+  ' <<< "$files_json") || return 1
+
+  local release='[0-9]{1,9}(\.[0-9]{1,9}){0,2}'
+  local old="" new=""
+  if [ -n "$patch" ]; then
+    local changes=()
+    mapfile -t changes < <(sed -n '/^[-+]/p' <<< "$patch")
+    local upper_bound="[[:space:]]*,[[:space:]]*<=?[[:space:]]*${release}"
+    local requirement="^[[:space:]]*\"(${dep_pattern})[[:space:]]*>=[[:space:]]*(${release})(${upper_bound})?[[:space:]]*\"[[:space:]]*,?[[:space:]]*$"
+    [ "${#changes[@]}" -eq 2 ] || return 1
+    [[ "${changes[0]}" == -* && "${changes[0]:1}" =~ $requirement && "${BASH_REMATCH[1]}" == "$dep" ]] || return 1
+    old="${BASH_REMATCH[3]}"
+    local upper="${BASH_REMATCH[5]}"
+    [[ "${changes[1]}" == +* && "${changes[1]:1}" =~ $requirement && "${BASH_REMATCH[1]}" == "$dep" ]] || return 1
+    new="${BASH_REMATCH[3]}"
+    [ "$upper" = "${BASH_REMATCH[5]}" ] || return 1
+  else
+    if [ -z "$message" ]; then
+      message=$(load_verified_commit_message "$repo" "$target_sha") || return 1
+    fi
+    grep -qF "Updates the requirements on [${dep}](" <<< "$message" || return 1
+    local compare=""
+    compare=$(sed -n 's|^- \[Commits\](https://[^ ]*/compare/\([^/ ]*\))$|\1|p' <<< "$message")
+    local tag="(v|[A-Za-z0-9_.-]+==)?"
+    [[ "$compare" =~ ^${tag}(${release})\.\.\.${tag}(${release})$ ]] || return 1
+    old="${BASH_REMATCH[2]}"
+    new="${BASH_REMATCH[5]}"
+  fi
+
+  local old_major old_minor old_patch new_major new_minor new_patch
+  IFS=. read -r old_major old_minor old_patch <<< "$old"
+  IFS=. read -r new_major new_minor new_patch <<< "$new"
+  old_minor=${old_minor:-0}
+  new_minor=${new_minor:-0}
+  old_patch=${old_patch:-0}
+  new_patch=${new_patch:-0}
+
+  if (( 10#$new_major > 10#$old_major )); then
+    echo "version-update:semver-major"
+  elif (( 10#$new_major == 10#$old_major )); then
+    if (( 10#$new_minor > 10#$old_minor )); then
+      if (( 10#$old_major == 0 )); then
+        echo "version-update:semver-major"
+      else
+        echo "version-update:semver-minor"
+      fi
+    elif (( 10#$new_minor == 10#$old_minor && 10#$new_patch > 10#$old_patch )); then
+      echo "version-update:semver-patch"
+    else
+      return 1
+    fi
+  else
+    return 1
+  fi
 }
 
 evaluate_automerge() {
@@ -259,6 +328,7 @@ evaluate_automerge() {
   local pr_head_ref="$3"
   local target_sha="$4"
   local templates_json="$5"
+  local files_json="$6"
 
   # Security update PRs (security group branch) auto-merge at any level when green.
   if [[ "$pr_head_ref" =~ ^dependabot/[^/]+/[^/]+/security(-|$) ]]; then
@@ -267,9 +337,10 @@ evaluate_automerge() {
     return 0
   fi
 
-  local meta_json=""
+  local meta_json="" commit_message=""
   if ! meta_json=$(load_metadata_json "$repo" "$ci_run_id"); then
-    if ! meta_json=$(load_commit_metadata_json "$repo" "$target_sha"); then
+    if ! commit_message=$(load_verified_commit_message "$repo" "$target_sha") ||
+      ! meta_json=$(parse_commit_metadata_json "$target_sha" "$commit_message"); then
       AUTOMERGE_DECISION="false"
       AUTOMERGE_REASON="Dependabot metadata missing; treating as major for human review"
       return 0
@@ -322,6 +393,11 @@ evaluate_automerge() {
     AUTOMERGE_DECISION="true"
     AUTOMERGE_REASON=""
     return 0
+  fi
+
+  if [ "$eco" = "uv" ] && [ -z "$update_type" ] &&
+    jq -e '.has_reported_type != true' <<< "$meta_json" >/dev/null; then
+    update_type=$(infer_python_floor_update_type "$repo" "$target_sha" "$dependency_names" "$files_json" "$commit_message") || update_type=""
   fi
 
   case "$update_type" in
@@ -481,11 +557,14 @@ main() {
     fi
   done <<< "$commits_lines"
 
-  local files_lines=""
-  if ! files_lines=$(gh api --paginate "repos/${repo}/pulls/${pr_number}/files?per_page=100" --jq '.[] | .filename, (.previous_filename // empty)'); then
+  local files_json="" files_lines=""
+  if ! files_json=$(gh api --paginate "repos/${repo}/pulls/${pr_number}/files?per_page=100" --jq '
+    .[] | {filename, previous_filename, patch: (if .filename | endswith("/pyproject.toml") then .patch else null end)} | @json
+  '); then
     emit_output "$pr_number" "$target_sha" "[]" "false" "Could not fetch changed files for PR #${pr_number}"
     return 0
   fi
+  files_lines=$(jq -r '.filename, (.previous_filename // empty)' <<< "$files_json")
 
   local file_count=0
   local touched=()
@@ -612,7 +691,7 @@ main() {
 
   AUTOMERGE_DECISION="false"
   AUTOMERGE_REASON=""
-  evaluate_automerge "$repo" "$ci_run_id" "$pr_head_ref" "$target_sha" "$templates_json"
+  evaluate_automerge "$repo" "$ci_run_id" "$pr_head_ref" "$target_sha" "$templates_json" "$files_json"
 
   emit_output "$pr_number" "$target_sha" "$templates_json" "true" "" "$AUTOMERGE_DECISION" "$AUTOMERGE_REASON"
 }
